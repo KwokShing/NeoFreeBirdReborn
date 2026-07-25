@@ -10,57 +10,73 @@
 #import "Core/BHTSettings.h"
 #import "Settings/ModernSettingsViewController.h"
 
-@implementation BHTManager
-+ (void)cleanCache {
-    NSArray<NSURL*>* DocumentFiles = [[NSFileManager defaultManager]
-          contentsOfDirectoryAtURL:
-              [NSURL
-                  fileURLWithPath:NSSearchPathForDirectoriesInDomains(
-                                      NSDocumentDirectory, NSUserDomainMask, true)
-                                      .firstObject]
-        includingPropertiesForKeys:@[]
-                           options:NSDirectoryEnumerationSkipsHiddenFiles
-                             error:nil];
-
-    for (NSURL* file in DocumentFiles) {
-        if ([file.pathExtension.lowercaseString isEqualToString:@"mp4"]) {
-            [[NSFileManager defaultManager] removeItemAtURL:file error:nil];
-        }
-    }
-
-    NSArray<NSURL*>* TempFiles = [[NSFileManager defaultManager]
-          contentsOfDirectoryAtURL:[NSURL fileURLWithPath:NSTemporaryDirectory()]
-        includingPropertiesForKeys:@[]
-                           options:NSDirectoryEnumerationSkipsHiddenFiles
-                             error:nil];
-
-    for (NSURL* file in TempFiles) {
-        if ([file.pathExtension.lowercaseString isEqualToString:@"mp4"]) {
-            [[NSFileManager defaultManager] removeItemAtURL:file error:nil];
-        }
-        if ([file.pathExtension.lowercaseString isEqualToString:@"mov"]) {
-            [[NSFileManager defaultManager] removeItemAtURL:file error:nil];
-        }
-        if ([file.pathExtension.lowercaseString isEqualToString:@"tmp"]) {
-            [[NSFileManager defaultManager] removeItemAtURL:file error:nil];
-        }
-        if ([file hasDirectoryPath]) {
-            if ([BHTManager isEmpty:file]) {
-                [[NSFileManager defaultManager] removeItemAtURL:file error:nil];
-            }
-        }
-    }
+static NSURL* BHTOwnedTemporaryDirectoryURL(void) {
+    return [[NSURL fileURLWithPath:NSTemporaryDirectory()
+                      isDirectory:YES]
+        URLByAppendingPathComponent:@"NeoFreeBird"
+                       isDirectory:YES];
 }
-+ (BOOL)isEmpty:(NSURL*)url {
-    NSArray* FolderFiles = [[NSFileManager defaultManager]
-          contentsOfDirectoryAtURL:url
-        includingPropertiesForKeys:@[]
-                           options:NSDirectoryEnumerationSkipsHiddenFiles
-                             error:nil];
-    if (FolderFiles.count == 0) {
-        return true;
-    } else {
-        return false;
+
+static BOOL BHTIsOwnedTemporaryURL(NSURL* url) {
+    if (!url.isFileURL) return NO;
+    NSString* directory =
+        BHTOwnedTemporaryDirectoryURL().URLByStandardizingPath.path;
+    NSString* candidate = url.URLByStandardizingPath.path;
+    if (directory.length == 0 || candidate.length == 0) return NO;
+    NSString* prefix = [directory stringByAppendingString:@"/"];
+    return [candidate hasPrefix:prefix];
+}
+
+@implementation BHTManager
+
++ (NSURL*)temporaryDirectoryURL {
+    NSURL* directory = BHTOwnedTemporaryDirectoryURL();
+    @synchronized(self) {
+        [[NSFileManager defaultManager]
+            createDirectoryAtURL:directory
+     withIntermediateDirectories:YES
+                      attributes:nil
+                           error:nil];
+    }
+    return directory;
+}
+
++ (NSURL*)temporaryFileURLWithExtension:(NSString*)extension {
+    NSString* candidate =
+        [[extension ?: @"tmp"
+            stringByTrimmingCharactersInSet:
+                [NSCharacterSet whitespaceAndNewlineCharacterSet]]
+            stringByTrimmingCharactersInSet:
+                [NSCharacterSet characterSetWithCharactersInString:@"."]];
+    NSCharacterSet* invalid =
+        [[NSCharacterSet alphanumericCharacterSet] invertedSet];
+    NSString* safeExtension =
+        [[candidate componentsSeparatedByCharactersInSet:invalid]
+            componentsJoinedByString:@""];
+    if (safeExtension.length == 0) safeExtension = @"tmp";
+
+    NSString* filename =
+        [NSString stringWithFormat:@"%@.%@",
+                                   NSUUID.UUID.UUIDString,
+                                   safeExtension.lowercaseString];
+    return [[self temporaryDirectoryURL]
+        URLByAppendingPathComponent:filename
+                       isDirectory:NO];
+}
+
++ (void)cleanCache {
+    // Never sweep X's Documents directory or its shared temporary tree. Those
+    // locations contain host-app state that can be live during launch. Every
+    // NeoFreeBird export now lives under this owned directory, so cleanup is
+    // both complete and isolated.
+    NSURL* directory = BHTOwnedTemporaryDirectoryURL();
+    @synchronized(self) {
+        [[NSFileManager defaultManager] removeItemAtURL:directory error:nil];
+        [[NSFileManager defaultManager]
+            createDirectoryAtURL:directory
+     withIntermediateDirectories:YES
+                      attributes:nil
+                           error:nil];
     }
 }
 + (id)sharedFontGroup {
@@ -103,30 +119,96 @@
     return [NSString stringWithFormat:@"%@x%@", q.firstObject, q.lastObject];
 }
 + (void)save:(NSURL*)url {
-    [[PHPhotoLibrary sharedPhotoLibrary]
-        performChangesAndWait:^{
-            [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:url];
-        }
-                        error:nil];
+    [self save:url completion:nil];
 }
 + (void)saveGIF:(NSURL*)url {
+    [self saveGIF:url completion:nil];
+}
++ (void)save:(NSURL*)url
+   completion:(void (^)(BOOL success, NSError* error))completion {
+    if (!url) {
+        if (completion) {
+            completion(NO, [NSError errorWithDomain:@"com.bhtwitter.media"
+                                               code:1
+                                           userInfo:@{
+                                               NSLocalizedDescriptionKey:
+                                                   @"The video file is unavailable."
+                                           }]);
+        }
+        return;
+    }
     [[PHPhotoLibrary sharedPhotoLibrary]
-        performChangesAndWait:^{
+        performChanges:^{
+            [PHAssetChangeRequest
+                creationRequestForAssetFromVideoAtFileURL:url];
+        }
+        completionHandler:^(BOOL success, NSError* error) {
+            if (!completion) return;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(success, error);
+            });
+        }];
+}
++ (void)saveGIF:(NSURL*)url
+      completion:(void (^)(BOOL success, NSError* error))completion {
+    if (!url) {
+        if (completion) {
+            completion(NO, [NSError errorWithDomain:@"com.bhtwitter.media"
+                                               code:2
+                                           userInfo:@{
+                                               NSLocalizedDescriptionKey:
+                                                   @"The image file is unavailable."
+                                           }]);
+        }
+        return;
+    }
+    [[PHPhotoLibrary sharedPhotoLibrary]
+        performChanges:^{
             [PHAssetChangeRequest creationRequestForAssetFromImageAtFileURL:url];
         }
-                        error:nil];
+        completionHandler:^(BOOL success, NSError* error) {
+            if (!completion) return;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(success, error);
+            });
+        }];
 }
 + (void)showSaveVC:(NSURL*)url {
-    UIActivityViewController* acVC =
-        [[UIActivityViewController alloc] initWithActivityItems:@[url]
-                                          applicationActivities:nil];
-    if (is_iPad()) {
-        acVC.popoverPresentationController.sourceView = topMostController().view;
-        acVC.popoverPresentationController.sourceRect =
-            CGRectMake(topMostController().view.bounds.size.width / 2.0,
-                       topMostController().view.bounds.size.height / 2.0, 1.0, 1.0);
+    if (!url) return;
+    dispatch_block_t presentation = ^{
+        UIViewController* presenter = topMostController();
+        if (!presenter) return;
+
+        UIActivityViewController* activity =
+            [[UIActivityViewController alloc]
+                initWithActivityItems:@[url]
+                applicationActivities:nil];
+        activity.completionWithItemsHandler =
+            ^(__unused UIActivityType activityType, __unused BOOL completed,
+              __unused NSArray* returnedItems, __unused NSError* error) {
+                if (BHTIsOwnedTemporaryURL(url)) {
+                    [[NSFileManager defaultManager]
+                        removeItemAtURL:url
+                                 error:nil];
+                }
+            };
+        if (is_iPad()) {
+            UIView* sourceView = presenter.view;
+            if (!sourceView) return;
+            activity.popoverPresentationController.sourceView = sourceView;
+            activity.popoverPresentationController.sourceRect =
+                CGRectMake(CGRectGetMidX(sourceView.bounds),
+                           CGRectGetMidY(sourceView.bounds), 1.0, 1.0);
+        }
+        [presenter presentViewController:activity
+                               animated:YES
+                             completion:nil];
+    };
+    if (NSThread.isMainThread) {
+        presentation();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), presentation);
     }
-    [topMostController() presentViewController:acVC animated:true completion:nil];
 }
 
 + (MediaInformation*)getM3U8Information:(NSURL*)mediaURL {

@@ -58,7 +58,7 @@ Status meanings:
 | General | `hide_promoted` | Combined | Layered request, model, section, player, metadata, status, and feature-switch blocker described above |
 | General | `hide_premium_offer` | Updated | Upsells only; genuine subscription state is preserved |
 | General | `padlock` | Ported | In-memory relock and app-switcher cover |
-| General | `no_tab_bar_hiding` | Updated | X 12.9 pin/collapse capabilities plus ratio clamp; fullscreen hides remain intact |
+| General | `no_tab_bar_hiding` | Updated | X 12.9 pin/collapse capabilities plus ratio clamp on iPhone; iPad keeps its native adaptive rail width and fullscreen hides remain intact |
 | General | `disable_rtl` | Ported | Rebuilds paragraph styles with LTR direction |
 | General | `strip_share_tracking` | Updated | Removes `s`/`t` parameters only when enabled |
 | General | `expand_tco_links` | Updated | No longer unconditional |
@@ -67,7 +67,7 @@ Status meanings:
 | Appearance | custom navigation | Combined | Captures/reorders native tab entries; Grok remains native while opt-in Likes is an independent movable entry; selected editor tiles and the preview row both support drag reordering |
 | Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows |
 | Appearance | `tab_bar_theming` | Ported | Native selected/unselected colors |
-| Appearance | `restore_tab_labels` | Updated | Current `T1TabView` title path |
+| Appearance | `restore_tab_labels` | Updated | Current `T1TabView` title path; the Likes carrier is relabeled before its first selection |
 | Appearance | `restore_launch_animation` | Updated | No longer forced on; strips only the X reveal mask |
 | Appearance | `restore_refresh_sounds` | Updated | No longer always on |
 | Appearance | `custom_fonts` | Updated | Persists concrete PostScript faces, migrates former family-name selections, and covers both legacy `TFNUIDefaultFontGroup` and X 12.9's SwiftUI `XFontCatalog` |
@@ -111,7 +111,7 @@ Status meanings:
 | Profile | `restore_follow_button` | Updated | Keeps genuine active subscriptions intact |
 | Profile | `square_avatars` | Ported | Live avatar/image/shadow restyling |
 | Profile | `full_profile_counts` | Updated | Previously always on; now opt-in |
-| Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; both canonical-user selectors are hooked |
+| Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; only X 12.9's available canonical-user selector is hooked |
 | Tweets | `enable_edit_tweet` | Updated | Exposes native UI only; server eligibility still applies |
 | Tweets | undo timeout | Ported | Unified timeout picker and old-key migration |
 | Tweets | `tweet_confirm` / `like_confirm` | Updated | Current composer plus X 12.9 `TTAStatusInlineActionButton-didTap`, slideshow, and immersive actions |
@@ -127,8 +127,8 @@ Status meanings:
 | Web | sharing domain | Ported | Applied independently of tracking removal |
 | Web | `always_open_safari` | Updated | Keeps login/2FA flows in-app |
 | Web | `new_inapp_webview` | Ported | Current feature-switch path |
-| Branding | terminology, pill label, logo color | Updated | Modern bundle/text/tab paths; sideloaded/TrollStore packaging sets localized display names to Twitter and registers the supplied bird as a loose alternate icon without replacing stock icons |
-| Experimental | screenshot toggles | Ported/updated | Both detection and branding cleanup are opt-in |
+| Branding | terminology, pill label, Home logo | Updated | Modern bundle/text/tab paths; the blue Home X is replaced with a tintable classic bird, while sideloaded/TrollStore packaging sets localized display names to Twitter and registers the supplied bird as a loose alternate icon without replacing stock icons |
+| Privacy | screenshot toggles | Ported/updated | Detection and branding cleanup are opt-in and grouped with app lock |
 | Debug | FLEX | Ported | Explicit toggle |
 | Debug | compatibility report | New | Exports a non-sensitive JSON runtime probe report |
 
@@ -176,3 +176,8 @@ highest-video preference. The report's privacy-safe `likesRuntime` section
 records root creation, selection/reset counts, media count, and URL acceptance.
 Missing private selectors degrade to native behavior and are listed in the
 report rather than being guessed silently.
+
+Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
+uses asynchronous Photos saves, scopes the font-picker customization, avoids
+stacked app-lock presentations, caches and cancels settings-avatar requests,
+and debounces automatic compatibility reports off the main thread.

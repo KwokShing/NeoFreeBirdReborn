@@ -19,7 +19,7 @@ extern void applySquareAvatarsSetting(void);
 
 - (void)switchChanged:(UISwitch*)sender {
     [super switchChanged:sender];
-    NSString* key = objc_getAssociatedObject(sender, @"prefKey");
+    NSString* key = BHTSettingsKeyForSwitch(sender);
     if ([key isEqualToString:@"square_avatars"]) {
         applySquareAvatarsSetting();
     }

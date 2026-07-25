@@ -681,9 +681,8 @@ static NSArray* DMVideoEntities(UIView* attachmentView) {
 
             UIImage* tweetImage = imageFromView(tweetView);
             NSData* pngData = UIImagePNGRepresentation(tweetImage);
-            NSURL* pngURL = [[NSURL fileURLWithPath:NSTemporaryDirectory()]
-                URLByAppendingPathComponent:[NSString
-                                                stringWithFormat:@"%@.png", [[NSUUID UUID] UUIDString]]];
+            NSURL* pngURL =
+                [BHTManager temporaryFileURLWithExtension:@"png"];
             [pngData writeToURL:pngURL atomically:YES];
             UIActivityViewController* acVC =
                 [[UIActivityViewController alloc] initWithActivityItems:@[pngURL]

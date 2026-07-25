@@ -607,12 +607,7 @@ static void BHTDownloadOriginalPhoto(
             NSString* extension =
                 BHTPhotoFileExtension(sourceURL, response);
             retainedURL =
-                [[NSURL fileURLWithPath:NSTemporaryDirectory()
-                           isDirectory:YES]
-                    URLByAppendingPathComponent:
-                        [NSString stringWithFormat:@"%@.%@",
-                                                   [[NSUUID UUID] UUIDString],
-                                                   extension]];
+                [BHTManager temporaryFileURLWithExtension:extension];
             NSError* moveError = nil;
             if (![[NSFileManager defaultManager]
                     moveItemAtURL:location
@@ -1923,6 +1918,13 @@ BOOL BHTIsNativeLikesEntry(id entry) {
         boolValue];
 }
 
+static void BHTRefreshNativeTabViewAppearance(T1TabView* tabView) {
+    if (!tabView) return;
+    [tabView _t1_updateTitleLabel];
+    [tabView _t1_updateImageViewAnimated:NO];
+    [tabView setNeedsLayout];
+}
+
 static void BHTConfigureNativeLikesEntry(id entry, BOOL injected) {
     T1TabView* tabView = BHTCallObject(entry, @"tabView");
     if (!entry || !tabView) return;
@@ -1940,6 +1942,13 @@ static void BHTConfigureNativeLikesEntry(id entry, BOOL injected) {
     objc_setAssociatedObject(tabView, &kBHTLikesEntryKey, entry,
                              OBJC_ASSOCIATION_ASSIGN);
     tabView.scribePage = kBHTLikesPage;
+    // Bookmarks is a native carrier, so its label and glyph may already have
+    // been rendered before the scribe page is changed. Force the hooked
+    // refresh paths now; otherwise the first frame can still say Bookmarks
+    // until the user selects the tab.
+    tabView.titleLabel.text = @"Likes";
+    tabView.accessibilityLabel = @"Likes";
+    BHTRefreshNativeTabViewAppearance(tabView);
 }
 
 static void BHTRestoreNativeEntryPage(id entry) {
@@ -1949,6 +1958,8 @@ static void BHTRestoreNativeEntryPage(id entry) {
     NSString* original =
         objc_getAssociatedObject(tabView, &kBHTOriginalNativePageKey);
     if (original.length > 0) tabView.scribePage = original;
+    BHTRefreshNativeTabViewAppearance(tabView);
+    tabView.accessibilityLabel = tabView.title;
     objc_setAssociatedObject(tabView, &kBHTLikesEntryKey, nil,
                              OBJC_ASSOCIATION_ASSIGN);
     objc_setAssociatedObject(tabView, &kBHTNativeLikesNavigationKey, nil,

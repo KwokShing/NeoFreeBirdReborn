@@ -51,6 +51,12 @@ static void BHTApplyLikesHeartToTab(T1TabView* tabView) {
         ![tabView.scribePage isEqualToString:BHTLikesPageID()]) {
         return;
     }
+    // The entry is a native Bookmarks carrier. X copies its original title
+    // before the first selection-driven refresh, so update the live label as
+    // soon as the carrier is identified instead of waiting for a tap.
+    tabView.titleLabel.text = @"Likes";
+    tabView.accessibilityLabel = @"Likes";
+
     UIImageView* imageView = BHTLikesIconView(tabView);
     if (imageView) {
         imageView.image = BHTLikesHeartImage(tabView.selected);
@@ -79,6 +85,7 @@ static void BHTApplyLikesHeartToNativeBar(T1TabBarViewController* controller) {
         T1TabView* tabView = tabViews[index];
         if (![tabView.scribePage isEqualToString:BHTLikesPageID()]) continue;
         UITabBarItem* item = items[index];
+        item.title = @"Likes";
         item.image = BHTLikesHeartImage(NO);
         item.selectedImage = BHTLikesHeartImage(YES);
         item.accessibilityLabel = @"Likes";

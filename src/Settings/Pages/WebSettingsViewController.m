@@ -19,7 +19,7 @@
 // the row can be reloaded after saving.
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    NSDictionary* data = self.visibleToggles[indexPath.row];
+    NSDictionary* data = [self settingAtIndexPath:indexPath];
 
     if ([data[@"type"] isEqualToString:@"button"] ||
         [data[@"type"] isEqualToString:@"compactButton"]) {

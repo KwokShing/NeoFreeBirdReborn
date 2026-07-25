@@ -17,25 +17,29 @@ X 12.9.
   type.
 - Native tab reordering plus an independent, movable **My Likes** bottom
   destination that can sit alongside Grok, with normal in-tab navigation and
-  swipe-back.
+  swipe-back. Its native Bookmarks carrier is relabeled before the first tap.
 - Appearance editors for the bottom bar, the Likes section, and X 12.9's
-  sidebar, with tap-to-hide tiles and drag reordering.
+  sidebar, with tap-to-hide tiles and drag reordering. The iPad rail retains
+  X's adaptive expanded layout instead of using the iPhone collapse clamp.
 - A Posts/Media view for Likes with a pinch-adjustable waterfall gallery,
   newest-first loading, continuous pagination, original-quality photo viewing,
   highest-available MP4 playback, long-press photo Download/Share, and
   swipe-down dismissal.
 - Sideloaded and TrollStore builds install with the **Twitter** display name and
-  include the supplied classic bird as a selectable app icon.
+  include the supplied classic bird as a selectable app icon. The blue Home
+  title logo can also use the classic bird instead of the X glyph.
 - Updated profile, search, Grok, timeline, confirmation, appearance, branding,
   custom-font, and accessibility-related features.
+- Settings are grouped into named subsections for navigation, ads, media,
+  privacy, profiles, tweets, and links.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 13 connects those customizable Download and Share File actions to X
-12.9's actual Home-timeline photo/video/GIF preview menu, makes every native
-row in that menu hideable and reorderable, and retires the competing fallback
-long-press whenever the native media builder is available. Beta 12 added the
-first-open Likes reset, waterfall viewer gestures, and selectable Twitter
-bird/name branding.
+Beta 14 fixes iPad rail sizing, removes the first-frame Bookmarks label from My
+Likes, replaces the blue X Home title with the classic Twitter bird, organizes
+the settings pages, isolates temporary media cleanup to NeoFreeBird-owned
+files, and hardens settings, app-lock, photo-save, and compatibility-report
+paths. Beta 13 connected the customizable Download and Share File actions to X
+12.9's actual Home-timeline photo/video/GIF preview menu.
 
 Every new X 12.9 behavior has a setting; custom navigation is controlled from
 its editor. Compatibility shims preserve native behavior when their option is
@@ -57,8 +61,8 @@ Install [Theos](https://github.com/theos/theos) and
 [cyan](https://github.com/asdfzxcvbn/pyzule-rw) for IPA/TrollStore output, then:
 
 ```bash
-git clone --recursive https://github.com/Vicitiniman/BHTwitter.git
-cd BHTwitter
+git clone --recursive https://github.com/Vicitiniman/NeoFreeBird.git
+cd NeoFreeBird
 chmod +x build.sh
 ```
 

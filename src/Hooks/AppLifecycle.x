@@ -140,6 +140,9 @@ static void removePadlockOverlay(void) {
 // Deliberately in-memory only: the padlock must always re-prompt after a
 // relaunch, so persisting this would only risk skipping it.
 static BOOL padlockAuthenticated = NO;
+static BOOL padlockPresentationRetryScheduled = NO;
+static NSUInteger padlockAuthenticationGeneration = 0;
+static __weak AuthViewController* activePadlockController = nil;
 
 static BOOL isAuthenticated(void) {
     return padlockAuthenticated;
@@ -149,6 +152,25 @@ static void setAuthenticated(BOOL yes) {
     padlockAuthenticated = yes;
 }
 
+static void presentAuthIfNeeded(void);
+
+static void retryPadlockPresentation(void) {
+    if (padlockPresentationRetryScheduled) return;
+    padlockPresentationRetryScheduled = YES;
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW,
+                      (int64_t)(250 * NSEC_PER_MSEC)),
+        dispatch_get_main_queue(), ^{
+            padlockPresentationRetryScheduled = NO;
+            if ([BHTSettings boolForKey:@"padlock"] &&
+                !isAuthenticated() &&
+                UIApplication.sharedApplication.applicationState ==
+                    UIApplicationStateActive) {
+                presentAuthIfNeeded();
+            }
+        });
+}
+
 static void presentAuthIfNeeded(void) {
     if (isAuthenticated()) {
         removePadlockOverlay();
@@ -156,42 +178,71 @@ static void presentAuthIfNeeded(void) {
     }
 
     UIWindow* window = activeKeyWindow();
-    if (!window) {
+    UIViewController* root = window.rootViewController;
+    if (!window || !root) {
         showPadlockOverlay();
+        retryPadlockPresentation();
         return;
     }
 
-    UIViewController* root = window.rootViewController;
-    if (!root) {
-        window.rootViewController = [UIViewController new];
-        root = window.rootViewController;
-    }
     UIViewController* host = topViewController(root);
+    if (!host || !host.view.window) {
+        retryPadlockPresentation();
+        return;
+    }
+    if ([host isKindOfClass:AuthViewController.class]) {
+        activePadlockController = (AuthViewController*)host;
+        // The full-screen authentication surface now protects the content.
+        // Remove the separate app-switcher cover so a failed/cancelled attempt
+        // can expose its retry button.
+        removePadlockOverlay();
+        return;
+    }
+    if (activePadlockController.presentingViewController ||
+        activePadlockController.isBeingPresented) {
+        return;
+    }
+    if (host.isBeingPresented || host.isBeingDismissed) {
+        retryPadlockPresentation();
+        return;
+    }
 
     AuthViewController* auth = [[AuthViewController alloc] init];
+    NSUInteger authenticationGeneration =
+        padlockAuthenticationGeneration;
+    activePadlockController = auth;
     auth.completion = ^(BOOL authenticated) {
-        setAuthenticated(authenticated);
-        if (authenticated) {
+        BOOL currentSuccess =
+            authenticated &&
+            authenticationGeneration ==
+                padlockAuthenticationGeneration &&
+            UIApplication.sharedApplication.applicationState ==
+                UIApplicationStateActive &&
+            [BHTSettings boolForKey:@"padlock"];
+        setAuthenticated(currentSuccess);
+        if (currentSuccess) {
             removePadlockOverlay();
+        } else if (authenticated &&
+                   UIApplication.sharedApplication.applicationState ==
+                       UIApplicationStateActive) {
+            showPadlockOverlay();
+            retryPadlockPresentation();
         }
+        activePadlockController = nil;
     };
     auth.modalPresentationStyle = UIModalPresentationFullScreen;
     if ([auth respondsToSelector:@selector(setModalInPresentation:)]) {
         auth.modalInPresentation = YES;
     }
 
-    if (host.presentedViewController == nil) {
-        [host presentViewController:auth animated:NO completion:nil];
-    } else {
-        [host dismissViewControllerAnimated:NO
-                                 completion:^{
-                                     UIViewController* newTop =
-                                         topViewController(root);
-                                     [newTop presentViewController:auth
-                                                          animated:NO
-                                                        completion:nil];
-                                 }];
-    }
+    // topViewController already walks to the final presented controller. Never
+    // dismiss an unrelated compose/share/settings modal just to show the lock;
+    // present above it and leave the user's navigation state intact.
+    [host presentViewController:auth
+                       animated:NO
+                     completion:^{
+                         removePadlockOverlay();
+                     }];
 }
 
 // MARK: - App Delegate hooks
@@ -245,6 +296,18 @@ static void presentAuthIfNeeded(void) {
 
     if ([BHTSettings boolForKey:@"flex_twitter"]) {
         [[%c(FLEXManager) sharedManager] showExplorer];
+    }
+}
+
+- (void)applicationDidEnterBackground:(__unsafe_unretained id)arg1 {
+    %orig;
+
+    if ([BHTSettings boolForKey:@"padlock"]) {
+        // A completed authentication attempt that belongs to a prior foreground
+        // session must never unlock the next one.
+        padlockAuthenticationGeneration++;
+        setAuthenticated(NO);
+        showPadlockOverlay();
     }
 }
 

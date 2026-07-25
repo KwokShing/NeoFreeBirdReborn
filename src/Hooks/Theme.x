@@ -128,21 +128,41 @@ static NSArray* orderedTabEntries(NSArray* entries) {
 
 // MARK: - Keep tab bar visible
 
+static BOOL shouldPinCollapsibleTabBar(
+    T1TabBarViewController* controller) {
+    if (![BHTSettings boolForKey:@"no_tab_bar_hiding"]) {
+        return NO;
+    }
+
+    UIUserInterfaceIdiom idiom =
+        controller.traitCollection.userInterfaceIdiom;
+    if (idiom == UIUserInterfaceIdiomUnspecified) {
+        idiom = UIDevice.currentDevice.userInterfaceIdiom;
+    }
+
+    // On iPad the same "collapse ratio" drives the vertical rail between its
+    // compact and expanded widths; it is not the phone's scroll-to-hide
+    // animation. Pinning that value locks the rail in its narrow icon-only
+    // state and can fight X's split-view relayouts. The iPad rail already stays
+    // on-screen, so preserve its native expansion state.
+    return idiom != UIUserInterfaceIdiomPad;
+}
+
 %hook T1TabBarViewController
 
 // X 12.9 consults these capabilities before sending collapse-ratio updates.
 - (BOOL)tfn_supportsTabBarCollapsing {
-    return [BHTSettings boolForKey:@"no_tab_bar_hiding"] ? NO : %orig;
+    return shouldPinCollapsibleTabBar(self) ? NO : %orig;
 }
 
 - (BOOL)tfn_prefersTabBarPinned {
-    return [BHTSettings boolForKey:@"no_tab_bar_hiding"] ? YES : %orig;
+    return shouldPinCollapsibleTabBar(self) ? YES : %orig;
 }
 
 // The scroll-driven hide only reaches the tab bar as a collapse ratio, so
 // clamping it spares the deliberate hides (fullscreen media, immersive player).
 - (void)setTabBarCollapseRatio:(double)ratio {
-    if ([BHTSettings boolForKey:@"no_tab_bar_hiding"]) {
+    if (shouldPinCollapsibleTabBar(self)) {
         %orig(0.0);
     } else {
         %orig(ratio);
@@ -204,6 +224,20 @@ static UIColor* tabItemColor(BOOL selected) {
 
 // MARK: - Top bar logo theming
 
+static UIImage* twitterBirdTemplateImage(void) {
+    static UIImage* image = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle* bundle = [BHTBundle sharedBundle].mainBundle;
+        image = [UIImage imageNamed:@"twitter_bird"
+                           inBundle:bundle
+      compatibleWithTraitCollection:nil];
+        image = [image
+            imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    });
+    return image;
+}
+
 %hook _TtC11TwitterHome39HomeDefaultNavigationBarTitleViewPlugin
 
 - (UIView*)titleView {
@@ -212,8 +246,12 @@ static UIColor* tabItemColor(BOOL selected) {
     if ([BHTSettings boolForKey:@"color_twitter_icon_in_top_bar"] &&
         [titleView isKindOfClass:[UIImageView class]]) {
         UIImageView* logoView = (UIImageView*)titleView;
-        if (logoView.image) {
-            logoView.image = [logoView.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        UIImage* bird = twitterBirdTemplateImage();
+        UIImage* source = bird ?: logoView.image;
+        if (source) {
+            logoView.image = [source
+                imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+            logoView.contentMode = UIViewContentModeScaleAspectFit;
             logoView.tintColor = CurrentAccentColor();
         }
     }
