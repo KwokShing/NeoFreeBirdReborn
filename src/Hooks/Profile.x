@@ -120,16 +120,13 @@ static char kCopyProviderKey;
 
 // MARK: - Native profile bio translation
 
-// The selector was renamed while the profile header was being migrated. Hook
-// both paths and let X render/perform its own translation; no credentials or
-// out-of-process requests are involved.
+// X 12.9 exposes this selector. Let X render and perform its own translation;
+// no credentials or out-of-process requests are involved. Do not add the older
+// isProfileTranslationEnabled selector to builds where it is absent, because a
+// disabled preference would have no native implementation to call through to.
 %hook TFNTwitterCanonicalUser
 
 - (BOOL)isProfileBioTranslatable {
-    return [BHTSettings boolForKey:@"enable_grok_translations"] ? YES : %orig;
-}
-
-- (BOOL)isProfileTranslationEnabled {
     return [BHTSettings boolForKey:@"enable_grok_translations"] ? YES : %orig;
 }
 

@@ -19,21 +19,16 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                 @"subtitleKey": @"MODERN_SETTINGS_LAYOUT_SUBTITLE",
                 @"settings": @[
                     @{@"key": @"padlock",
-                      @"default": @NO},
-                    @{@"key": @"hide_promoted",
-                      @"default": @YES},
-                    @{@"key": @"hide_premium_offer",
-                      @"default": @YES},
-                    @{@"key": @"no_tab_bar_hiding",
-                      @"default": @YES},
-                    @{@"key": @"disable_rtl",
-                      @"default": @NO},
-                    @{@"key": @"strip_share_tracking",
-                      @"default": @YES},
-                    @{@"key": @"expand_tco_links",
-                      @"default": @YES},
-                    @{@"key": @"show_scroll_indicator",
-                      @"default": @NO}
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_APP_LOCK"},
+                    @{@"key": @"disable_screenshot_detection",
+                      @"default": @NO,
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_SCREENSHOTS"},
+                    @{@"key": @"hide_screenshot_branding",
+                      @"default": @NO,
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_SCREENSHOTS"}
                 ]
             },
             @"appearance": @{
@@ -43,38 +38,57 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                     @{
                         @"titleKey": @"THEME_OPTION_TITLE",
                         @"action": @"showThemeViewController:",
-                        @"type": @"button"
+                        @"type": @"button",
+                        @"sectionKey": @"SETTINGS_SECTION_VISUALS"
                     },
                     @{
                         @"titleKey": @"APP_ICON_TITLE",
                         @"action": @"showAppIconViewController:",
-                        @"type": @"button"
+                        @"type": @"button",
+                        @"sectionKey": @"SETTINGS_SECTION_VISUALS"
                     },
                     @{
                         @"titleKey": @"CUSTOM_TAB_BAR_OPTION_TITLE",
                         @"action": @"showCustomTabBarVC:",
-                        @"type": @"button"
+                        @"type": @"button",
+                        @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"
                     },
                     @{
                         @"titleKey": @"LIKES_NAVIGATION_EDITOR_TITLE",
                         @"action": @"showLikesNavigationVC:",
-                        @"type": @"button"
+                        @"type": @"button",
+                        @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"
                     },
                     @{
                         @"titleKey": @"SIDEBAR_NAVIGATION_EDITOR_TITLE",
                         @"action": @"showSidebarNavigationVC:",
-                        @"type": @"button"
+                        @"type": @"button",
+                        @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"
                     },
                     @{@"key": @"tab_bar_theming",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"},
                     @{@"key": @"restore_tab_labels",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"},
+                    @{@"key": @"no_tab_bar_hiding",
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"},
+                    @{@"key": @"disable_rtl",
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"},
+                    @{@"key": @"show_scroll_indicator",
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"},
                     @{@"key": @"restore_launch_animation",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_MOTION_SOUND"},
                     @{@"key": @"restore_refresh_sounds",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_MOTION_SOUND"},
                     @{@"key": @"custom_fonts",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_FONTS"},
                     @{
                         @"type": @"compactButton",
                         @"parentKey": @"custom_fonts",
@@ -82,7 +96,8 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"titleKey": @"REGULAR_FONTS_PICKER_OPTION_TITLE",
                         @"action": @"showRegularFontPicker:",
                         @"prefKeyForSubtitle": @"bhtwitter_font_1",
-                        @"subtitleDefaultKey": @"FONT_SYSTEM_DEFAULT_SUBTITLE"
+                        @"subtitleDefaultKey": @"FONT_SYSTEM_DEFAULT_SUBTITLE",
+                        @"sectionKey": @"SETTINGS_SECTION_FONTS"
                     },
                     @{
                         @"type": @"compactButton",
@@ -91,7 +106,8 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"titleKey": @"BOLD_FONTS_PICKER_OPTION_TITLE",
                         @"action": @"showBoldFontPicker:",
                         @"prefKeyForSubtitle": @"bhtwitter_font_2",
-                        @"subtitleDefaultKey": @"FONT_SYSTEM_DEFAULT_SUBTITLE"
+                        @"subtitleDefaultKey": @"FONT_SYSTEM_DEFAULT_SUBTITLE",
+                        @"sectionKey": @"SETTINGS_SECTION_FONTS"
                     }
                 ]
             },
@@ -99,22 +115,36 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                 @"titleKey": @"MODERN_SETTINGS_TIMELINES_TITLE",
                 @"subtitleKey": @"MODERN_SETTINGS_TIMELINES_SUBTITLE",
                 @"settings": @[
+                    @{@"key": @"hide_promoted",
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_ADS_OFFERS"},
+                    @{@"key": @"hide_premium_offer",
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_ADS_OFFERS"},
                     @{@"key": @"hide_who_to_follow",
-                      @"default": @YES},
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_CLEANUP"},
                     @{@"key": @"hide_timeline_prompts",
-                      @"default": @YES},
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_CLEANUP"},
                     @{@"key": @"hide_discover_more",
-                      @"default": @YES},
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_CLEANUP"},
                     @{@"key": @"hide_topics",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_CLEANUP"},
                     @{@"key": @"hide_topics_to_follow",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_CLEANUP"},
                     @{@"key": @"hide_spaces",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_BEHAVIOR"},
                     @{@"key": @"hide_custom_timelines",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_BEHAVIOR"},
                     @{@"key": @"remember_timeline_tab",
-                      @"default": @YES}
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_TIMELINE_BEHAVIOR"}
                 ]
             },
             @"grok": @{
@@ -155,81 +185,98 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                     @{
                         @"titleKey": @"MEDIA_ACTION_MENU_EDITOR_TITLE",
                         @"action": @"showMediaActionMenus:",
-                        @"type": @"button"
+                        @"type": @"button",
+                        @"sectionKey": @"SETTINGS_SECTION_DOWNLOADS_ACTIONS"
                     },
                     @{
                         @"key": @"download_videos",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_DOWNLOADS_ACTIONS"
                     },
                     @{
                         @"key": @"dm_media_downloads",
                         @"parentKey": @"download_videos",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_DOWNLOADS_ACTIONS"
+                    },
+                    @{@"key": @"direct_save",
+                      @"default": @NO,
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_DOWNLOADS_ACTIONS"
                     },
                     @{
                         @"key": @"voice_creation_enabled",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_MESSAGES_CREATION"
                     },
                     @{
                         @"key": @"no_voice_messages",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_MESSAGES_CREATION"
                     },
                     @{
                         @"key": @"old_compose_bar",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_MESSAGES_CREATION"
                     },
                     @{
                         @"key": @"dm_reply_later_enabled",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_MESSAGES_CREATION"
                     },
                     @{
                         @"key": @"media_upload_4k_enabled",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_MESSAGES_CREATION"
                     },
                     @{
                         @"key": @"custom_voice_upload",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_MESSAGES_CREATION"
                     },
-                    @{@"key": @"direct_save",
-                      @"default": @NO,
-                      @"type": @"toggle"},
                     @{
                         @"key": @"disable_video_captions",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_QUALITY_PLAYBACK"
                     },
                     @{
                         @"key": @"auto_highest_load",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_QUALITY_PLAYBACK"
                     },
                     @{
                         @"key": @"force_highest_video_quality",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_QUALITY_PLAYBACK"
                     },
                     @{
                         @"key": @"force_tweet_full_frame",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_QUALITY_PLAYBACK"
                     },
                     @{
                         @"key": @"restore_video_timestamp",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_QUALITY_PLAYBACK"
                     },
                     @{
                         @"key": @"disable_immersive_scroll",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_QUALITY_PLAYBACK"
                     }
                 ]
             },
@@ -239,44 +286,53 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                 @"settings": @[
                     @{@"key": @"follow_confirm",
                       @"default": @NO,
-                      @"type": @"toggle"},
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_PROFILE_ACTIONS"},
                     @{
                         @"key": @"copy_profile_info",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_PROFILE_ACTIONS"
                     },
                     @{
                         @"key": @"disable_articles",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_PROFILE_TABS"
                     },
                     @{
                         @"key": @"disable_highlights",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_PROFILE_TABS"
                     },
                     @{
                         @"key": @"hide_blue_verified",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_PROFILE_APPEARANCE"
                     },
                     @{
                         @"key": @"hide_follow_button",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_PROFILE_ACTIONS"
                     },
                     @{
                         @"key": @"restore_follow_button",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_PROFILE_ACTIONS"
                     },
                     @{@"key": @"square_avatars",
                       @"default": @NO,
-                      @"type": @"toggle"},
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_PROFILE_APPEARANCE"},
                     @{
                         @"key": @"full_profile_counts",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_PROFILE_APPEARANCE"
                     }
                 ]
             },
@@ -287,61 +343,74 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                     @{
                         @"key": @"enable_edit_tweet",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_COMPOSING"
                     },
                     @{
                         @"type": @"compactButton",
                         @"key": @"undo_tweet_timeout",
                         @"default": @10,
                         @"titleKey": @"UNDO_TWEET_TITLE",
-                        @"action": @"showUndoTimeoutPicker:"
+                        @"action": @"showUndoTimeoutPicker:",
+                        @"sectionKey": @"SETTINGS_SECTION_COMPOSING"
                     },
                     @{@"key": @"tweet_confirm",
                       @"default": @NO,
-                      @"type": @"toggle"},
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_COMPOSING"},
                     @{@"key": @"like_confirm",
                       @"default": @NO,
-                      @"type": @"toggle"},
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_INTERACTIONS"},
                     @{@"key": @"tweet_to_image",
                       @"default": @NO,
-                      @"type": @"toggle"},
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_COMPOSING"},
                     @{
                         @"key": @"hide_view_count",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_INTERACTIONS"
                     },
                     @{
                         @"key": @"hide_bookmark_button",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_INTERACTIONS"
                     },
                     @{
                         @"key": @"hide_downvote_button",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_INTERACTIONS"
                     },
                     @{
                         @"key": @"disable_sensitive_tweet_warnings",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_SAFETY_CONTEXT"
                     },
                     @{
                         @"key": @"bypass_age_verification",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_SAFETY_CONTEXT"
                     },
                     @{@"key": @"reply_sorting",
                       @"default": @NO,
-                      @"type": @"toggle"},
+                      @"type": @"toggle",
+                      @"sectionKey": @"SETTINGS_SECTION_SAFETY_CONTEXT"},
                     @{
                         @"key": @"restore_reply_context",
                         @"default": @YES,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_SAFETY_CONTEXT"
                     },
                     @{
                         @"key": @"restore_tweet_labels",
                         @"default": @NO,
-                        @"type": @"toggle"
+                        @"type": @"toggle",
+                        @"sectionKey": @"SETTINGS_SECTION_SAFETY_CONTEXT"
                     }
                 ]
             },
@@ -386,14 +455,7 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
             @"experimental": @{
                 @"titleKey": @"MODERN_SETTINGS_EXPERIMENTAL_TITLE",
                 @"subtitleKey": @"MODERN_SETTINGS_EXPERIMENTAL_SUBTITLE",
-                @"settings": @[
-                    @{@"key": @"disable_screenshot_detection",
-                      @"default": @NO,
-                      @"type": @"toggle"},
-                    @{@"key": @"hide_screenshot_branding",
-                      @"default": @NO,
-                      @"type": @"toggle"}
-                ]
+                @"settings": @[]
             },
             @"web": @{
                 @"titleKey": @"MODERN_SETTINGS_WEB_TITLE",
@@ -404,12 +466,21 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"key": @"sharing_domain",
                         @"action": @"showSharingDomainPrompt:",
                         @"prefKeyForSubtitle": @"sharing_domain",
-                        @"subtitleDefault": @"x.com"
+                        @"subtitleDefault": @"x.com",
+                        @"sectionKey": @"SETTINGS_SECTION_LINKS_SHARING"
                     },
+                    @{@"key": @"strip_share_tracking",
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_LINKS_SHARING"},
+                    @{@"key": @"expand_tco_links",
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_LINKS_SHARING"},
                     @{@"key": @"always_open_safari",
-                      @"default": @NO},
+                      @"default": @NO,
+                      @"sectionKey": @"SETTINGS_SECTION_BROWSER"},
                     @{@"key": @"new_inapp_webview",
-                      @"default": @YES}
+                      @"default": @YES,
+                      @"sectionKey": @"SETTINGS_SECTION_BROWSER"}
                 ]
             },
             @"debug": @{

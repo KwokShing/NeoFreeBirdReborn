@@ -6,6 +6,7 @@
 //
 
 #import "Settings/Pages/AppearanceSettingsViewController.h"
+#import <objc/message.h>
 #import "Core/BHTBundle.h"
 #import "Core/BHTSettings.h"
 #import "Headers/TWHeaders.h"
@@ -29,7 +30,7 @@
 
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
-    NSDictionary* settingData = self.visibleToggles[indexPath.row];
+    NSDictionary* settingData = [self settingAtIndexPath:indexPath];
     if ([settingData[@"type"] isEqualToString:@"button"]) {
         ModernSettingsSimpleButtonCell* cell =
             [tableView dequeueReusableCellWithIdentifier:@"SimpleButtonCell"
@@ -139,7 +140,8 @@
 - (void)refreshTabViewsWithThemingInView:(UIView*)view {
     if ([view isKindOfClass:NSClassFromString(@"T1TabView")]) {
         if ([view respondsToSelector:@selector(_t1_updateImageViewAnimated:)]) {
-            [view performSelector:@selector(_t1_updateImageViewAnimated:) withObject:@(NO)];
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(
+                view, @selector(_t1_updateImageViewAnimated:), NO);
         }
         if ([view respondsToSelector:@selector(_t1_updateTitleLabel)]) {
             [view performSelector:@selector(_t1_updateTitleLabel)];
@@ -203,7 +205,7 @@
 
 - (void)switchChanged:(UISwitch*)sender {
     [super switchChanged:sender];
-    NSString* key = objc_getAssociatedObject(sender, @"prefKey");
+    NSString* key = BHTSettingsKeyForSwitch(sender);
     if ([key isEqualToString:@"tab_bar_theming"]) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self refreshAllTabViewsWithTheming];
@@ -225,7 +227,7 @@
     UIFontPickerViewController* fontPicker =
         [[UIFontPickerViewController alloc] initWithConfiguration:configuration];
     fontPicker.delegate = (id<UIFontPickerViewControllerDelegate>)self;
-    objc_setAssociatedObject(fontPicker, @"fontType", @"regular", OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    BHTMarkNeoFreeBirdFontPicker(fontPicker, @"regular");
     if (self.account) {
         [fontPicker.navigationItem
             setTitleView:
@@ -248,7 +250,7 @@
     UIFontPickerViewController* fontPicker =
         [[UIFontPickerViewController alloc] initWithConfiguration:configuration];
     fontPicker.delegate = (id<UIFontPickerViewControllerDelegate>)self;
-    objc_setAssociatedObject(fontPicker, @"fontType", @"bold", OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    BHTMarkNeoFreeBirdFontPicker(fontPicker, @"bold");
     if (self.account) {
         [fontPicker.navigationItem
             setTitleView:
@@ -274,7 +276,7 @@
         fontName =
             descriptor.fontAttributes[UIFontDescriptorFamilyAttribute];
     }
-    NSString* fontType = objc_getAssociatedObject(viewController, @"fontType");
+    NSString* fontType = BHTFontTypeForPicker(viewController);
     NSString* key = [fontType isEqualToString:@"bold"]
                         ? @"bhtwitter_font_2"
                         : @"bhtwitter_font_1";

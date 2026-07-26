@@ -9,6 +9,11 @@
 
 @class TFNTwitterAccount;
 
+NSString* BHTSettingsKeyForSwitch(UISwitch* settingsSwitch);
+void BHTMarkNeoFreeBirdFontPicker(UIFontPickerViewController* picker,
+                                  NSString* fontType);
+NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker);
+
 @interface ModernSettingsPageViewController
     : UIViewController <UITableViewDataSource, UITableViewDelegate>
 
@@ -31,6 +36,7 @@
 - (void)buildSettingsList;
 
 - (void)updateVisibleToggles;
+- (nullable NSDictionary*)settingAtIndexPath:(NSIndexPath*)indexPath;
 - (void)switchChanged:(UISwitch*)sender;
 
 @end

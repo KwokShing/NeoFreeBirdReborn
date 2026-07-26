@@ -9,6 +9,7 @@
 #import "Download/DownloadInlineButton.h"
 #import <objc/runtime.h>
 #import "Core/BHTBundle.h"
+#import "Core/BHTManager.h"
 #import "Core/BHTSettings.h"
 
 #pragma mark - Helpers
@@ -114,11 +115,7 @@ static NSURL* BHTFallbackHLSURL(TFSTwitterEntityMedia* media) {
 }
 
 static NSURL* BHTTemporaryMediaURL(NSString* extension) {
-    NSString* filename =
-        [NSString stringWithFormat:@"%@.%@", NSUUID.UUID.UUIDString,
-                                   extension];
-    return [[NSURL fileURLWithPath:NSTemporaryDirectory()]
-        URLByAppendingPathComponent:filename];
+    return [BHTManager temporaryFileURLWithExtension:extension];
 }
 
 static NSURL* BHTOriginalPhotoURL(TFSTwitterEntityMedia* media) {
@@ -756,12 +753,25 @@ static NSString* BHTPhotoExtension(NSURL* sourceURL,
                     if (![BHTSettings boolForKey:@"direct_save"]) {
                         [BHTManager showSaveVC:outFile];
                     } else {
-                        [feedback
-                            notificationOccurred:UINotificationFeedbackTypeSuccess];
-                        if ([ext isEqualToString:@"gif"])
-                            [BHTManager saveGIF:outFile];
-                        else
-                            [BHTManager save:outFile];
+                        void (^saved)(BOOL, NSError*) =
+                            ^(BOOL success, NSError* error) {
+                                if (success) {
+                                    [feedback notificationOccurred:
+                                                  UINotificationFeedbackTypeSuccess];
+                                } else {
+                                    [feedback notificationOccurred:
+                                                  UINotificationFeedbackTypeError];
+                                    presentError(error.localizedDescription);
+                                }
+                                [[NSFileManager defaultManager]
+                                    removeItemAtURL:outFile
+                                             error:nil];
+                            };
+                        if ([ext isEqualToString:@"gif"]) {
+                            [BHTManager saveGIF:outFile completion:saved];
+                        } else {
+                            [BHTManager save:outFile completion:saved];
+                        }
                     }
                 });
             };
@@ -771,12 +781,8 @@ static NSString* BHTPhotoExtension(NSURL* sourceURL,
         // download depend on FFmpeg's HTTPS command parser.
         void (^downloadMP4)(NSURL*) = ^(NSURL* url) {
             showHUD(downloadingText);
-            NSURL* outFile = [[NSURL fileURLWithPath:NSTemporaryDirectory()]
-                URLByAppendingPathComponent:[NSString
-                                                stringWithFormat:@"%@.%@",
-                                                                 NSUUID.UUID
-                                                                     .UUIDString,
-                                                                 @"mp4"]];
+            NSURL* outFile =
+                [BHTManager temporaryFileURLWithExtension:@"mp4"];
             NSURLSessionDownloadTask* task =
                 [[NSURLSession sharedSession]
                     downloadTaskWithURL:url
@@ -822,12 +828,8 @@ static NSString* BHTPhotoExtension(NSURL* sourceURL,
             ^(NSArray<NSString*>* args, NSString* ext, double durationMs,
               NSURL* cleanupFile) {
             showHUD(downloadingText);
-            NSURL* outFile = [[NSURL fileURLWithPath:NSTemporaryDirectory()]
-                URLByAppendingPathComponent:[NSString
-                                                stringWithFormat:@"%@.%@",
-                                                                 NSUUID.UUID
-                                                                     .UUIDString,
-                                                                 ext]];
+            NSURL* outFile =
+                [BHTManager temporaryFileURLWithExtension:ext];
             NSMutableArray<NSString*>* command = [NSMutableArray arrayWithArray:@[
                 @"-y", @"-nostdin", @"-hide_banner", @"-loglevel", @"error"
             ]];
@@ -879,12 +881,7 @@ static NSString* BHTPhotoExtension(NSURL* sourceURL,
             ^(NSURL* url, double durationMs) {
                 showHUD(downloadingText);
                 NSURL* inputFile =
-                    [[NSURL fileURLWithPath:NSTemporaryDirectory()]
-                        URLByAppendingPathComponent:[NSString
-                                                        stringWithFormat:
-                                                            @"%@-source.mp4",
-                                                            NSUUID.UUID
-                                                                .UUIDString]];
+                    [BHTManager temporaryFileURLWithExtension:@"mp4"];
                 NSURLSessionDownloadTask* task =
                     [[NSURLSession sharedSession]
                         downloadTaskWithURL:url

@@ -13,8 +13,28 @@
 #import "Settings/ModernSettingsCells.h"
 #import "ThemeColor/Palette.h"
 
+static char kBHTSettingsPreferenceKeyAssociation;
+static char kBHTFontPickerTypeAssociation;
+
+NSString* BHTSettingsKeyForSwitch(UISwitch* settingsSwitch) {
+    return objc_getAssociatedObject(
+        settingsSwitch, &kBHTSettingsPreferenceKeyAssociation);
+}
+
+void BHTMarkNeoFreeBirdFontPicker(UIFontPickerViewController* picker,
+                                  NSString* fontType) {
+    objc_setAssociatedObject(picker, &kBHTFontPickerTypeAssociation,
+                             fontType, OBJC_ASSOCIATION_COPY_NONATOMIC);
+}
+
+NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
+    return objc_getAssociatedObject(picker,
+                                    &kBHTFontPickerTypeAssociation);
+}
+
 @interface ModernSettingsPageViewController ()
 @property (nonatomic, copy) NSString* registryPageKey;
+@property (nonatomic, copy) NSArray<NSDictionary*>* visibleSections;
 @end
 
 @implementation ModernSettingsPageViewController
@@ -111,12 +131,54 @@
         }
     }
     self.visibleToggles = [visible copy];
+
+    NSMutableArray<NSMutableDictionary*>* sections =
+        [NSMutableArray array];
+    NSMutableDictionary<NSString*, NSMutableDictionary*>* sectionsByKey =
+        [NSMutableDictionary dictionary];
+    for (NSDictionary* entry in visible) {
+        NSString* sectionKey = entry[@"sectionKey"] ?: @"";
+        NSMutableDictionary* section = sectionsByKey[sectionKey];
+        if (!section) {
+            section = [@{
+                @"titleKey": sectionKey,
+                @"settings": [NSMutableArray array]
+            } mutableCopy];
+            sectionsByKey[sectionKey] = section;
+            [sections addObject:section];
+        }
+        [section[@"settings"] addObject:entry];
+    }
+
+    NSMutableArray* immutableSections = [NSMutableArray array];
+    for (NSDictionary* section in sections) {
+        [immutableSections addObject:@{
+            @"titleKey": section[@"titleKey"],
+            @"settings": [section[@"settings"] copy]
+        }];
+    }
+    self.visibleSections = [immutableSections copy];
 }
 
 #pragma mark - UITableViewDataSource
 
+- (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
+    return self.visibleSections.count;
+}
+
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.visibleToggles.count;
+    if (section < 0 || section >= (NSInteger)self.visibleSections.count) {
+        return 0;
+    }
+    return [self.visibleSections[section][@"settings"] count];
+}
+
+- (NSDictionary*)settingAtIndexPath:(NSIndexPath*)indexPath {
+    if (indexPath.section >= self.visibleSections.count) return nil;
+    NSArray* settings =
+        self.visibleSections[indexPath.section][@"settings"];
+    if (indexPath.row >= settings.count) return nil;
+    return settings[indexPath.row];
 }
 
 // Title key defaults to KEY_TITLE; an explicit titleKey takes precedence.
@@ -147,7 +209,8 @@
 
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
-    NSDictionary* toggleData = self.visibleToggles[indexPath.row];
+    NSDictionary* toggleData = [self settingAtIndexPath:indexPath];
+    if (!toggleData) return [UITableViewCell new];
     NSString* type = toggleData[@"type"];
     if ([type isEqualToString:@"compactButton"]) {
         ModernSettingsCompactButtonCell* cell =
@@ -193,10 +256,15 @@
         BOOL isEnabled = [[[NSUserDefaults standardUserDefaults] objectForKey:key]
                               ?: toggleData[@"default"] boolValue];
         cell.toggleSwitch.on = isEnabled;
-        objc_setAssociatedObject(cell.toggleSwitch, @"prefKey", key, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [cell addTarget:self
-                      action:@selector(switchChanged:)
-            forControlEvents:UIControlEventValueChanged];
+        objc_setAssociatedObject(
+            cell.toggleSwitch, &kBHTSettingsPreferenceKeyAssociation, key,
+            OBJC_ASSOCIATION_COPY_NONATOMIC);
+        [cell.toggleSwitch removeTarget:self
+                                 action:@selector(switchChanged:)
+                       forControlEvents:UIControlEventValueChanged];
+        [cell.toggleSwitch addTarget:self
+                              action:@selector(switchChanged:)
+                    forControlEvents:UIControlEventValueChanged];
         return cell;
     }
 }
@@ -205,7 +273,8 @@
 
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    NSDictionary* data = self.visibleToggles[indexPath.row];
+    NSDictionary* data = [self settingAtIndexPath:indexPath];
+    if (!data) return;
     if ([data[@"type"] isEqualToString:@"button"] ||
         [data[@"type"] isEqualToString:@"compactButton"]) {
         NSString* actionName = data[@"action"];
@@ -224,39 +293,85 @@
 
 - (UIView*)tableView:(UITableView*)tableView viewForHeaderInSection:(NSInteger)section {
     UIView* header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 0)];
-    UILabel* label = [[UILabel alloc] init];
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    label.text = [[BHTBundle sharedBundle] localizedStringForKey:[self pageSubtitleKey]];
-    label.numberOfLines = 0;
-    id fontGroup = [BHTManager sharedFontGroup];
-    label.font = [fontGroup performSelector:@selector(subtext2Font)];
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id colorPalette = [[settings currentColorPalette] colorPalette];
-    UIColor* subtitleColor = [colorPalette performSelector:@selector(tabBarItemColor)];
-    label.textColor = subtitleColor;
-    [header addSubview:label];
-    [NSLayoutConstraint activateConstraints:@[
-        [label.leadingAnchor constraintEqualToAnchor:header.leadingAnchor
-                                            constant:20],
-        [label.trailingAnchor constraintEqualToAnchor:header.trailingAnchor
-                                             constant:-20],
-        [label.topAnchor constraintEqualToAnchor:header.topAnchor
-                                        constant:8],
-        [label.bottomAnchor constraintEqualToAnchor:header.bottomAnchor
-                                           constant:-8]
-    ]];
+    UIView* previous = nil;
+
+    if (section == 0) {
+        UILabel* detail = [UILabel new];
+        detail.translatesAutoresizingMaskIntoConstraints = NO;
+        detail.text = [[BHTBundle sharedBundle]
+            localizedStringForKey:[self pageSubtitleKey]];
+        detail.numberOfLines = 0;
+        detail.font =
+            [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+        detail.textColor = UIColor.secondaryLabelColor;
+        [header addSubview:detail];
+        [NSLayoutConstraint activateConstraints:@[
+            [detail.leadingAnchor
+                constraintEqualToAnchor:header.leadingAnchor
+                               constant:20],
+            [detail.trailingAnchor
+                constraintEqualToAnchor:header.trailingAnchor
+                               constant:-20],
+            [detail.topAnchor constraintEqualToAnchor:header.topAnchor
+                                              constant:8]
+        ]];
+        previous = detail;
+    }
+
+    NSString* sectionTitleKey =
+        section < (NSInteger)self.visibleSections.count
+            ? self.visibleSections[section][@"titleKey"]
+            : nil;
+    if (sectionTitleKey.length > 0) {
+        UILabel* title = [UILabel new];
+        title.translatesAutoresizingMaskIntoConstraints = NO;
+        title.text = [[BHTBundle sharedBundle]
+            localizedStringForKey:sectionTitleKey];
+        title.numberOfLines = 0;
+        title.font =
+            [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+        title.textColor = UIColor.labelColor;
+        [header addSubview:title];
+        NSLayoutYAxisAnchor* topAnchor =
+            previous ? previous.bottomAnchor : header.topAnchor;
+        CGFloat topSpacing = previous ? 18.0 : 10.0;
+        [NSLayoutConstraint activateConstraints:@[
+            [title.leadingAnchor
+                constraintEqualToAnchor:header.leadingAnchor
+                               constant:20],
+            [title.trailingAnchor
+                constraintEqualToAnchor:header.trailingAnchor
+                               constant:-20],
+            [title.topAnchor
+                constraintEqualToAnchor:topAnchor
+                               constant:topSpacing]
+        ]];
+        previous = title;
+    }
+
+    if (previous) {
+        [previous.bottomAnchor
+            constraintEqualToAnchor:header.bottomAnchor
+                           constant:-8]
+            .active = YES;
+    }
     return header;
 }
 
 - (CGFloat)tableView:(UITableView*)tableView heightForHeaderInSection:(NSInteger)section {
-    return UITableViewAutomaticDimension;
+    NSString* sectionTitleKey =
+        section < (NSInteger)self.visibleSections.count
+            ? self.visibleSections[section][@"titleKey"]
+            : nil;
+    return section == 0 || sectionTitleKey.length > 0
+               ? UITableViewAutomaticDimension
+               : CGFLOAT_MIN;
 }
 
 #pragma mark - Switch Handling
 
 - (void)switchChanged:(UISwitch*)sender {
-    NSString* key = objc_getAssociatedObject(sender, @"prefKey");
+    NSString* key = BHTSettingsKeyForSwitch(sender);
     if (key) {
         [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:key];
         [self updateAndAnimateChangesForKey:key];
@@ -264,47 +379,15 @@
 }
 
 - (void)updateAndAnimateChangesForKey:(NSString*)key {
-    NSArray* oldVisibleToggles = self.visibleToggles;
     [self updateVisibleToggles];
-    NSArray* newVisibleToggles = self.visibleToggles;
-    [self.tableView beginUpdates];
-    __block NSInteger toggleIndex = -1;
-    [oldVisibleToggles enumerateObjectsUsingBlock:^(NSDictionary* _Nonnull obj, NSUInteger idx,
-                                                    BOOL* _Nonnull stop) {
-        if ([obj[@"key"] isEqualToString:key]) {
-            toggleIndex = idx;
-            *stop = YES;
-        }
-    }];
-    if (toggleIndex == -1) {
-        [self.tableView endUpdates];
-        [self.tableView reloadData];
-        return;
-    }
-    NSMutableArray* children = [NSMutableArray array];
-    for (NSDictionary* toggleData in self.toggles) {
-        if ([toggleData[@"parentKey"] isEqualToString:key]) {
-            [children addObject:toggleData];
-        }
-    }
-    if (children.count == 0) {
-        [self.tableView endUpdates];
-        return;
-    }
-    BOOL isAdding = newVisibleToggles.count > oldVisibleToggles.count;
-    // Children are registered directly after their parent, so their rows are contiguous below it.
-    NSMutableArray* indexPaths = [NSMutableArray array];
-    for (int i = 0; i < children.count; i++) {
-        [indexPaths addObject:[NSIndexPath indexPathForRow:toggleIndex + 1 + i inSection:0]];
-    }
-    if (isAdding) {
-        [self.tableView insertRowsAtIndexPaths:indexPaths
-                              withRowAnimation:UITableViewRowAnimationAutomatic];
-    } else {
-        [self.tableView deleteRowsAtIndexPaths:indexPaths
-                              withRowAnimation:UITableViewRowAnimationAutomatic];
-    }
-    [self.tableView endUpdates];
+    [UIView transitionWithView:self.tableView
+                      duration:0.2
+                       options:UIViewAnimationOptionTransitionCrossDissolve |
+                               UIViewAnimationOptionAllowAnimatedContent
+                    animations:^{
+                        [self.tableView reloadData];
+                    }
+                    completion:nil];
 }
 
 @end

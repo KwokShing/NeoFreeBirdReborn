@@ -39,20 +39,37 @@
 }
 - (instancetype)initWithBundlePath:(NSURL*)bundlePath {
     if (self = [super init]) {
-        self.mainBundle = [NSBundle bundleWithPath:[bundlePath path]];
+        NSBundle* bundle =
+            bundlePath ? [NSBundle bundleWithURL:bundlePath] : nil;
+        self.mainBundle = bundle ?: [NSBundle mainBundle];
     }
 
     return self;
 }
 
 - (NSString*)localizedStringForKey:(NSString*)key {
-    return [self.mainBundle localizedStringForKey:key value:key table:nil];
+    if (key.length == 0) return @"";
+    NSString* value =
+        [self.mainBundle localizedStringForKey:key value:key table:nil];
+    if ([value isEqualToString:key]) {
+        NSString* englishPath =
+            [self.mainBundle pathForResource:@"en" ofType:@"lproj"];
+        NSBundle* englishBundle =
+            englishPath ? [NSBundle bundleWithPath:englishPath] : nil;
+        NSString* english =
+            [englishBundle localizedStringForKey:key
+                                            value:key
+                                            table:nil];
+        if (english.length > 0) value = english;
+    }
+    return value ?: key;
 }
 
 // Fetches one of Twitter's own strings, reusing the app's translations for
 // every language. These flow through the terminology rename hook like any app
 // string.
 - (NSString*)localizedTwitterStringForKey:(NSString*)key {
+    if (key.length == 0) return @"";
     static NSBundle* twitterBundle = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -62,7 +79,9 @@
         twitterBundle =
             path ? [NSBundle bundleWithPath:path] : [NSBundle mainBundle];
     });
-    return [twitterBundle localizedStringForKey:key value:key table:nil];
+    NSString* value =
+        [twitterBundle localizedStringForKey:key value:key table:nil];
+    return value ?: key;
 }
 - (NSURL*)pathForFile:(NSString*)fileName {
     return [self.mainBundle URLForResource:fileName withExtension:nil];

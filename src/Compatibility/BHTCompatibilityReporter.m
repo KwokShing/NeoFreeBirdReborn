@@ -12,12 +12,30 @@ static NSMutableDictionary<NSString*, NSMutableDictionary*>*
     BHTTimelineItemObservations;
 static NSMutableDictionary<NSString*, NSMutableDictionary*>*
     BHTMediaActionObservations;
+static NSUInteger BHTNavigationReportGeneration;
 
 static NSObject* BHTObservationLock(void) {
     static NSObject* lock;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{ lock = [NSObject new]; });
     return lock;
+}
+
+static dispatch_queue_t BHTCompatibilityReportQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create(
+            "com.neofreebird.compatibility-report",
+            DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+static NSArray<NSString*>* BHTNavigationEntryClassSnapshot(void) {
+    @synchronized(BHTObservationLock()) {
+        return [BHTNavigationEntryClasses copy] ?: @[];
+    }
 }
 
 static NSDictionary* BHTTimelineRuntimeShape(id item) {
@@ -233,7 +251,7 @@ static NSDictionary* BHTNavigationMethodSnapshot(void) {
     }
 
     NSMutableDictionary* entries = [NSMutableDictionary dictionary];
-    for (NSString* className in BHTNavigationEntryClasses ?: @[]) {
+    for (NSString* className in BHTNavigationEntryClassSnapshot()) {
         entries[className] =
             BHTInterestingMethodsForClass(NSClassFromString(className));
     }
@@ -322,6 +340,8 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"likes", @"T1TabbedAppNavigationViewController", @"recalculateVisiblePanels", NO),
         BHTProbe(@"likes", @"T1TabView", @"scribePage", NO),
         BHTProbe(@"likes", @"T1TabView", @"setSelected:", NO),
+        BHTProbe(@"likes", @"T1TabView", @"_t1_updateTitleLabel", NO),
+        BHTProbe(@"likes", @"T1TabView", @"_t1_updateImageViewAnimated:", NO),
         BHTProbe(@"likes", @"T1TwitterSwift.GrokAppNavigationTabEntry", @"rootTabViewController", NO),
 
         BHTProbe(@"sourceLabels", @"TFNTwitterStatus", @"composerSource", NO),
@@ -333,7 +353,8 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"home", @"TwitterHomeFeatureImplementation.HomeTimelineContainerViewController", @"tfn_supportsTabBarCollapsing", NO),
         BHTProbe(@"home", @"T1TabBarViewController", @"tfn_prefersTabBarPinned", NO),
         BHTProbe(@"home", @"T1FleetLineHeaderController", @"_t1_shouldShowFleetLine", NO),
-        BHTProbe(@"home", @"TUIUpdateIndicator", @"_recreatePillControlForContentNotification:", NO),
+        BHTProbe(@"home", @"TUIUpdateIndicator", @"_recreatePillControlForContentNotification:hideOnScroll:", NO),
+        BHTProbe(@"appearance", @"TwitterHome.HomeDefaultNavigationBarTitleViewPlugin", @"titleView", NO),
         BHTProbe(@"home", @"T1TwitterSwift.URTTimelineTopicCollectionViewModel", @"init", NO),
 
         BHTProbe(@"search", @"TTSRecentSearchesDatastore", @"_tse_setRecentSearch:", NO),
@@ -487,7 +508,7 @@ void BHTWriteCompatibilityReport(void) {
             @"visibleItems":
                 [BHTSidebarNavigationUtility visibleItemIDsInOrder]
         },
-        @"navigationEntryClasses": BHTNavigationEntryClasses ?: @[],
+        @"navigationEntryClasses": BHTNavigationEntryClassSnapshot(),
         @"navigationMethods": BHTNavigationMethodSnapshot(),
         @"timelineItemObservations": BHTTimelineObservationSnapshot(),
         @"mediaActionRuntime": BHTMediaActionObservationSnapshot(),
@@ -506,6 +527,22 @@ void BHTRecordNavigationEntryClasses(NSArray* entries) {
         NSString* name = NSStringFromClass([entry class]);
         if (name.length) [names addObject:name];
     }
-    BHTNavigationEntryClasses = names.array;
-    BHTWriteCompatibilityReport();
+    NSUInteger generation;
+    @synchronized(BHTObservationLock()) {
+        BHTNavigationEntryClasses = names.array;
+        generation = ++BHTNavigationReportGeneration;
+    }
+
+    // Tab visibility can be recalculated several times in one layout pass.
+    // Debounce the automatic report so JSON serialization and an atomic file
+    // write do not run synchronously for every intermediate tab array.
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW,
+                      (int64_t)(750 * NSEC_PER_MSEC)),
+        BHTCompatibilityReportQueue(), ^{
+            @synchronized(BHTObservationLock()) {
+                if (generation != BHTNavigationReportGeneration) return;
+            }
+            BHTWriteCompatibilityReport();
+        });
 }

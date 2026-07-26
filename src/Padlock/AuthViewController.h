@@ -15,6 +15,8 @@ NS_ASSUME_NONNULL_BEGIN
 // controller has already dismissed itself when this fires.
 @property (nonatomic, copy, nullable) void (^completion)(BOOL authenticated);
 
+- (void)retryAuthentication;
+
 @end
 
 NS_ASSUME_NONNULL_END

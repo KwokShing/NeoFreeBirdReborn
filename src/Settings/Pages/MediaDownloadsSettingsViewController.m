@@ -17,7 +17,7 @@
 
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
-    NSDictionary* setting = self.visibleToggles[indexPath.row];
+    NSDictionary* setting = [self settingAtIndexPath:indexPath];
     if ([setting[@"type"] isEqualToString:@"button"]) {
         ModernSettingsSimpleButtonCell* cell =
             [tableView dequeueReusableCellWithIdentifier:

@@ -19,7 +19,7 @@
 
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
-    NSDictionary* settingData = self.visibleToggles[indexPath.row];
+    NSDictionary* settingData = [self settingAtIndexPath:indexPath];
     if ([settingData[@"key"] isEqualToString:@"undo_tweet_timeout"]) {
         ModernSettingsCompactButtonCell* cell =
             [tableView dequeueReusableCellWithIdentifier:@"CompactButtonCell"

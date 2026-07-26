@@ -18,7 +18,7 @@ extern void applyHideCustomTimelinesSetting(void);
 
 - (void)switchChanged:(UISwitch*)sender {
     [super switchChanged:sender];
-    NSString* key = objc_getAssociatedObject(sender, @"prefKey");
+    NSString* key = BHTSettingsKeyForSwitch(sender);
     if ([key isEqualToString:@"hide_custom_timelines"]) {
         applyHideCustomTimelinesSetting();
     }

@@ -4,6 +4,7 @@
 //
 
 #import "HookHelpers.h"
+#import "Settings/ModernSettingsPageViewController.h"
 
 static UIFont* _Nonnull remapFont(UIFont* origFont) {
     UIFont* newFont = getDefaultFont(origFont);
@@ -54,6 +55,14 @@ static BOOL sectionsContainNeoFreeBirdEntry(NSArray* sections) {
 
 static TFNSettingsNavigationItem* makeNeoFreeBirdSettingsItem(
     TFNItemsDataViewController* settingsVC) {
+    Class itemClass = objc_getClass("TFNSettingsNavigationItem");
+    SEL initializer =
+        @selector(initWithTitle:detail:iconName:controllerFactory:);
+    if (!itemClass ||
+        ![itemClass instancesRespondToSelector:initializer]) {
+        return nil;
+    }
+
     UIColor* iconColor;
     if (@available(iOS 12.0, *)) {
         if (settingsVC.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
@@ -69,8 +78,12 @@ static TFNSettingsNavigationItem* makeNeoFreeBirdSettingsItem(
                                                 fitsSize:CGSizeMake(20, 20)
                                                fillColor:iconColor];
 
-    TFNTwitterAccount* account = [(T1GenericSettingsViewController*)settingsVC account];
-    TFNSettingsNavigationItem* bhtwitter = [[objc_getClass("TFNSettingsNavigationItem") alloc]
+    TFNTwitterAccount* account = nil;
+    if ([settingsVC respondsToSelector:@selector(account)]) {
+        account = ((id (*)(id, SEL))objc_msgSend)(
+            settingsVC, @selector(account));
+    }
+    TFNSettingsNavigationItem* bhtwitter = [[itemClass alloc]
             initWithTitle:[[BHTBundle sharedBundle] localizedStringForKey:@"NFB_SETTINGS_TITLE"]
                    detail:[[BHTBundle sharedBundle] localizedStringForKey:@"NFB_SETTINGS_DETAIL"]
                  iconName:nil
@@ -78,8 +91,12 @@ static TFNSettingsNavigationItem* makeNeoFreeBirdSettingsItem(
             return [BHTManager BHTSettingsWithAccount:account];
         }];
 
+    if (!bhtwitter) return nil;
     if (twitterIcon) {
-        [bhtwitter setValue:twitterIcon forKey:@"icon"];
+        @try {
+            [bhtwitter setValue:twitterIcon forKey:@"icon"];
+        } @catch (__unused NSException* exception) {
+        }
     }
 
     objc_setAssociatedObject(bhtwitter, SettingsEntryKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -90,7 +107,10 @@ static TFNSettingsNavigationItem* makeNeoFreeBirdSettingsItem(
 static NSArray* sectionsByInsertingEntry(TFNItemsDataViewController* settingsVC,
                                          NSArray* sections) {
     NSMutableArray* newSections = [sections mutableCopy] ?: [NSMutableArray array];
-    [newSections insertObject:@[makeNeoFreeBirdSettingsItem(settingsVC)] atIndex:0];
+    TFNSettingsNavigationItem* item =
+        makeNeoFreeBirdSettingsItem(settingsVC);
+    if (!item) return sections;
+    [newSections insertObject:@[item] atIndex:0];
     return newSections;
 }
 
@@ -157,6 +177,9 @@ static NSArray* sectionsWithNeoFreeBirdEntry(TFNItemsDataViewController* setting
 %hook UIFontPickerViewController
 - (void)viewWillAppear:(BOOL)arg1 {
     %orig(arg1);
+    if (BHTFontTypeForPicker(self).length == 0) {
+        return;
+    }
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
         initWithTitle:[[BHTBundle sharedBundle]
                           localizedStringForKey:@"CUSTOM_FONTS_NAVIGATION_BUTTON_TITLE"]

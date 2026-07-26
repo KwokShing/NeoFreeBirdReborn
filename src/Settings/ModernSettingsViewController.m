@@ -10,7 +10,6 @@
 #import "Core/BHTManager.h"
 #import "Settings/ModernSettingsCells.h"
 #import "Settings/ModernSettingsPageViewController.h"
-#import "Settings/ModernSettingsPlaceholderViewController.h"
 #import "Settings/Pages/AppearanceSettingsViewController.h"
 #import "Settings/Pages/DebugSettingsViewController.h"
 #import "Settings/Pages/MediaDownloadsSettingsViewController.h"
@@ -19,6 +18,20 @@
 #import "Settings/Pages/TweetsSettingsViewController.h"
 #import "Settings/Pages/WebSettingsViewController.h"
 #import "ThemeColor/Palette.h"
+
+static char kBHTRepresentedAvatarURLKey;
+static char kBHTAvatarTaskKey;
+static char kBHTAvatarRequestTokenKey;
+
+static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
+    static NSCache<NSString*, UIImage*>* cache;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cache = [NSCache new];
+        cache.countLimit = 32;
+    });
+    return cache;
+}
 
 @interface ModernSettingsViewController () <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong) TFNTwitterAccount* account;
@@ -231,21 +244,6 @@
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_BRANDING_SUBTITLE"],
             @"icon": @"hash_stroke",
             @"action": @"showBrandingSettings"
-        },
-        @{
-            @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_PRESETS_TITLE"],
-            @"subtitle":
-                [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_PRESETS_SUBTITLE"],
-            @"icon": @"receipt_checkmark_stroke",
-            @"action": @"showPresetsSettings"
-        },
-        @{
-            @"title":
-                [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_EXPERIMENTAL_TITLE"],
-            @"subtitle":
-                [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_EXPERIMENTAL_SUBTITLE"],
-            @"icon": @"flask",
-            @"action": @"showExperimentalSettings"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_DEBUG_TITLE"],
@@ -564,17 +562,63 @@
                                             fitsSize:CGSizeMake(18, 18)
                                            fillColor:subtitleColor];
     NSString* avatarURL = developer[@"avatarURL"];
-    if (avatarURL.length > 0) {
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSData* data = [NSData dataWithContentsOfURL:[NSURL URLWithString:avatarURL]];
-            UIImage* img = [UIImage imageWithData:data];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                avatarImageView.image = img ?: [UIImage systemImageNamed:@"person.circle.fill"];
-            });
-        });
-    } else {
-        avatarImageView.image = [UIImage systemImageNamed:@"person.circle.fill"];
+    UIImage* placeholder = [UIImage systemImageNamed:@"person.circle.fill"];
+    NSURLSessionDataTask* previousTask =
+        objc_getAssociatedObject(avatarImageView, &kBHTAvatarTaskKey);
+    [previousTask cancel];
+    objc_setAssociatedObject(avatarImageView, &kBHTAvatarTaskKey, nil,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(avatarImageView, &kBHTAvatarRequestTokenKey, nil,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    avatarImageView.image = placeholder;
+    objc_setAssociatedObject(
+        avatarImageView, &kBHTRepresentedAvatarURLKey, avatarURL,
+        OBJC_ASSOCIATION_COPY_NONATOMIC);
+    if (avatarURL.length == 0) return;
+
+    UIImage* cached = [BHTDeveloperAvatarCache() objectForKey:avatarURL];
+    if (cached) {
+        avatarImageView.image = cached;
+        return;
     }
+
+    NSURL* url = [NSURL URLWithString:avatarURL];
+    if (!url) return;
+    NSString* requestToken = NSUUID.UUID.UUIDString;
+    objc_setAssociatedObject(avatarImageView, &kBHTAvatarRequestTokenKey,
+                             requestToken,
+                             OBJC_ASSOCIATION_COPY_NONATOMIC);
+    NSURLSessionDataTask* task =
+        [[NSURLSession sharedSession]
+        dataTaskWithURL:url
+      completionHandler:^(NSData* data, NSURLResponse* response,
+                          NSError* error) {
+          UIImage* image =
+              error ? nil : [UIImage imageWithData:data];
+          if (image) {
+              [BHTDeveloperAvatarCache() setObject:image
+                                            forKey:avatarURL];
+          }
+          dispatch_async(dispatch_get_main_queue(), ^{
+              NSString* represented = objc_getAssociatedObject(
+                  avatarImageView, &kBHTRepresentedAvatarURLKey);
+              NSString* activeToken = objc_getAssociatedObject(
+                  avatarImageView, &kBHTAvatarRequestTokenKey);
+              if ([represented isEqualToString:avatarURL] &&
+                  [activeToken isEqualToString:requestToken]) {
+                  avatarImageView.image = image ?: placeholder;
+                  objc_setAssociatedObject(
+                      avatarImageView, &kBHTAvatarTaskKey, nil,
+                      OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                  objc_setAssociatedObject(
+                      avatarImageView, &kBHTAvatarRequestTokenKey, nil,
+                      OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+              }
+          });
+      }];
+    objc_setAssociatedObject(avatarImageView, &kBHTAvatarTaskKey, task,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [task resume];
 }
 
 #pragma mark - UITableViewDelegate
@@ -668,13 +712,6 @@
     [self.navigationController pushViewController:vc animated:YES];
 }
 
-- (void)showExperimentalSettings {
-    ModernSettingsPageViewController* vc =
-        [[ModernSettingsPageViewController alloc] initWithAccount:self.account
-                                                          pageKey:@"experimental"];
-    [self.navigationController pushViewController:vc animated:YES];
-}
-
 - (void)showDebugSettings {
     DebugSettingsViewController* vc =
         [[DebugSettingsViewController alloc] initWithAccount:self.account];
@@ -690,13 +727,6 @@
 
 - (void)showWebSettings {
     WebSettingsViewController* vc = [[WebSettingsViewController alloc] initWithAccount:self.account];
-    [self.navigationController pushViewController:vc animated:YES];
-}
-
-- (void)showPresetsSettings {
-    ModernSettingsPlaceholderViewController* vc = [[ModernSettingsPlaceholderViewController alloc]
-        initWithAccount:self.account
-               titleKey:@"MODERN_SETTINGS_PRESETS_TITLE"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 

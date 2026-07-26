@@ -11,17 +11,17 @@
 "CONFIRM_ALERT_MESSAGE" = "Sure you meant to do that?";
 
 /*Settings*/
-"MODERN_SETTINGS_LAYOUT_TITLE" = "General";
-"MODERN_SETTINGS_LAYOUT_SUBTITLE" = "Lock the app, keep the navigation bar visible, and more.";
+"MODERN_SETTINGS_LAYOUT_TITLE" = "Privacy and app lock";
+"MODERN_SETTINGS_LAYOUT_SUBTITLE" = "Protect the app and control screenshot privacy.";
 
-"MODERN_SETTINGS_MEDIA_TITLE" = "Photos and videos";
-"MODERN_SETTINGS_MEDIA_SUBTITLE" = "Download videos, enable video timestamps, and more.";
+"MODERN_SETTINGS_MEDIA_TITLE" = "Photos, video, and messages";
+"MODERN_SETTINGS_MEDIA_SUBTITLE" = "Organize downloads, media quality, playback, and message creation.";
 
-"MODERN_SETTINGS_APPEARANCE_TITLE" = "Appearance";
-"MODERN_SETTINGS_APPEARANCE_SUBTITLE" = "Make Twitter truly yours with themes, custom app icons, fonts, and more.";
+"MODERN_SETTINGS_APPEARANCE_TITLE" = "Appearance and navigation";
+"MODERN_SETTINGS_APPEARANCE_SUBTITLE" = "Customize themes, app icons, fonts, tabs, and the iPad sidebar.";
 
-"MODERN_SETTINGS_TIMELINES_TITLE" = "Timelines";
-"MODERN_SETTINGS_TIMELINES_SUBTITLE" = "Remove ads, follow suggestions, and other timeline clutter.";
+"MODERN_SETTINGS_TIMELINES_TITLE" = "Timeline and ads";
+"MODERN_SETTINGS_TIMELINES_SUBTITLE" = "Control ads, suggestions, timeline clutter, and timeline behavior.";
 
 "MODERN_SETTINGS_GROK_TITLE" = "Grok";
 "MODERN_SETTINGS_GROK_SUBTITLE" = "Hide Grok buttons and control automatic translations.";
@@ -38,11 +38,11 @@
 "MODERN_SETTINGS_PRESETS_TITLE" = "Presets";
 "MODERN_SETTINGS_PRESETS_SUBTITLE" = "Apply a set of pre-configured settings, or export and import your own.";
 
-"MODERN_SETTINGS_WEB_TITLE" = "Web and links";
-"MODERN_SETTINGS_WEB_SUBTITLE" = "Adjust how links and Twitter's in-app browser behave.";
+"MODERN_SETTINGS_WEB_TITLE" = "Web, links, and sharing";
+"MODERN_SETTINGS_WEB_SUBTITLE" = "Control shared links, tracking parameters, and browser behavior.";
 
 "MODERN_SETTINGS_BRANDING_TITLE" = "Branding";
-"MODERN_SETTINGS_BRANDING_SUBTITLE" = "Adjust how much of the Twitter branding reverts you see.";
+"MODERN_SETTINGS_BRANDING_SUBTITLE" = "Choose classic Twitter names, labels, and the Home bird logo.";
 
 "MODERN_SETTINGS_EXPERIMENTAL_TITLE" = "Labs";
 "MODERN_SETTINGS_EXPERIMENTAL_SUBTITLE" = "Try features we're currently testing.";
@@ -81,6 +81,7 @@
 "ALWAYS_OPEN_SAFARI_DETAIL" = "Open links in Safari or your default browser.";
 
 "SHARING_DOMAIN_TITLE" = "Sharing domain";
+"SHARING_DOMAIN_DETAIL" = "Choose the domain used when you copy or share post links.";
 
 /*Tweets*/
 "TWEET_TO_IMAGE_TITLE" = "Save Tweet as image";
@@ -104,13 +105,16 @@
 "HIDE_DOWNVOTE_BUTTON_DETAIL" = "Remove the downvote button from Tweets.";
 
 "DISABLE_SENSITIVE_TWEET_WARNINGS_TITLE" = "No sensitive content warnings";
+"DISABLE_SENSITIVE_TWEET_WARNINGS_DETAIL" = "Show media without X's sensitive-content interstitial when the account is allowed to view it.";
 
 "BYPASS_AGE_VERIFICATION_TITLE" = "Bypass age verification";
 "BYPASS_AGE_VERIFICATION_DETAIL" = "Skips the age verification flow for sensitive content.";
 
 "HIDE_GROK_ANALYZE_TITLE" = "Hide Grok analyze buttons";
+"HIDE_GROK_ANALYZE_DETAIL" = "Remove Grok analysis shortcuts from posts and media.";
 
 "HIDE_GROK_SIDEBAR_TITLE" = "Hide Grok in sidebar";
+"HIDE_GROK_SIDEBAR_DETAIL" = "Remove the Grok destination from X's side menu.";
 
 "HIDE_GROK_CREATE_TITLE" = "Hide Grok creation buttons";
 "HIDE_GROK_CREATE_DETAIL" = "Removes the options to create or edit images and videos with Grok.";
@@ -161,6 +165,7 @@
 "AUTO_HIGHEST_LOAD_DETAIL" = "Load the highest available image variant in timelines and the photo viewer without tapping a quality button.";
 
 "DISABLE_VIDEO_CAPTIONS_TITLE" = "No video captions";
+"DISABLE_VIDEO_CAPTIONS_DETAIL" = "Keep automatic caption overlays off in supported video players.";
 
 "FORCE_TWEET_FULL_FRAME_TITLE" = "Full-height timeline photos";
 "FORCE_TWEET_FULL_FRAME_DETAIL" = "Show the complete photo aspect ratio directly in timelines when X's native attachment supports it.";
@@ -169,6 +174,7 @@
 "RESTORE_VIDEO_TIMESTAMP_DETAIL" = "Shows timestamp on immersive player.";
 
 "DISABLE_IMMERSIVE_SCROLL_TITLE" = "No video feed scrolling";
+"DISABLE_IMMERSIVE_SCROLL_DETAIL" = "Keep swipe gestures from moving to another video in the immersive player.";
 
 /*Twitter Blue*/
 "HIDE_PROMOTED_TITLE" = "No ads";
@@ -208,9 +214,10 @@
 
 /*Layout*/
 "HIDE_SPACES_TITLE" = "Hide the Spaces bar";
+"HIDE_SPACES_DETAIL" = "Remove the live Spaces row from the top of the Home timeline.";
 
-"NO_TAB_BAR_HIDING_TITLE" = "Keep the navigation bar visible";
-"NO_TAB_BAR_HIDING_DETAIL" = "Don't fade the navigation bar when you scroll.";
+"NO_TAB_BAR_HIDING_TITLE" = "Keep phone navigation visible";
+"NO_TAB_BAR_HIDING_DETAIL" = "Prevent the iPhone tab bar from fading while you scroll. The iPad sidebar keeps X's adaptive width.";
 
 "HIDE_CUSTOM_TIMELINES_TITLE" = "Hide custom timelines";
 "HIDE_CUSTOM_TIMELINES_DETAIL" = "Remove the Add button from the home timeline tabs.";
@@ -225,6 +232,7 @@
 "DISABLE_RTL_DETAIL" = "Force a left-to-right layout, even for languages that are read from right-to-left.";
 
 "SHOW_SCROLL_INDICATOR_TITLE" = "Always show the scroll bar";
+"SHOW_SCROLL_INDICATOR_DETAIL" = "Keep the vertical scroll indicator visible on supported timelines.";
 
 "CUSTOM_FONTS_TITLE" = "Custom fonts";
 "CUSTOM_FONTS_DETAIL" = "Select a custom font for Twitter.";
@@ -274,8 +282,8 @@
 "RESTORE_TAB_LABELS_TITLE" = "Tab labels";
 "RESTORE_TAB_LABELS_DETAIL" = "Show labels under icons in the tab bar.";
 
-"COLOR_TWITTER_ICON_IN_TOP_BAR_TITLE" = "Color Twitter icon";
-"COLOR_TWITTER_ICON_IN_TOP_BAR_DETAIL" = "Applies the accent color to the Twitter icon in the top bar.";
+"COLOR_TWITTER_ICON_IN_TOP_BAR_TITLE" = "Twitter bird logo";
+"COLOR_TWITTER_ICON_IN_TOP_BAR_DETAIL" = "Replaces the X in the top bar with the classic Twitter bird and applies your accent color.";
 
 "REFRESH_PILL_TEXT" = "posted";
 "REFRESH_PILL_LABEL_TITLE" = "Add label to refresh pill";
@@ -404,3 +412,25 @@
 "LIKES_POSTS_SEGMENT" = "Posts";
 "LIKES_MEDIA_SEGMENT" = "Media";
 "LIKES_UNAVAILABLE_MESSAGE" = "The native Likes timeline is unavailable in this X build. Export the compatibility report from NeoFreeBird settings.";
+
+/* Organized settings subsections */
+"SETTINGS_SECTION_APP_LOCK" = "App lock";
+"SETTINGS_SECTION_SCREENSHOTS" = "Screenshot privacy";
+"SETTINGS_SECTION_VISUALS" = "Visual style";
+"SETTINGS_SECTION_NAVIGATION" = "Navigation";
+"SETTINGS_SECTION_MOTION_SOUND" = "Motion and sound";
+"SETTINGS_SECTION_FONTS" = "Fonts";
+"SETTINGS_SECTION_ADS_OFFERS" = "Ads and offers";
+"SETTINGS_SECTION_TIMELINE_CLEANUP" = "Timeline cleanup";
+"SETTINGS_SECTION_TIMELINE_BEHAVIOR" = "Timeline behavior";
+"SETTINGS_SECTION_DOWNLOADS_ACTIONS" = "Downloads and actions";
+"SETTINGS_SECTION_MESSAGES_CREATION" = "Messages and creation";
+"SETTINGS_SECTION_QUALITY_PLAYBACK" = "Quality and playback";
+"SETTINGS_SECTION_COMPOSING" = "Composing";
+"SETTINGS_SECTION_INTERACTIONS" = "Interactions";
+"SETTINGS_SECTION_SAFETY_CONTEXT" = "Safety and context";
+"SETTINGS_SECTION_PROFILE_ACTIONS" = "Profile actions";
+"SETTINGS_SECTION_PROFILE_TABS" = "Profile tabs";
+"SETTINGS_SECTION_PROFILE_APPEARANCE" = "Profile appearance";
+"SETTINGS_SECTION_LINKS_SHARING" = "Links and sharing";
+"SETTINGS_SECTION_BROWSER" = "Browser";
