@@ -4,6 +4,8 @@
 //
 
 #import "CustomTabBarNativeColors.h"
+#import "ThemeColor/BHTThemePresets.h"
+#import "ThemeColor/Palette.h"
 #import <objc/runtime.h>
 
 @interface UIColor (NativeTokens)
@@ -47,12 +49,18 @@ static id FNUIColors(void) {
 }
 
 UIColor* CustomTabBarCardBackgroundColor(void) {
+    UIColor* custom =
+        [Palette customThemeColorForRole:BHTThemeColorSurfaceKey];
+    if (custom) return custom;
     return Resolve(TwitterColors(),
                    @selector(subscriptionMarketingFeatureCardBackgroundColor),
                    [UIColor systemBackgroundColor]);
 }
 
 UIColor* CustomTabBarInactiveCardBackgroundColor(void) {
+    UIColor* custom = [Palette
+        customThemeColorForRole:BHTThemeColorElevatedSurfaceKey];
+    if (custom) return custom;
     return Resolve(
         TwitterColors(),
         @selector(tabCustomizationInactiveGridCellContainerBackgroundColor),
@@ -70,20 +78,32 @@ UIColor* CustomTabBarShadowColor(void) {
 }
 
 UIColor* CustomTabBarIconColor(void) {
+    UIColor* custom = [Palette
+        customThemeColorForRole:BHTThemeColorSecondaryTextKey];
+    if (custom) return custom;
     return Resolve(objc_getClass("T1TabView"), @selector(itemColor),
                    [UIColor labelColor]);
 }
 
 UIColor* CustomTabBarTitleColor(void) {
+    UIColor* custom =
+        [Palette customThemeColorForRole:BHTThemeColorTextKey];
+    if (custom) return custom;
     return Resolve(FNUIColors(), @selector(textColor), [UIColor labelColor]);
 }
 
 UIColor* CustomTabBarScreenBackgroundColor(void) {
+    UIColor* custom =
+        [Palette customThemeColorForRole:BHTThemeColorBackgroundKey];
+    if (custom) return custom;
     return Resolve(TwitterColors(), @selector(backgroundColor),
                    [UIColor systemBackgroundColor]);
 }
 
 UIColor* CustomTabBarSeparatorColor(void) {
+    UIColor* custom =
+        [Palette customThemeColorForRole:BHTThemeColorSeparatorKey];
+    if (custom) return custom;
     return Resolve(TwitterColors(), @selector(navigationBarShadowColor),
                    [UIColor separatorColor]);
 }

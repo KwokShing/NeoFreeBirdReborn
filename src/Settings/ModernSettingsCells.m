@@ -10,6 +10,8 @@
 #import "Headers/TWHeaders.h"
 #import "ThemeColor/Palette.h"
 
+extern UIColor* CurrentAccentColor(void);
+
 @implementation ModernSettingsTableViewCell
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
@@ -26,14 +28,14 @@
     self.iconImageView = [[UIImageView alloc] init];
     self.iconImageView.translatesAutoresizingMaskIntoConstraints = NO;
     self.iconImageView.contentMode = UIViewContentModeScaleAspectFit;
-    self.iconImageView.tintColor = [UIColor secondaryLabelColor];
+    self.iconImageView.tintColor = [Palette currentSecondaryTextColor];
     [self.contentView addSubview:self.iconImageView];
 
     self.titleLabel = [[UILabel alloc] init];
     self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     id fontGroup = [BHTManager sharedFontGroup];
     self.titleLabel.font = [fontGroup performSelector:@selector(bodyBoldFont)];
-    self.titleLabel.textColor = [UIColor labelColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
     [self.contentView addSubview:self.titleLabel];
 
     self.subtitleLabel = [[UILabel alloc] init];
@@ -48,7 +50,7 @@
     self.chevronImageView.contentMode = UIViewContentModeScaleAspectFit;
     [self.contentView addSubview:self.chevronImageView];
 
-    self.backgroundColor = [Palette currentBackgroundColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
     self.selectionStyle = UITableViewCellSelectionStyleDefault;
 }
 
@@ -88,44 +90,35 @@
     self.titleLabel.text = title;
     self.subtitleLabel.text = subtitle;
     objc_setAssociatedObject(self, @selector(iconName), iconName, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    self.backgroundColor = [Palette currentSurfaceColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
     [self updateIconColors];
+    [self updateSubtitleColor];
 }
 
 // Vector images bake in their fill color, so they are re-rendered on every theme change.
 - (void)updateIconColors {
     NSString* iconName = objc_getAssociatedObject(self, @selector(iconName));
     if (iconName) {
-        Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-        id settings = [TAEColorSettingsCls sharedSettings];
-        id currentPalette = [settings currentColorPalette];
-        id colorPalette = [currentPalette colorPalette];
-        UIColor* iconColor = [colorPalette performSelector:@selector(tabBarItemColor)];
+        UIColor* iconColor = [Palette currentSecondaryTextColor];
         self.iconImageView.image = [UIImage tfn_vectorImageNamed:iconName
                                                         fitsSize:CGSizeMake(20, 20)
                                                        fillColor:iconColor];
     }
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* chevronColor = [colorPalette performSelector:@selector(tabBarItemColor)];
+    UIColor* chevronColor = [Palette currentSecondaryTextColor];
     self.chevronImageView.image = [UIImage tfn_vectorImageNamed:@"chevron_right"
                                                        fitsSize:CGSizeMake(18, 18)
                                                       fillColor:chevronColor];
 }
 
 - (void)updateSubtitleColor {
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* subtitleColor = [colorPalette performSelector:@selector(tabBarItemColor)];
-    self.subtitleLabel.textColor = subtitleColor;
+    self.subtitleLabel.textColor = [Palette currentSecondaryTextColor];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
     [super traitCollectionDidChange:previousTraitCollection];
-    self.backgroundColor = [Palette currentBackgroundColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
     [self updateIconColors];
     [self updateSubtitleColor];
     if (previousTraitCollection.preferredContentSizeCategory !=
@@ -155,7 +148,7 @@
     self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     id fontGroup = [BHTManager sharedFontGroup];
     self.titleLabel.font = [fontGroup performSelector:@selector(bodyBoldFont)];
-    self.titleLabel.textColor = [UIColor labelColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
     [self.contentView addSubview:self.titleLabel];
 
     self.chevronImageView = [[UIImageView alloc] init];
@@ -163,7 +156,7 @@
     self.chevronImageView.contentMode = UIViewContentModeScaleAspectFit;
     [self.contentView addSubview:self.chevronImageView];
 
-    self.backgroundColor = [Palette currentBackgroundColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
     self.selectionStyle = UITableViewCellSelectionStyleDefault;
     [self updateChevronColor];
 }
@@ -190,14 +183,13 @@
 
 - (void)configureWithTitle:(NSString*)title {
     self.titleLabel.text = title;
+    self.titleLabel.textColor = [Palette currentTextColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
+    [self updateChevronColor];
 }
 
 - (void)updateChevronColor {
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* chevronColor = [colorPalette performSelector:@selector(tabBarItemColor)];
+    UIColor* chevronColor = [Palette currentSecondaryTextColor];
     self.chevronImageView.image = [UIImage tfn_vectorImageNamed:@"chevron_right"
                                                        fitsSize:CGSizeMake(18, 18)
                                                       fillColor:chevronColor];
@@ -205,7 +197,8 @@
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
     [super traitCollectionDidChange:previousTraitCollection];
-    self.backgroundColor = [Palette currentBackgroundColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
     [self updateChevronColor];
     if (previousTraitCollection.preferredContentSizeCategory !=
         self.traitCollection.preferredContentSizeCategory) {
@@ -233,7 +226,7 @@
     self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     id fontGroup = [BHTManager sharedFontGroup];
     self.titleLabel.font = [fontGroup performSelector:@selector(bodyBoldFont)];
-    self.titleLabel.textColor = [UIColor labelColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
     [self.contentView addSubview:self.titleLabel];
 
     self.subtitleLabel = [[UILabel alloc] init];
@@ -248,7 +241,7 @@
     self.chevronImageView.contentMode = UIViewContentModeScaleAspectFit;
     [self.contentView addSubview:self.chevronImageView];
 
-    self.backgroundColor = [Palette currentBackgroundColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
     self.selectionStyle = UITableViewCellSelectionStyleDefault;
     [self updateChevronColor];
 }
@@ -287,31 +280,27 @@
 - (void)configureWithTitle:(NSString*)title subtitle:(NSString*)subtitle {
     self.titleLabel.text = title;
     self.subtitleLabel.text = subtitle;
+    self.titleLabel.textColor = [Palette currentTextColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
+    [self updateChevronColor];
+    [self updateSubtitleColor];
 }
 
 - (void)updateChevronColor {
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* chevronColor = [colorPalette performSelector:@selector(tabBarItemColor)];
+    UIColor* chevronColor = [Palette currentSecondaryTextColor];
     self.chevronImageView.image = [UIImage tfn_vectorImageNamed:@"chevron_right"
                                                        fitsSize:CGSizeMake(18, 18)
                                                       fillColor:chevronColor];
 }
 
 - (void)updateSubtitleColor {
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* subtitleColor = [colorPalette performSelector:@selector(tabBarItemColor)];
-    self.subtitleLabel.textColor = subtitleColor;
+    self.subtitleLabel.textColor = [Palette currentSecondaryTextColor];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
     [super traitCollectionDidChange:previousTraitCollection];
-    self.backgroundColor = [Palette currentBackgroundColor];
+    self.backgroundColor = [Palette currentSurfaceColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
     [self updateChevronColor];
     [self updateSubtitleColor];
     if (previousTraitCollection.preferredContentSizeCategory !=
@@ -331,7 +320,7 @@
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
         self.selectionStyle = UITableViewCellSelectionStyleNone;
-        self.backgroundColor = [Palette currentBackgroundColor];
+        self.backgroundColor = [Palette currentSurfaceColor];
         self.titleLabel = [UILabel new];
         self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [self.contentView addSubview:self.titleLabel];
@@ -367,6 +356,7 @@
 - (void)configureWithTitle:(NSString*)title subtitle:(NSString*)subtitle {
     self.titleLabel.text = title;
     self.subtitleLabel.text = subtitle;
+    [self applyTheme];
 }
 
 - (void)addTarget:(id)target action:(SEL)action forControlEvents:(UIControlEvents)events {
@@ -377,11 +367,10 @@
     id fontGroup = [BHTManager sharedFontGroup];
     self.titleLabel.font = [fontGroup performSelector:@selector(bodyBoldFont)];
     self.subtitleLabel.font = [fontGroup performSelector:@selector(subtext2Font)];
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id colorPalette = [[settings currentColorPalette] colorPalette];
-    self.titleLabel.textColor = [colorPalette performSelector:@selector(textColor)];
-    self.subtitleLabel.textColor = [colorPalette performSelector:@selector(tabBarItemColor)];
+    self.backgroundColor = [Palette currentSurfaceColor];
+    self.titleLabel.textColor = [Palette currentTextColor];
+    self.subtitleLabel.textColor = [Palette currentSecondaryTextColor];
+    self.toggleSwitch.onTintColor = CurrentAccentColor();
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {

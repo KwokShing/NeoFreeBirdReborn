@@ -5,6 +5,13 @@
 
 NSString* const BHTThemeDidChangeNotification =
     @"BHTThemeDidChangeNotification";
+NSString* const BHTThemeColorAccentKey = @"accent";
+NSString* const BHTThemeColorBackgroundKey = @"background";
+NSString* const BHTThemeColorSurfaceKey = @"surface";
+NSString* const BHTThemeColorElevatedSurfaceKey = @"elevatedSurface";
+NSString* const BHTThemeColorTextKey = @"text";
+NSString* const BHTThemeColorSecondaryTextKey = @"secondaryText";
+NSString* const BHTThemeColorSeparatorKey = @"separator";
 
 @implementation BHTThemePresets
 
@@ -19,13 +26,45 @@ NSString* const BHTThemeDidChangeNotification =
                 @"detailKey": @"THEME_PRESET_APOLLO_DETAIL",
                 // Apollo-inspired, not an assertion that this is Apollo's
                 // proprietary exact palette.
-                @"accentHex": @"#0A84FF"
+                @"accentHex": @"#0A84FF",
+                @"lightColors": @{
+                    BHTThemeColorBackgroundKey: @"#F6F7F9",
+                    BHTThemeColorSurfaceKey: @"#FFFFFF",
+                    BHTThemeColorElevatedSurfaceKey: @"#E9EEF3",
+                    BHTThemeColorTextKey: @"#121417",
+                    BHTThemeColorSecondaryTextKey: @"#68717D",
+                    BHTThemeColorSeparatorKey: @"#D8DEE5"
+                },
+                @"darkColors": @{
+                    BHTThemeColorBackgroundKey: @"#0B0E11",
+                    BHTThemeColorSurfaceKey: @"#151A20",
+                    BHTThemeColorElevatedSurfaceKey: @"#202832",
+                    BHTThemeColorTextKey: @"#F5F7FA",
+                    BHTThemeColorSecondaryTextKey: @"#9AA6B2",
+                    BHTThemeColorSeparatorKey: @"#2A3540"
+                }
             },
             @{
                 @"identifier": @"classic_twitter",
                 @"titleKey": @"THEME_PRESET_CLASSIC_TWITTER_TITLE",
                 @"detailKey": @"THEME_PRESET_CLASSIC_TWITTER_DETAIL",
-                @"accentHex": @"#1DA1F2"
+                @"accentHex": @"#1DA1F2",
+                @"lightColors": @{
+                    BHTThemeColorBackgroundKey: @"#FFFFFF",
+                    BHTThemeColorSurfaceKey: @"#F5F8FA",
+                    BHTThemeColorElevatedSurfaceKey: @"#E1E8ED",
+                    BHTThemeColorTextKey: @"#14171A",
+                    BHTThemeColorSecondaryTextKey: @"#657786",
+                    BHTThemeColorSeparatorKey: @"#E1E8ED"
+                },
+                @"darkColors": @{
+                    BHTThemeColorBackgroundKey: @"#15202B",
+                    BHTThemeColorSurfaceKey: @"#192734",
+                    BHTThemeColorElevatedSurfaceKey: @"#253341",
+                    BHTThemeColorTextKey: @"#FFFFFF",
+                    BHTThemeColorSecondaryTextKey: @"#8899A6",
+                    BHTThemeColorSeparatorKey: @"#38444D"
+                }
             },
             @{
                 @"identifier": @"native_blue",
@@ -64,6 +103,45 @@ NSString* const BHTThemeDidChangeNotification =
                           [Palette normalizedHexString:presetHex]]
                ? stored
                : nil;
+}
+
++ (NSDictionary<NSString*, UIColor*>*)
+    activeAppColorsForDarkAppearance:(BOOL)darkAppearance {
+    NSDictionary* preset =
+        [self presetForIdentifier:[self activePresetIdentifier]];
+    NSString* mapKey =
+        darkAppearance ? @"darkColors" : @"lightColors";
+    NSDictionary* rawColors =
+        [preset[mapKey] isKindOfClass:NSDictionary.class]
+            ? preset[mapKey]
+            : nil;
+    if (!rawColors) return nil;
+
+    NSArray<NSString*>* requiredRoles = @[
+        BHTThemeColorBackgroundKey,
+        BHTThemeColorSurfaceKey,
+        BHTThemeColorElevatedSurfaceKey,
+        BHTThemeColorTextKey,
+        BHTThemeColorSecondaryTextKey,
+        BHTThemeColorSeparatorKey
+    ];
+    NSMutableDictionary<NSString*, UIColor*>* colors =
+        [NSMutableDictionary dictionaryWithCapacity:requiredRoles.count + 1];
+    for (NSString* role in requiredRoles) {
+        UIColor* color = [Palette colorFromHexString:rawColors[role]];
+        // Reject an incomplete preset atomically. A partial palette could
+        // combine incompatible native and custom text/background colors.
+        if (!color) return nil;
+        colors[role] = color;
+    }
+
+    id accentHex = preset[@"accentHex"];
+    if ([accentHex isKindOfClass:NSString.class]) {
+        UIColor* accent = [Palette colorFromHexString:accentHex];
+        if (!accent) return nil;
+        colors[BHTThemeColorAccentKey] = accent;
+    }
+    return [colors copy];
 }
 
 + (BOOL)applyPresetIdentifier:(NSString*)identifier {

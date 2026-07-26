@@ -7,11 +7,26 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
+@interface BHTRailBrandingObservationState : NSObject
+@property(nonatomic, weak) UIImageView* logoView;
+@property(nonatomic, copy) NSString* resolution;
+@property(nonatomic) CGRect hostBounds;
+@property(nonatomic) CGRect logoFrame;
+@property(nonatomic) UIEdgeInsets safeAreaInsets;
+@property(nonatomic) NSUInteger candidateCount;
+@property(nonatomic) BOOL birdApplied;
+@end
+
+@implementation BHTRailBrandingObservationState
+@end
+
+static char kBHTRailBrandingObservationStateKey;
 static NSArray<NSString*>* BHTNavigationEntryClasses;
 static NSMutableDictionary<NSString*, NSMutableDictionary*>*
     BHTTimelineItemObservations;
 static NSMutableDictionary<NSString*, NSMutableDictionary*>*
     BHTMediaActionObservations;
+static NSDictionary* BHTRailBrandingObservation;
 static NSUInteger BHTNavigationReportGeneration;
 
 static NSObject* BHTObservationLock(void) {
@@ -137,6 +152,73 @@ static NSDictionary* BHTTimelineObservationSnapshot(void) {
             }];
     }
     return [snapshot copy];
+}
+
+void BHTRecordRailBrandingObservation(NSString* resolution,
+                                      UIView* hostView,
+                                      UIImageView* logoView,
+                                      NSUInteger candidateCount) {
+    if (!hostView) return;
+    NSString* resolved = resolution ?: @"unresolved";
+    CGRect logoFrame =
+        logoView ? [logoView convertRect:logoView.bounds toView:hostView]
+                 : CGRectNull;
+    UIEdgeInsets safeAreaInsets = hostView.safeAreaInsets;
+    BOOL birdApplied =
+        [logoView.accessibilityLabel isEqualToString:@"Twitter"];
+    BHTRailBrandingObservationState* state =
+        objc_getAssociatedObject(
+            hostView, &kBHTRailBrandingObservationStateKey);
+    if (!state) {
+        state = [BHTRailBrandingObservationState new];
+        objc_setAssociatedObject(
+            hostView, &kBHTRailBrandingObservationStateKey, state,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    // Rail layout can run alongside timeline scrolling. Avoid allocating
+    // frame strings and dictionaries unless the compatibility state actually
+    // changed.
+    BOOL unchanged =
+        state.logoView == logoView &&
+        [state.resolution isEqualToString:resolved] &&
+        CGRectEqualToRect(state.hostBounds, hostView.bounds) &&
+        CGRectEqualToRect(state.logoFrame, logoFrame) &&
+        UIEdgeInsetsEqualToEdgeInsets(state.safeAreaInsets,
+                                     safeAreaInsets) &&
+        state.candidateCount == candidateCount &&
+        state.birdApplied == birdApplied;
+    if (unchanged) return;
+
+    state.logoView = logoView;
+    state.resolution = resolved;
+    state.hostBounds = hostView.bounds;
+    state.logoFrame = logoFrame;
+    state.safeAreaInsets = safeAreaInsets;
+    state.candidateCount = candidateCount;
+    state.birdApplied = birdApplied;
+
+    NSDictionary* observation = @{
+        @"resolution": resolved,
+        @"hostClass": NSStringFromClass(hostView.class) ?: @"",
+        @"hostBounds": NSStringFromCGRect(hostView.bounds),
+        @"safeAreaInsets": NSStringFromUIEdgeInsets(safeAreaInsets),
+        @"candidateCount": @(candidateCount),
+        @"logoClass":
+            logoView ? (NSStringFromClass(logoView.class) ?: @"") : @"",
+        @"logoFrame":
+            logoView ? NSStringFromCGRect(logoFrame) : @"",
+        @"birdApplied": @(birdApplied)
+    };
+    @synchronized(BHTObservationLock()) {
+        BHTRailBrandingObservation = observation;
+    }
+}
+
+static NSDictionary* BHTRailBrandingObservationSnapshot(void) {
+    @synchronized(BHTObservationLock()) {
+        return [BHTRailBrandingObservation copy] ?: @{};
+    }
 }
 
 void BHTRecordMediaActionObservation(NSString* stage,
@@ -355,6 +437,7 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"home", @"TwitterHomeFeatureImplementation.HomeTimelineContainerViewController", @"tfn_supportsTabBarCollapsing", NO),
         BHTProbe(@"home", @"T1TabBarViewController", @"tfn_prefersTabBarPinned", NO),
         BHTProbe(@"appearance", @"T1TabBarHostView", @"logoImageView", NO),
+        BHTProbe(@"appearance", @"T1TabBarHostView", @"tabBarViewController", NO),
         BHTProbe(@"home", @"T1FleetLineHeaderController", @"_t1_shouldShowFleetLine", NO),
         BHTProbe(@"home", @"TUIUpdateIndicator", @"_recreatePillControlForContentNotification:hideOnScroll:", NO),
         BHTProbe(@"appearance", @"TwitterHome.HomeDefaultNavigationBarTitleViewPlugin", @"titleView", NO),
@@ -362,6 +445,8 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"appearance", @"T1AnimatedLaunchScreenView", @"animateRevealWithCompletion:", NO),
         BHTProbe(@"appearance", @"TAEColorSettings", @"currentColorPalette", NO),
         BHTProbe(@"appearance", @"TAEColorSettings", @"setCurrentColorPalette:", NO),
+        BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyTheme", YES),
+        BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyPrimaryColorOption", YES),
         BHTProbe(@"home", @"T1TwitterSwift.URTTimelineTopicCollectionViewModel", @"init", NO),
 
         BHTProbe(@"search", @"TTSRecentSearchesDatastore", @"_tse_setRecentSearch:", NO),
@@ -519,6 +604,7 @@ void BHTWriteCompatibilityReport(void) {
         @"navigationMethods": BHTNavigationMethodSnapshot(),
         @"timelineItemObservations": BHTTimelineObservationSnapshot(),
         @"mediaActionRuntime": BHTMediaActionObservationSnapshot(),
+        @"railBrandingRuntime": BHTRailBrandingObservationSnapshot(),
         @"probes": probes
     };
 

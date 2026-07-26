@@ -145,6 +145,13 @@ def main() -> None:
         "UIUserInterfaceIdiomPad",
         "T1TabBarHostView",
         "BHTRailHeaderLogoImageView",
+        "BHTGuardedRailHeaderImageScan",
+        "BHTRailHeaderCandidateBelongsToTab",
+        "kBHTRailResolvedLogoViewKey",
+        "kBHTOriginalRailLogoStateCapturedKey",
+        "kBHTOriginalRailLogoAccessibilityLabelKey",
+        "CGRectGetMaxY(frame) > headerBottom",
+        '@"guardedHeaderScan"',
         "BHTThemeDidChangeNotification",
         "logoView.hidden = enabled && usesPadRail",
     ):
@@ -159,7 +166,12 @@ def main() -> None:
     ).read_text(encoding="utf-8")
     for required in (
         'BHTProbe(@"appearance", @"T1TabBarHostView", @"logoImageView", NO)',
+        'BHTProbe(@"appearance", @"T1TabBarHostView", @"tabBarViewController", NO)',
         'BHTProbe(@"appearance", @"TAEColorSettings", @"currentColorPalette", NO)',
+        'BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyTheme", YES)',
+        '@"railBrandingRuntime": BHTRailBrandingObservationSnapshot()',
+        "BHTRailBrandingObservationState",
+        "if (unchanged) return;",
     ):
         if required not in compatibility_source:
             raise AssertionError(
@@ -203,6 +215,13 @@ def main() -> None:
         '@"classic_twitter"',
         '@"#1DA1F2"',
         '@"native_blue"',
+        '@"lightColors"',
+        '@"darkColors"',
+        "BHTThemeColorBackgroundKey",
+        "BHTThemeColorSurfaceKey",
+        "BHTThemeColorTextKey",
+        "BHTThemeColorSeparatorKey",
+        "activeAppColorsForDarkAppearance",
         "respondsToSelector:@selector(setPrimaryColorOption:)",
     ):
         if required not in theme_preset_source:
@@ -218,6 +237,14 @@ def main() -> None:
     ).read_text(encoding="utf-8")
     for required in (
         "BHTPrimaryColorMethodIsCompatible",
+        "BHTColorGetterMethodIsCompatible",
+        "BHTConfigureFullThemeForPalette",
+        "BHTOriginalColorGetterIMP",
+        "BHTVoidObjectSetterIsCompatible",
+        "if (colors.count == 0) return;",
+        "return original ?",
+        '@"_t1_applyTheme"',
+        "@selector(setCurrentColorPalette:)",
         "method_getReturnType",
         "class_addMethod",
         "BHTSettingsProfileDidApplyNotification",
@@ -232,12 +259,31 @@ def main() -> None:
     ).read_text(encoding="utf-8")
     for required in (
         "BHTCustomAccentCacheIsValid",
+        "BHTAppThemeColorCacheIsValid",
+        "customThemeColorsForDarkAppearance",
+        "currentSurfaceColor",
+        "currentTextColor",
+        "currentSeparatorColor",
         "invalidateCustomAccentColorCache",
         "BHTSettingsProfileDidApplyNotification",
     ):
         if required not in palette_source:
             raise AssertionError(
                 f"Missing custom-accent cache invariant: {required}"
+            )
+
+    editor_colors_source = (
+        ROOT / "src" / "CustomTabBar" / "CustomTabBarNativeColors.m"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "BHTThemeColorBackgroundKey",
+        "BHTThemeColorSurfaceKey",
+        "BHTThemeColorTextKey",
+        "BHTThemeColorSeparatorKey",
+    ):
+        if required not in editor_colors_source:
+            raise AssertionError(
+                f"Missing themed editor color invariant: {required}"
             )
 
     modern_settings_source = (
@@ -249,6 +295,8 @@ def main() -> None:
         'setting[@"sectionKey"]',
         'page[@"subtitle"]',
         "showPresetSettings",
+        "BHTThemeDidChangeNotification",
+        "currentSurfaceColor",
     ):
         if required not in modern_settings_source:
             raise AssertionError(
@@ -290,6 +338,10 @@ def main() -> None:
             raise AssertionError(
                 f"Missing settings/theme localization: {required_key}"
             )
+    if "coordinated app palette" not in english_source.lower():
+        raise AssertionError(
+            "Theme settings still describe presets as accent-only"
+        )
 
     launch_source = (
         ROOT / "src" / "Hooks" / "AppLifecycle.x"
@@ -312,6 +364,13 @@ def main() -> None:
         "BHTPendingMediaImageRequests",
         "imageRequestsCoalesced",
         "if (!token.cancelled) completion(image)",
+        '"viewerPresentation": @"windowFullScreen"',
+        "BHTFullScreenPresenterForController",
+        "UIModalPresentationFullScreen",
+        "toView.frame = container.bounds",
+        "UIScrollViewContentInsetAdjustmentNever",
+        "supportedInterfaceOrientations",
+        "viewerFullScreenCoverage",
     ):
         if required not in likes_source:
             raise AssertionError(

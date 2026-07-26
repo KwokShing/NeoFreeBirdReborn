@@ -274,14 +274,14 @@
 
 /*Theme*/
 "THEME_SETTINGS_NAVIGATION_TITLE" = "Theme";
-"THEME_SETTINGS_NAVIGATION_DETAIL" = "Choose a theme color for your Twitter experience. This can only be seen by you.";
+"THEME_SETTINGS_NAVIGATION_DETAIL" = "Choose a coordinated app palette for backgrounds, tweets, settings, text, and accents—or select a standalone accent color. This can only be seen by you.";
 "THEME_PRESETS_SECTION_TITLE" = "Theme presets";
 "THEME_PRESET_APOLLO_TITLE" = "Apollo-inspired blue";
-"THEME_PRESET_APOLLO_DETAIL" = "A clean, comfortable blue inspired by Apollo’s Default (blue).";
+"THEME_PRESET_APOLLO_DETAIL" = "A calm blue with coordinated light and dark backgrounds, surfaces, and text inspired by Apollo’s Default (blue).";
 "THEME_PRESET_CLASSIC_TWITTER_TITLE" = "Classic Twitter blue";
-"THEME_PRESET_CLASSIC_TWITTER_DETAIL" = "The familiar #1DA1F2 accent from classic Twitter.";
+"THEME_PRESET_CLASSIC_TWITTER_DETAIL" = "Classic Twitter blue with familiar light and dim timeline, tweet, and settings colors.";
 "THEME_PRESET_NATIVE_BLUE_TITLE" = "Native X blue";
-"THEME_PRESET_NATIVE_BLUE_DETAIL" = "Use X’s built-in blue and native color behavior.";
+"THEME_PRESET_NATIVE_BLUE_DETAIL" = "Use X’s built-in blue and leave every app surface on its native color behavior.";
 
 "PREFERENCE_PROFILES_SECTION_TITLE" = "Preference profiles";
 "PREFERENCE_PROFILES_FOOTER" = "Profiles contain only NeoFreeBird settings and layout choices. Account data, passwords, cookies, and cached media are never included. Some imported changes take effect after reopening the app.";

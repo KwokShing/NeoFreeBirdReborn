@@ -27,6 +27,13 @@
     [self setupTable];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.view.backgroundColor = [Palette currentBackgroundColor];
+    self.tableView.backgroundColor = [Palette currentBackgroundColor];
+    [self.tableView reloadData];
+}
+
 - (void)setupNav {
     NSString* titleKey =
         self.navigationTitleKey.length > 0 ? self.navigationTitleKey : @"NFB_SETTINGS_TITLE";
@@ -80,6 +87,7 @@
 
 - (UIView*)tableView:(UITableView*)tableView viewForHeaderInSection:(NSInteger)section {
     UIView* header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 0)];
+    header.backgroundColor = [Palette currentBackgroundColor];
 
     UILabel* titleLabel = [[UILabel alloc] init];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -103,14 +111,8 @@
         }
     }
 
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id colorPalette = [[settings currentColorPalette] colorPalette];
-    UIColor* titleColor = [colorPalette performSelector:@selector(textColor)];
-    UIColor* subtitleColor = [colorPalette performSelector:@selector(tabBarItemColor)];
-
-    titleLabel.textColor = titleColor;
-    detailLabel.textColor = subtitleColor;
+    titleLabel.textColor = [Palette currentTextColor];
+    detailLabel.textColor = [Palette currentSecondaryTextColor];
 
     UIStackView* stack = [[UIStackView alloc] initWithArrangedSubviews:@[titleLabel, detailLabel]];
     stack.translatesAutoresizingMaskIntoConstraints = NO;

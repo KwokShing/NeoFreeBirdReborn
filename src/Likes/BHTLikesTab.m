@@ -52,6 +52,12 @@ static NSMutableDictionary* BHTMutableLikesDiagnostics(void) {
             @"waterfallActionSheet": @"UIContextMenuInteraction",
             @"waterfallActionFallback": @"TFNMenuSheetViewController",
             @"viewerDismissal": @"percentDrivenModal",
+            @"viewerPresentation": @"windowFullScreen",
+            @"viewerRotationPolicy": @"deviceAndHostSupported",
+            @"viewerFullScreenAttempts": @0,
+            @"viewerFullScreenActivations": @0,
+            @"viewerFullScreenMeasured": @NO,
+            @"viewerFullScreenCoverage": @NO,
             @"decodedImageCacheLimitMB": @128,
             @"imageRequestPolicy": @"coalescedByURLAndPixelBucket",
             @"imageRequestsStarted": @0,
@@ -1427,9 +1433,15 @@ BHTLikedMediaContextConfiguration(
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.edgesForExtendedLayout = UIRectEdgeAll;
+    self.extendedLayoutIncludesOpaqueBars = YES;
     self.view.backgroundColor = UIColor.blackColor;
     self.scrollView = [[UIScrollView alloc] initWithFrame:self.view.bounds];
     self.scrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    if (@available(iOS 11.0, *)) {
+        self.scrollView.contentInsetAdjustmentBehavior =
+            UIScrollViewContentInsetAdjustmentNever;
+    }
     self.scrollView.minimumZoomScale = 1;
     self.scrollView.maximumZoomScale = 6;
     self.scrollView.directionalLockEnabled = YES;
@@ -1565,13 +1577,14 @@ BHTLikedMediaContextConfiguration(
         [self transitionDuration:transitionContext];
 
     if (self.presenting) {
-        UIViewController* toController =
-            [transitionContext
-                viewControllerForKey:
-                    UITransitionContextToViewControllerKey];
-        toView.frame =
-            [transitionContext finalFrameForViewController:
-                                   toController];
+        // A host controller embedded in X's iPad column hierarchy can supply
+        // an adaptive final frame even for a full-screen modal. The media
+        // viewer is intentionally window-level, so its custom transition must
+        // use the presentation container rather than inherit that column.
+        toView.frame = container.bounds;
+        toView.autoresizingMask =
+            UIViewAutoresizingFlexibleWidth |
+            UIViewAutoresizingFlexibleHeight;
         toView.alpha = 0;
         toView.transform =
             CGAffineTransformConcat(
@@ -1666,6 +1679,7 @@ BHTLikedMediaContextConfiguration(
 @property(nonatomic) BOOL interactiveDismissal;
 @property(nonatomic) BOOL pageTransitionInFlight;
 @property(nonatomic) BOOL pendingMediaUpdate;
+@property(nonatomic) BOOL recordedFullScreenActivation;
 @property(nonatomic, copy) dispatch_block_t loadMoreHandler;
 - (BHTMediaPageController*)pageAtIndex:(NSUInteger)index;
 - (BHTLikedMediaItem*)currentItem;
@@ -1674,6 +1688,7 @@ BHTLikedMediaContextConfiguration(
 - (void)mediaItemsDidUpdateWithItems:
     (NSArray<BHTLikedMediaItem*>*)items;
 - (void)applyMediaItemsUpdate;
+- (void)recordFullScreenCoverage;
 @end
 
 @implementation BHTMediaPagerController
@@ -1688,6 +1703,8 @@ BHTLikedMediaContextConfiguration(
         self.modalPresentationStyle =
             UIModalPresentationFullScreen;
         self.modalPresentationCapturesStatusBarAppearance = YES;
+        self.definesPresentationContext = YES;
+        self.providesPresentationContextTransitionStyle = YES;
         self.transitioningDelegate = self;
     }
     return self;
@@ -1695,6 +1712,8 @@ BHTLikedMediaContextConfiguration(
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.edgesForExtendedLayout = UIRectEdgeAll;
+    self.extendedLayoutIncludesOpaqueBars = YES;
     self.view.backgroundColor = UIColor.blackColor;
 
     self.pageController = [[UIPageViewController alloc]
@@ -1798,9 +1817,89 @@ BHTLikedMediaContextConfiguration(
     return YES;
 }
 
+- (UIStatusBarStyle)preferredStatusBarStyle {
+    return UIStatusBarStyleLightContent;
+}
+
+- (BOOL)prefersHomeIndicatorAutoHidden {
+    return YES;
+}
+
+- (BOOL)shouldAutorotate {
+    return YES;
+}
+
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    UIInterfaceOrientationMask hostMask =
+        self.presentingViewController.supportedInterfaceOrientations;
+    if (hostMask != 0) return hostMask;
+    return UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad
+               ? UIInterfaceOrientationMaskAll
+               : UIInterfaceOrientationMaskAllButUpsideDown;
+}
+
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     self.closeButton.userInteractionEnabled = YES;
+    [self recordFullScreenCoverage];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    // Keep the pager edge-to-edge after iPad multitasking changes and device
+    // rotation. Overlay controls remain pinned to the safe area.
+    self.pageController.view.frame = self.view.bounds;
+}
+
+- (void)viewWillTransitionToSize:(CGSize)size
+       withTransitionCoordinator:
+           (id<UIViewControllerTransitionCoordinator>)coordinator {
+    [super viewWillTransitionToSize:size
+          withTransitionCoordinator:coordinator];
+    __weak typeof(self) weakSelf = self;
+    [coordinator
+        animateAlongsideTransition:
+            ^(__unused id<UIViewControllerTransitionCoordinatorContext>
+                  context) {
+        typeof(self) strongSelf = weakSelf;
+        strongSelf.pageController.view.frame =
+            (CGRect){CGPointZero, size};
+        [strongSelf.view layoutIfNeeded];
+    }
+                        completion:
+            ^(__unused id<UIViewControllerTransitionCoordinatorContext>
+                  context) {
+        typeof(self) strongSelf = weakSelf;
+        [strongSelf recordFullScreenCoverage];
+    }];
+}
+
+- (void)recordFullScreenCoverage {
+    UIWindow* window = self.view.window;
+    if (!window || !self.view.superview) return;
+    CGRect viewerRect =
+        [self.view convertRect:self.view.bounds toView:window];
+    CGRect intersection =
+        CGRectIntersection(viewerRect, window.bounds);
+    CGFloat tolerance = 1.0 / MAX(UIScreen.mainScreen.scale, 1);
+    BOOL coversWindow =
+        fabs(CGRectGetWidth(intersection) -
+             CGRectGetWidth(window.bounds)) <= tolerance &&
+        fabs(CGRectGetHeight(intersection) -
+             CGRectGetHeight(window.bounds)) <= tolerance;
+    BHTSetLikesDiagnostic(
+        @"viewerFullScreenMeasured", @YES);
+    BHTSetLikesDiagnostic(
+        @"viewerFullScreenCoverage", @(coversWindow));
+    BHTSetLikesDiagnostic(
+        @"viewerEffectivePresentationStyle",
+        @(self.modalPresentationStyle));
+    if (coversWindow &&
+        !self.recordedFullScreenActivation) {
+        self.recordedFullScreenActivation = YES;
+        BHTIncrementLikesDiagnostic(
+            @"viewerFullScreenActivations");
+    }
 }
 
 - (void)closeTapped:(id)sender {
@@ -2098,6 +2197,22 @@ BHTLikedMediaContextConfiguration(
 @end
 
 #pragma mark - Likes container
+
+static UIViewController*
+BHTFullScreenPresenterForController(
+    UIViewController* sourceController) {
+    if (!sourceController) return nil;
+    UIWindow* window =
+        sourceController.viewIfLoaded.window;
+    UIViewController* presenter =
+        window.rootViewController ?: sourceController;
+    while (presenter.presentedViewController &&
+           !presenter.presentedViewController.isBeingDismissed) {
+        presenter = presenter.presentedViewController;
+    }
+    return presenter.viewIfLoaded.window ? presenter
+                                         : sourceController;
+}
 
 @interface BHTLikesViewController : UIViewController <UICollectionViewDataSource,
                                                        UICollectionViewDelegate,
@@ -2641,15 +2756,30 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
 }
 
 - (void)collectionView:(UICollectionView*)collectionView didSelectItemAtIndexPath:(NSIndexPath*)indexPath {
+    BHTMediaPagerController* activeViewer =
+        self.activeMediaPager;
+    if (activeViewer &&
+        (activeViewer.isBeingPresented ||
+         activeViewer.isBeingDismissed ||
+         activeViewer.presentingViewController ||
+         activeViewer.viewIfLoaded.window)) {
+        return;
+    }
     BHTMediaPagerController* viewer =
         [[BHTMediaPagerController alloc] initWithItems:self.mediaItems
                                           initialIndex:indexPath.item];
     __weak typeof(self) weakSelf = self;
     viewer.loadMoreHandler = ^{ [weakSelf loadMoreMedia]; };
     self.activeMediaPager = viewer;
-    [self presentViewController:viewer
-                       animated:YES
-                     completion:nil];
+    UIViewController* presenter =
+        BHTFullScreenPresenterForController(self);
+    BHTIncrementLikesDiagnostic(
+        @"viewerFullScreenAttempts");
+    [presenter presentViewController:viewer
+                            animated:YES
+                          completion:^{
+        [viewer recordFullScreenCoverage];
+    }];
 }
 
 - (void)collectionView:(UICollectionView*)collectionView

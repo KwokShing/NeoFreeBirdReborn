@@ -49,6 +49,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 @property (nonatomic, strong) NSArray* coolKidsCells;
 @property (nonatomic, strong) NSArray* specialThanksCells;
 @property (nonatomic, strong) NSArray* officialPageCells;
+- (void)themeDidChange:(NSNotification*)notification;
 @end
 
 @implementation ModernSettingsViewController
@@ -72,12 +73,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         id fontGroup = [BHTManager sharedFontGroup];
         subtitleLabel.font = [fontGroup performSelector:@selector(subtext2Font)];
 
-        Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-        id settings = [TAEColorSettingsCls sharedSettings];
-        id currentPalette = [settings currentColorPalette];
-        id colorPalette = [currentPalette colorPalette];
-        UIColor* subtitleColor = [colorPalette performSelector:@selector(tabBarItemColor)];
-        subtitleLabel.textColor = subtitleColor;
+        subtitleLabel.textColor = [Palette currentSecondaryTextColor];
 
         [headerView addSubview:subtitleLabel];
 
@@ -122,12 +118,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     id fontGroup = [BHTManager sharedFontGroup];
     titleLabel.font = [fontGroup performSelector:@selector(headline1BoldFont)];
 
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* titleColor = [colorPalette performSelector:@selector(textColor)];
-    titleLabel.textColor = titleColor;
+    titleLabel.textColor = [Palette currentTextColor];
 
     [headerView addSubview:titleLabel];
 
@@ -163,7 +154,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     }
     if (section == 0) {
         UIView* separator = [[UIView alloc] initWithFrame:CGRectZero];
-        separator.backgroundColor = [UIColor separatorColor];
+        separator.backgroundColor = [Palette currentSeparatorColor];
         return separator;
     }
     return nil;
@@ -374,6 +365,21 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
                                              selector:@selector(contentSizeCategoryDidChange:)
                                                  name:UIContentSizeCategoryDidChangeNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(themeDidChange:)
+               name:BHTThemeDidChangeNotification
+             object:nil];
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(themeDidChange:)
+               name:BHTSettingsProfileDidApplyNotification
+             object:nil];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self themeDidChange:nil];
 }
 
 - (void)dealloc {
@@ -381,6 +387,16 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 }
 
 - (void)contentSizeCategoryDidChange:(NSNotification*)notification {
+    [self.tableView reloadData];
+}
+
+- (void)themeDidChange:(NSNotification*)notification {
+    [Palette invalidateCustomAccentColorCache];
+    self.view.backgroundColor = [Palette currentBackgroundColor];
+    self.tableView.backgroundColor = [Palette currentBackgroundColor];
+    self.tableView.tableFooterView.backgroundColor =
+        [Palette currentBackgroundColor];
+    [self setupFooterLabel];
     [self.tableView reloadData];
 }
 
@@ -576,7 +592,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         emptyLabel.text = [[BHTBundle sharedBundle]
             localizedStringForKey:@"SETTINGS_SEARCH_NO_RESULTS"];
         emptyLabel.textAlignment = NSTextAlignmentCenter;
-        emptyLabel.textColor = UIColor.secondaryLabelColor;
+        emptyLabel.textColor = [Palette currentSecondaryTextColor];
         emptyLabel.font =
             [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
         emptyLabel.numberOfLines = 0;
@@ -632,12 +648,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 
     footerLabel.font = TwitterChirpFont(TwitterFontStyleRegular);
 
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* subtitleColor = [colorPalette performSelector:@selector(tabBarItemColor)];
-    footerLabel.textColor = subtitleColor;
+    footerLabel.textColor = [Palette currentSecondaryTextColor];
 
     [footerView addSubview:footerLabel];
 
@@ -790,7 +801,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         [devChevron.widthAnchor constraintEqualToConstant:18],
         [devChevron.heightAnchor constraintEqualToConstant:18]
     ]];
-    cell.backgroundColor = [Palette currentBackgroundColor];
+    cell.backgroundColor = [Palette currentSurfaceColor];
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
 }
 
@@ -799,12 +810,9 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     UILabel* nameLabel = [cell.contentView viewWithTag:101];
     UILabel* usernameLabel = [cell.contentView viewWithTag:102];
     id fontGroup = [BHTManager sharedFontGroup];
-    Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
-    id settings = [TAEColorSettingsCls sharedSettings];
-    id currentPalette = [settings currentColorPalette];
-    id colorPalette = [currentPalette colorPalette];
-    UIColor* textColor = [colorPalette performSelector:@selector(textColor)];
-    UIColor* subtitleColor = [colorPalette performSelector:@selector(tabBarItemColor)];
+    UIColor* textColor = [Palette currentTextColor];
+    UIColor* subtitleColor = [Palette currentSecondaryTextColor];
+    cell.backgroundColor = [Palette currentSurfaceColor];
     nameLabel.text = developer[@"title"];
     nameLabel.font = [fontGroup performSelector:@selector(bodyBoldFont)];
     nameLabel.textColor = textColor;
