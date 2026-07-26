@@ -170,6 +170,10 @@ def main() -> None:
         'BHTProbe(@"appearance", @"TAEColorSettings", @"currentColorPalette", NO)',
         'BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyTheme", YES)',
         '@"railBrandingRuntime": BHTRailBrandingObservationSnapshot()',
+        '@"themeRuntime": BHTThemeRuntimeObservationSnapshot()',
+        '@"configurationGeneration"',
+        '@"seenPaletteCount"',
+        '@"dynamicColorsDidReloadObserved"',
         "BHTRailBrandingObservationState",
         "if (unchanged) return;",
     ):
@@ -241,9 +245,29 @@ def main() -> None:
         "BHTConfigureFullThemeForPalette",
         "BHTOriginalColorGetterIMP",
         "BHTVoidObjectSetterIsCompatible",
+        "BHTInvokeGuardedVoidGetter",
+        "TFNDynamicColorsDidReloadNotification",
+        "BHTInstallDynamicColorDiagnosticObserver",
+        "BHTDidObserveDynamicColorsReload",
+        "kBHTPaletteConfigurationGenerationKey",
+        "kBHTPaletteConfigurationDarkAppearanceKey",
+        "BHTCurrentThemeConfigurationGeneration",
+        "BHTAdvanceThemeConfigurationGeneration",
+        "BHTSeenThemePalettes",
+        "weakObjectsHashTable",
+        "BHTReconfigureSeenThemePalettes",
+        "BHTRecordThemeRuntimeObservation",
+        '@"_t1_updateDynamicColors"',
+        "kBHTMaximumThemeTraversalViews",
+        "BHTRefreshActiveThemePalette(NO)",
+        '@"cardBackgroundColor"',
+        '@"darkBackgroundColor"',
+        '@"capsuleTabsSelectedBackgroundColor"',
         "if (colors.count == 0) return;",
         "return original ?",
         '@"_t1_applyTheme"',
+        '@"_t1_updateOverrideUserInterfaceStyle"',
+        '@"applyCurrentColorPalette"',
         "@selector(setCurrentColorPalette:)",
         "method_getReturnType",
         "class_addMethod",
@@ -254,6 +278,20 @@ def main() -> None:
             raise AssertionError(
                 f"Missing guarded app-wide accent invariant: {required}"
             )
+    if "postNotificationName" in theme_accent_source:
+        raise AssertionError(
+            "Theme hook must not synthesize X's private dynamic-color "
+            "notifications"
+        )
+    theme_traversal_source = theme_accent_source.split(
+        "static void BHTUpdateDynamicColorsInVisibleView", 1
+    )[1].split(
+        "static void BHTScheduleVisibleDynamicColorRefresh", 1
+    )[0]
+    if "view.hidden" in theme_traversal_source:
+        raise AssertionError(
+            "Theme fallback must include loaded hidden subviews"
+        )
     palette_source = (
         ROOT / "src" / "ThemeColor" / "Palette.m"
     ).read_text(encoding="utf-8")
@@ -364,6 +402,14 @@ def main() -> None:
         "BHTPendingMediaImageRequests",
         "imageRequestsCoalesced",
         "if (!token.cancelled) completion(image)",
+        '"waterfallImageScaling": @"completeAspectFit"',
+        "ratio = MAX(0.20, MIN(5.0, ratio));",
+        "self.imageView.backgroundColor = surfaceColor;",
+        "[cell applyCurrentThemeSurface];",
+        "BHTThemeDidChangeNotification",
+        "BHTSettingsProfileDidApplyNotification",
+        "applyCurrentThemeSurfaces",
+        "self.collectionView.visibleCells",
         '"viewerPresentation": @"windowFullScreen"',
         "BHTFullScreenPresenterForController",
         "UIModalPresentationFullScreen",

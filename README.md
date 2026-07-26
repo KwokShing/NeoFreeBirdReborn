@@ -42,8 +42,14 @@ X 12.9.
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 17 targets the actual iPad rail-header image even though X 12.9 exposes no
-logo property, expands Apollo-inspired and Classic Twitter into coordinated
+Beta 18 applies preset changes through X 12.9's guarded native palette refresh,
+using a bounded loaded-view fallback only when X emits no dynamic-color reload.
+Generation-cached palette hooks keep timeline reads light and clear every
+still-live palette when Native Blue is restored. It also covers additional
+timeline, tweet, card, and tab surfaces and shows complete waterfall thumbnails
+instead of cropping their edges. Beta 17
+targets the actual iPad rail-header image even though X 12.9 exposes no logo
+property, expands Apollo-inspired and Classic Twitter into coordinated
 app-wide light/dark palettes, and forces waterfall close-ups into the full app
 window on iPhone and iPad. Beta 16 removed the pre-injection launch X from
 sideloaded/TrollStore packages, added global settings search and portable

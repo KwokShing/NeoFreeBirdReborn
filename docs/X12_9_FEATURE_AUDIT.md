@@ -63,7 +63,7 @@ Status meanings:
 | General | `strip_share_tracking` | Updated | Removes `s`/`t` parameters only when enabled |
 | General | `expand_tco_links` | Updated | No longer unconditional |
 | General | `show_scroll_indicator` | Ported | Typed account feature-switch accessor |
-| Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; Apollo-inspired and classic Twitter presets carry coordinated light/dark background, tweet/surface, elevated, text, secondary-text, separator, and accent colors. Native Blue restores X's original palette behavior; sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
+| Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; Apollo-inspired and classic Twitter presets carry coordinated light/dark background, tweet/card/status/tab/unread/surface, elevated, text, secondary-text, separator, and accent colors. NeoFreeBird uses X 12.9's guarded native palette apply and observes—never synthesizes—its private dynamic-colors-did-reload event. A coalesced, bounded loaded-view-tree refresh runs only as a fallback when that native event is not observed, so changes apply without a force quit and never add scrolling or ordinary-foreground work. Per-palette generation/dark markers keep hot palette reads cheap, while weak tracking clears every still-live palette when Native Blue is restored. Sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
 | Settings | search and preference profiles | New | Localized global search covers setting titles, details, subsections, and categories; versioned JSON export/import uses a strict NeoFreeBird-only preference allow-list and never includes Twitter account state |
 | Appearance | custom navigation | Combined | Captures/reorders native tab entries; Grok remains native while opt-in Likes is an independent movable entry; selected editor tiles and the preview row both support drag reordering |
 | Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows |
@@ -193,7 +193,10 @@ downsampling, and deferred pager refreshes during horizontal transitions. Beta
 16 added Apple-style contextual previews and menus for consistent iPhone/iPad
 media actions plus coalesced image requests. Beta 17 targets the guarded iPad
 rail-header image path, adds complete light/dark theme palettes, and presents
-waterfall close-ups at full app-window size. Full themes hook only
+waterfall close-ups at full app-window size. Beta 18 expands coverage to X
+12.9's dark timeline, tweet, card, modal, and capsule-tab palette tokens,
+reapplies presets through its guarded dynamic-color refresh paths, and changes
+waterfall thumbnails to complete-image aspect fit. Full themes hook only
 validated zero-argument color getters on X's concrete active palette, cache
 colors away from scrolling paths, and fall through to preserved native
 implementations when Native Blue or a standalone accent is selected. The

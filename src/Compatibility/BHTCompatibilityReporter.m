@@ -27,6 +27,7 @@ static NSMutableDictionary<NSString*, NSMutableDictionary*>*
 static NSMutableDictionary<NSString*, NSMutableDictionary*>*
     BHTMediaActionObservations;
 static NSDictionary* BHTRailBrandingObservation;
+static NSDictionary* BHTThemeRuntimeObservation;
 static NSUInteger BHTNavigationReportGeneration;
 
 static NSObject* BHTObservationLock(void) {
@@ -218,6 +219,69 @@ void BHTRecordRailBrandingObservation(NSString* resolution,
 static NSDictionary* BHTRailBrandingObservationSnapshot(void) {
     @synchronized(BHTObservationLock()) {
         return [BHTRailBrandingObservation copy] ?: @{};
+    }
+}
+
+void BHTRecordThemeRuntimeObservation(
+    NSString* presetIdentifier,
+    NSString* paletteClass,
+    BOOL darkAppearance,
+    NSArray<NSString*>* installedGetterNames,
+    NSUInteger refreshAttempts,
+    NSUInteger configurationGeneration,
+    NSUInteger seenPaletteCount,
+    BOOL applyCurrentColorPaletteUsed,
+    NSArray<NSString*>* t1RefreshSelectorsUsed,
+    BOOL paletteSetterFallbackUsed,
+    BOOL dynamicColorsDidReloadObserved,
+    NSUInteger visibleViewsVisited,
+    NSUInteger dynamicColorViewsUpdated) {
+    // Class/selector names and aggregate counters are intentionally the only
+    // runtime data recorded here. No view text, account state, URLs, or other
+    // user content enters the compatibility report.
+    NSArray<NSString*>* getters =
+        [installedGetterNames isKindOfClass:NSArray.class]
+            ? [installedGetterNames sortedArrayUsingSelector:
+                                        @selector(compare:)]
+            : @[];
+    NSArray<NSString*>* refreshSelectors =
+        [t1RefreshSelectorsUsed isKindOfClass:NSArray.class]
+            ? [t1RefreshSelectorsUsed sortedArrayUsingSelector:
+                                         @selector(compare:)]
+            : @[];
+    NSDictionary* observation = @{
+        @"activePreset": presetIdentifier.length > 0
+            ? presetIdentifier
+            : @"native",
+        @"activePaletteClass": paletteClass.length > 0
+            ? paletteClass
+            : @"unavailable",
+        @"darkAppearance": @(darkAppearance),
+        @"installedGetterCount": @(getters.count),
+        @"installedGetters": getters,
+        @"refreshAttempts": @(refreshAttempts),
+        @"configurationGeneration":
+            @(configurationGeneration),
+        @"seenPaletteCount": @(seenPaletteCount),
+        @"applyCurrentColorPaletteUsed":
+            @(applyCurrentColorPaletteUsed),
+        @"t1RefreshSelectorsUsed": refreshSelectors,
+        @"paletteSetterFallbackUsed":
+            @(paletteSetterFallbackUsed),
+        @"dynamicColorsDidReloadObserved":
+            @(dynamicColorsDidReloadObserved),
+        @"visibleViewsVisited": @(visibleViewsVisited),
+        @"dynamicColorViewsUpdated":
+            @(dynamicColorViewsUpdated)
+    };
+    @synchronized(BHTObservationLock()) {
+        BHTThemeRuntimeObservation = observation;
+    }
+}
+
+static NSDictionary* BHTThemeRuntimeObservationSnapshot(void) {
+    @synchronized(BHTObservationLock()) {
+        return [BHTThemeRuntimeObservation copy] ?: @{};
     }
 }
 
@@ -445,8 +509,11 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"appearance", @"T1AnimatedLaunchScreenView", @"animateRevealWithCompletion:", NO),
         BHTProbe(@"appearance", @"TAEColorSettings", @"currentColorPalette", NO),
         BHTProbe(@"appearance", @"TAEColorSettings", @"setCurrentColorPalette:", NO),
+        BHTProbe(@"appearance", @"TAEColorSettings", @"applyCurrentColorPalette", NO),
         BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyTheme", YES),
         BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyPrimaryColorOption", YES),
+        BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_updateOverrideUserInterfaceStyle", YES),
+        BHTProbe(@"appearance", @"UIView", @"_t1_updateDynamicColors", NO),
         BHTProbe(@"home", @"T1TwitterSwift.URTTimelineTopicCollectionViewModel", @"init", NO),
 
         BHTProbe(@"search", @"TTSRecentSearchesDatastore", @"_tse_setRecentSearch:", NO),
@@ -605,6 +672,7 @@ void BHTWriteCompatibilityReport(void) {
         @"timelineItemObservations": BHTTimelineObservationSnapshot(),
         @"mediaActionRuntime": BHTMediaActionObservationSnapshot(),
         @"railBrandingRuntime": BHTRailBrandingObservationSnapshot(),
+        @"themeRuntime": BHTThemeRuntimeObservationSnapshot(),
         @"probes": probes
     };
 
