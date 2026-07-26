@@ -10,6 +10,8 @@
 #import "Headers/TWHeaders.h"
 #import "ThemeColor/Palette.h"
 
+extern UIColor* CurrentAccentColor(void);
+
 @implementation ModernSettingsTableViewCell
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
@@ -368,7 +370,7 @@
     self.backgroundColor = [Palette currentSurfaceColor];
     self.titleLabel.textColor = [Palette currentTextColor];
     self.subtitleLabel.textColor = [Palette currentSecondaryTextColor];
-    self.toggleSwitch.onTintColor = [Palette customAccentColor];
+    self.toggleSwitch.onTintColor = CurrentAccentColor();
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {

@@ -229,6 +229,9 @@ static UIColor* tabItemColor(BOOL selected) {
 
 static char kBHTOriginalRailLogoImageKey;
 static char kBHTOriginalRailLogoTintKey;
+static char kBHTOriginalRailLogoContentModeKey;
+static char kBHTOriginalRailLogoAccessibilityLabelKey;
+static char kBHTOriginalRailLogoStateCapturedKey;
 static char kBHTRailDeferredUpdatePendingKey;
 static char kBHTRailResolvedLogoViewKey;
 
@@ -491,35 +494,83 @@ static void BHTUpdateRailHostBranding(UIView* hostView) {
 
     BOOL enabled =
         [BHTSettings boolForKey:@"color_twitter_icon_in_top_bar"];
-    UIImage* originalImage =
-        objc_getAssociatedObject(logoView,
-                                 &kBHTOriginalRailLogoImageKey);
+    BOOL capturedOriginalState =
+        [objc_getAssociatedObject(
+            logoView, &kBHTOriginalRailLogoStateCapturedKey)
+            boolValue];
     if (enabled) {
-        if (!originalImage && logoView.image) {
+        // Wait until X has supplied its stock image so disabling the setting
+        // can restore every property exactly instead of leaving a bird behind
+        // on an initially-empty image view.
+        if (!capturedOriginalState && !logoView.image) {
+            BHTRecordRailBrandingObservation(
+                resolution ?: @"unresolved", hostView, logoView,
+                matchCount);
+            return;
+        }
+        if (!capturedOriginalState) {
             objc_setAssociatedObject(
                 logoView, &kBHTOriginalRailLogoImageKey,
                 logoView.image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            if (logoView.tintColor) {
-                objc_setAssociatedObject(
-                    logoView, &kBHTOriginalRailLogoTintKey,
-                    logoView.tintColor,
-                    OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
+            objc_setAssociatedObject(
+                logoView, &kBHTOriginalRailLogoTintKey,
+                logoView.tintColor ?: NSNull.null,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(
+                logoView, &kBHTOriginalRailLogoContentModeKey,
+                @(logoView.contentMode),
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(
+                logoView,
+                &kBHTOriginalRailLogoAccessibilityLabelKey,
+                logoView.accessibilityLabel ?: NSNull.null,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(
+                logoView, &kBHTOriginalRailLogoStateCapturedKey, @YES,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         BHTInstallBrandingThemeObserver();
         BHTApplyCurrentBirdToImageView(logoView);
-    } else if (originalImage) {
+    } else if (capturedOriginalState) {
         [BHTBrandedLogoViews() removeObject:logoView];
-        logoView.image = originalImage;
-        UIColor* originalTint =
+        logoView.image =
+            objc_getAssociatedObject(logoView,
+                                     &kBHTOriginalRailLogoImageKey);
+        id originalTint =
             objc_getAssociatedObject(logoView,
                                      &kBHTOriginalRailLogoTintKey);
-        if (originalTint) logoView.tintColor = originalTint;
+        logoView.tintColor =
+            originalTint == NSNull.null ? nil : originalTint;
+        NSNumber* originalContentMode =
+            objc_getAssociatedObject(
+                logoView, &kBHTOriginalRailLogoContentModeKey);
+        if (originalContentMode) {
+            logoView.contentMode =
+                (UIViewContentMode)originalContentMode.integerValue;
+        }
+        id originalAccessibilityLabel =
+            objc_getAssociatedObject(
+                logoView,
+                &kBHTOriginalRailLogoAccessibilityLabelKey);
+        logoView.accessibilityLabel =
+            originalAccessibilityLabel == NSNull.null
+                ? nil
+                : originalAccessibilityLabel;
         objc_setAssociatedObject(
             logoView, &kBHTOriginalRailLogoImageKey, nil,
             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(
             logoView, &kBHTOriginalRailLogoTintKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            logoView, &kBHTOriginalRailLogoContentModeKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            logoView,
+            &kBHTOriginalRailLogoAccessibilityLabelKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            logoView, &kBHTOriginalRailLogoStateCapturedKey, nil,
             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     BHTRecordRailBrandingObservation(

@@ -55,6 +55,20 @@ static BOOL BHTColorGetterMethodIsCompatible(Method method) {
     return unqualifiedReturn && unqualifiedReturn[0] == '@';
 }
 
+static BOOL BHTVoidObjectSetterIsCompatible(Method method) {
+    if (!method || method_getNumberOfArguments(method) != 3) return NO;
+    char returnType[16] = {0};
+    char valueType[16] = {0};
+    method_getReturnType(method, returnType, sizeof(returnType));
+    method_getArgumentType(method, 2, valueType, sizeof(valueType));
+    const char* unqualifiedReturn =
+        BHTUnqualifiedThemeType(returnType);
+    const char* unqualifiedValue =
+        BHTUnqualifiedThemeType(valueType);
+    return unqualifiedReturn && unqualifiedReturn[0] == 'v' &&
+           unqualifiedValue && unqualifiedValue[0] == '@';
+}
+
 static IMP BHTOriginalColorGetterIMP(id palette, SEL selector) {
     NSString* selectorName = NSStringFromSelector(selector);
     for (Class cls = object_getClass(palette); cls;
@@ -395,6 +409,7 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
 
     Class colorSettingsClass = objc_getClass("T1ColorSettings");
     if (reapplyColor) {
+        BOOL appliedFullTheme = NO;
         NSArray<NSString*>* applySelectors = @[
             @"_t1_applyTheme",
             @"_t1_applyPrimaryColorOption"
@@ -418,6 +433,26 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
             }
             ((void (*)(id, SEL))objc_msgSend)(colorSettingsClass,
                                               selector);
+            if ([selectorName isEqualToString:@"_t1_applyTheme"]) {
+                appliedFullTheme = YES;
+            }
+        }
+
+        if (!appliedFullTheme && info) {
+            // Some compatible builds expose the palette setter but not the
+            // dedicated class-level refresh. Reassigning the already-active
+            // palette takes X's own guarded update path and refreshes visible
+            // colors without walking or globally recoloring every UIView.
+            SEL setter =
+                @selector(setCurrentColorPalette:);
+            Method setterMethod =
+                class_getInstanceMethod(object_getClass(settings),
+                                        setter);
+            if ([settings respondsToSelector:setter] &&
+                BHTVoidObjectSetterIsCompatible(setterMethod)) {
+                ((void (*)(id, SEL, id))objc_msgSend)(
+                    settings, setter, info);
+            }
         }
     }
 }

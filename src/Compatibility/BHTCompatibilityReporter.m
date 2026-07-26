@@ -7,6 +7,20 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
+@interface BHTRailBrandingObservationState : NSObject
+@property(nonatomic, weak) UIImageView* logoView;
+@property(nonatomic, copy) NSString* resolution;
+@property(nonatomic) CGRect hostBounds;
+@property(nonatomic) CGRect logoFrame;
+@property(nonatomic) UIEdgeInsets safeAreaInsets;
+@property(nonatomic) NSUInteger candidateCount;
+@property(nonatomic) BOOL birdApplied;
+@end
+
+@implementation BHTRailBrandingObservationState
+@end
+
+static char kBHTRailBrandingObservationStateKey;
 static NSArray<NSString*>* BHTNavigationEntryClasses;
 static NSMutableDictionary<NSString*, NSMutableDictionary*>*
     BHTTimelineItemObservations;
@@ -145,21 +159,56 @@ void BHTRecordRailBrandingObservation(NSString* resolution,
                                       UIImageView* logoView,
                                       NSUInteger candidateCount) {
     if (!hostView) return;
+    NSString* resolved = resolution ?: @"unresolved";
     CGRect logoFrame =
         logoView ? [logoView convertRect:logoView.bounds toView:hostView]
                  : CGRectNull;
+    UIEdgeInsets safeAreaInsets = hostView.safeAreaInsets;
+    BOOL birdApplied =
+        [logoView.accessibilityLabel isEqualToString:@"Twitter"];
+    BHTRailBrandingObservationState* state =
+        objc_getAssociatedObject(
+            hostView, &kBHTRailBrandingObservationStateKey);
+    if (!state) {
+        state = [BHTRailBrandingObservationState new];
+        objc_setAssociatedObject(
+            hostView, &kBHTRailBrandingObservationStateKey, state,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    // Rail layout can run alongside timeline scrolling. Avoid allocating
+    // frame strings and dictionaries unless the compatibility state actually
+    // changed.
+    BOOL unchanged =
+        state.logoView == logoView &&
+        [state.resolution isEqualToString:resolved] &&
+        CGRectEqualToRect(state.hostBounds, hostView.bounds) &&
+        CGRectEqualToRect(state.logoFrame, logoFrame) &&
+        UIEdgeInsetsEqualToEdgeInsets(state.safeAreaInsets,
+                                     safeAreaInsets) &&
+        state.candidateCount == candidateCount &&
+        state.birdApplied == birdApplied;
+    if (unchanged) return;
+
+    state.logoView = logoView;
+    state.resolution = resolved;
+    state.hostBounds = hostView.bounds;
+    state.logoFrame = logoFrame;
+    state.safeAreaInsets = safeAreaInsets;
+    state.candidateCount = candidateCount;
+    state.birdApplied = birdApplied;
+
     NSDictionary* observation = @{
-        @"resolution": resolution ?: @"unresolved",
+        @"resolution": resolved,
         @"hostClass": NSStringFromClass(hostView.class) ?: @"",
         @"hostBounds": NSStringFromCGRect(hostView.bounds),
-        @"safeAreaInsets": NSStringFromUIEdgeInsets(hostView.safeAreaInsets),
+        @"safeAreaInsets": NSStringFromUIEdgeInsets(safeAreaInsets),
         @"candidateCount": @(candidateCount),
         @"logoClass":
             logoView ? (NSStringFromClass(logoView.class) ?: @"") : @"",
         @"logoFrame":
             logoView ? NSStringFromCGRect(logoFrame) : @"",
-        @"birdApplied":
-            @([logoView.accessibilityLabel isEqualToString:@"Twitter"])
+        @"birdApplied": @(birdApplied)
     };
     @synchronized(BHTObservationLock()) {
         BHTRailBrandingObservation = observation;

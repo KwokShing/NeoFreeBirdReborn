@@ -148,6 +148,8 @@ def main() -> None:
         "BHTGuardedRailHeaderImageScan",
         "BHTRailHeaderCandidateBelongsToTab",
         "kBHTRailResolvedLogoViewKey",
+        "kBHTOriginalRailLogoStateCapturedKey",
+        "kBHTOriginalRailLogoAccessibilityLabelKey",
         "CGRectGetMaxY(frame) > headerBottom",
         '@"guardedHeaderScan"',
         "BHTThemeDidChangeNotification",
@@ -168,6 +170,8 @@ def main() -> None:
         'BHTProbe(@"appearance", @"TAEColorSettings", @"currentColorPalette", NO)',
         'BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyTheme", YES)',
         '@"railBrandingRuntime": BHTRailBrandingObservationSnapshot()',
+        "BHTRailBrandingObservationState",
+        "if (unchanged) return;",
     ):
         if required not in compatibility_source:
             raise AssertionError(
@@ -236,9 +240,11 @@ def main() -> None:
         "BHTColorGetterMethodIsCompatible",
         "BHTConfigureFullThemeForPalette",
         "BHTOriginalColorGetterIMP",
+        "BHTVoidObjectSetterIsCompatible",
         "if (colors.count == 0) return;",
         "return original ?",
         '@"_t1_applyTheme"',
+        "@selector(setCurrentColorPalette:)",
         "method_getReturnType",
         "class_addMethod",
         "BHTSettingsProfileDidApplyNotification",
