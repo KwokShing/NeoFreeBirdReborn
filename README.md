@@ -42,8 +42,15 @@ X 12.9.
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 18 applies preset changes through X 12.9's guarded native palette refresh,
-using a bounded loaded-view fallback only when X emits no dynamic-color reload.
+Beta 19 attaches full themes to X 12.9's active, Twitter, and TFNUI color
+providers so repost actions, the For You/Following strip, and the lower
+Home/Explore/Likes chrome share the selected palette. The custom Likes screen
+now repaints all of its chrome live, while its media view uses decoded image
+dimensions, variable masonry heights, and multi-column landscape tiles to show
+complete media without fixed black bars. Beta 18 applies preset changes through
+X 12.9's guarded native palette refresh,
+using a bounded loaded-view refresh only when X emits no dynamic-color reload
+or when a replacement provider must be attached after that synchronous signal.
 Generation-cached palette hooks keep timeline reads light and clear every
 still-live palette when Native Blue is restored. It also covers additional
 timeline, tweet, card, and tab surfaces and shows complete waterfall thumbnails

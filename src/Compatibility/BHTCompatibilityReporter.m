@@ -230,6 +230,7 @@ void BHTRecordThemeRuntimeObservation(
     NSUInteger refreshAttempts,
     NSUInteger configurationGeneration,
     NSUInteger seenPaletteCount,
+    NSArray<NSString*>* providerClasses,
     BOOL applyCurrentColorPaletteUsed,
     NSArray<NSString*>* t1RefreshSelectorsUsed,
     BOOL paletteSetterFallbackUsed,
@@ -249,6 +250,11 @@ void BHTRecordThemeRuntimeObservation(
             ? [t1RefreshSelectorsUsed sortedArrayUsingSelector:
                                          @selector(compare:)]
             : @[];
+    NSArray<NSString*>* providers =
+        [providerClasses isKindOfClass:NSArray.class]
+            ? [providerClasses sortedArrayUsingSelector:
+                                  @selector(compare:)]
+            : @[];
     NSDictionary* observation = @{
         @"activePreset": presetIdentifier.length > 0
             ? presetIdentifier
@@ -263,6 +269,7 @@ void BHTRecordThemeRuntimeObservation(
         @"configurationGeneration":
             @(configurationGeneration),
         @"seenPaletteCount": @(seenPaletteCount),
+        @"providerClasses": providers,
         @"applyCurrentColorPaletteUsed":
             @(applyCurrentColorPaletteUsed),
         @"t1RefreshSelectorsUsed": refreshSelectors,
@@ -514,6 +521,12 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyPrimaryColorOption", YES),
         BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_updateOverrideUserInterfaceStyle", YES),
         BHTProbe(@"appearance", @"UIView", @"_t1_updateDynamicColors", NO),
+        BHTProbe(@"appearance", @"UIColor", @"twitterColors", YES),
+        BHTProbe(@"appearance", @"UIColor", @"tfnuiColors", YES),
+        BHTProbe(@"appearance", @"T1TabBarViewController", @"nativeTabBar", NO),
+        BHTProbe(@"appearance", @"T1TabBarViewController", @"tabBarBackgroundView", NO),
+        BHTProbe(@"appearance", @"T1TabBarViewController", @"tabBarDivider", NO),
+        BHTProbe(@"appearance", @"T1TabBarViewController", @"_t1_configureNativeTabBar", NO),
         BHTProbe(@"home", @"T1TwitterSwift.URTTimelineTopicCollectionViewModel", @"init", NO),
 
         BHTProbe(@"search", @"TTSRecentSearchesDatastore", @"_tse_setRecentSearch:", NO),

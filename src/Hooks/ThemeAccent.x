@@ -14,6 +14,11 @@
 #include <stdint.h>
 #include <string.h>
 
+@interface UIColor (BHTThemeColorProviders)
++ (id)twitterColors;
++ (id)tfnuiColors;
+@end
+
 static char kBHTPaletteAccentColorKey;
 static char kBHTPaletteAccentOptionKey;
 static char kBHTPaletteHookInstalledKey;
@@ -26,6 +31,7 @@ static char kBHTPaletteElevatedSurfaceColorKey;
 static char kBHTPaletteTextColorKey;
 static char kBHTPaletteSecondaryTextColorKey;
 static char kBHTPaletteSeparatorColorKey;
+static char kBHTPaletteActionColorKey;
 static char kBHTPaletteConfigurationGenerationKey;
 static char kBHTPaletteConfigurationDarkAppearanceKey;
 static NSUInteger BHTThemeRefreshAttempts;
@@ -33,12 +39,17 @@ static NSUInteger BHTThemeRefreshGeneration;
 static BOOL BHTLastApplyCurrentPaletteUsed;
 static BOOL BHTLastPaletteSetterFallbackUsed;
 static volatile uint8_t BHTLastDynamicColorsDidReloadObserved;
+static volatile uint8_t BHTProviderAttachRefreshScheduled;
+static volatile uint8_t BHTForcedProviderRedrawExecuting;
+static volatile uint8_t BHTPostReloadProviderRedrawNeeded;
+static volatile uint64_t BHTDynamicColorsReloadSequence;
 static NSArray<NSString*>* BHTLastT1RefreshSelectorsUsed;
 static NSUInteger BHTLastVisibleViewsVisited;
 static NSUInteger BHTLastDynamicColorViewsUpdated;
 static volatile uint64_t BHTThemeConfigurationGeneration = 1;
 static __weak id BHTLastDiagnosticPalette;
 static BOOL BHTLastDiagnosticDarkAppearance;
+static NSArray<NSString*>* BHTLastThemeProviderClasses;
 
 typedef UIColor* (*BHTPrimaryColorForOptionIMP)(id, SEL, NSUInteger);
 typedef UIColor* (*BHTColorGetterIMP)(id, SEL);
@@ -200,6 +211,21 @@ static NSArray<NSString*>* BHTInstalledColorGetterNames(id palette) {
         sortedArrayUsingSelector:@selector(compare:)];
 }
 
+static NSArray<NSString*>*
+BHTInstalledColorGetterNamesForSeenProviders(id activePalette) {
+    NSMutableSet<NSString*>* names = [NSMutableSet set];
+    if (activePalette) {
+        [names addObjectsFromArray:
+                   BHTInstalledColorGetterNames(activePalette)];
+    }
+    for (id provider in BHTSeenThemePaletteSnapshot()) {
+        [names addObjectsFromArray:
+                   BHTInstalledColorGetterNames(provider)];
+    }
+    return [[names allObjects]
+        sortedArrayUsingSelector:@selector(compare:)];
+}
+
 static NSString* BHTActiveThemeDiagnosticIdentifier(void) {
     NSString* preset = [BHTThemePresets activePresetIdentifier];
     if (preset.length > 0) return preset;
@@ -213,16 +239,39 @@ static void BHTRecordCurrentThemeRuntime(
         palette ? NSStringFromClass(object_getClass(palette))
                 : @"unavailable",
         darkAppearance,
-        BHTInstalledColorGetterNames(palette),
+        BHTInstalledColorGetterNamesForSeenProviders(palette),
         BHTThemeRefreshAttempts,
         (NSUInteger)BHTCurrentThemeConfigurationGeneration(),
         BHTSeenThemePaletteCount(),
+        BHTLastThemeProviderClasses ?: @[],
         BHTLastApplyCurrentPaletteUsed,
         BHTLastT1RefreshSelectorsUsed ?: @[],
         BHTLastPaletteSetterFallbackUsed,
         BHTDidObserveDynamicColorsReload(),
         BHTLastVisibleViewsVisited,
         BHTLastDynamicColorViewsUpdated);
+}
+
+static void BHTRefreshActiveThemePalette(
+    BOOL reapplyColor, BOOL forceProviderRedraw);
+
+static void BHTScheduleProviderAttachRefresh(void) {
+    uint8_t alreadyScheduled =
+        __atomic_exchange_n(
+            &BHTProviderAttachRefreshScheduled, 1,
+            __ATOMIC_ACQ_REL);
+    if (alreadyScheduled != 0) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __atomic_store_n(
+            &BHTProviderAttachRefreshScheduled, 0,
+            __ATOMIC_RELEASE);
+        BOOL forceProviderRedraw =
+            __atomic_exchange_n(
+                &BHTPostReloadProviderRedrawNeeded,
+                0, __ATOMIC_ACQ_REL) != 0;
+        BHTRefreshActiveThemePalette(
+            NO, forceProviderRedraw);
+    });
 }
 
 static void BHTInstallDynamicColorDiagnosticObserver(void) {
@@ -239,17 +288,24 @@ static void BHTInstallDynamicColorDiagnosticObserver(void) {
                         __atomic_store_n(
                             &BHTLastDynamicColorsDidReloadObserved, 1,
                             __ATOMIC_RELEASE);
-                        // Observation is diagnostic-only. Never repost the
-                        // private notification or enter a refresh path from
-                        // this observer.
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            id palette = BHTLastDiagnosticPalette;
-                            if (palette) {
-                                BHTRecordCurrentThemeRuntime(
-                                    palette,
-                                    BHTLastDiagnosticDarkAppearance);
-                            }
-                        });
+                        __atomic_add_fetch(
+                            &BHTDynamicColorsReloadSequence, 1,
+                            __ATOMIC_ACQ_REL);
+                        if (__atomic_load_n(
+                                &BHTForcedProviderRedrawExecuting,
+                                __ATOMIC_ACQUIRE) != 0) {
+                            // A private updater invoked by our bounded pass
+                            // emitted another reload. Record it, but do not
+                            // turn that synchronous signal into an async loop.
+                            return;
+                        }
+                        // X can swap or retarget its UIColor singleton
+                        // providers during a light/dark reload. Reattach role
+                        // colors on the next main-loop turn without invoking
+                        // X's apply methods or reposting its notification. A
+                        // bounded redraw follows only if attachment happened
+                        // after synchronous observers had already run.
+                        BHTScheduleProviderAttachRefresh();
                     }];
     });
 }
@@ -299,18 +355,29 @@ static void BHTUpdateDynamicColorsInVisibleView(
 }
 
 static void BHTScheduleVisibleDynamicColorRefresh(
-    NSUInteger generation, id palette, BOOL darkAppearance) {
+    NSUInteger generation, id palette, BOOL darkAppearance,
+    BOOL forceRefresh) {
     __weak id weakPalette = palette;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (generation != BHTThemeRefreshGeneration) return;
-        if (BHTDidObserveDynamicColorsReload()) {
+        if (BHTDidObserveDynamicColorsReload() && !forceRefresh) {
             // X emitted its correctly populated private reload event, so its
-            // registered UIKit/SwiftUI observers own the redraw. The bounded
-            // private-selector pass is only a fallback when that event never
-            // arrived.
+            // registered UIKit/SwiftUI observers normally own the redraw.
+            // forceRefresh is reserved for a provider attached after those
+            // synchronous observers already resolved their colors.
             BHTRecordCurrentThemeRuntime(
                 weakPalette, darkAppearance);
             return;
+        }
+
+        BOOL ownsForcedRedrawGuard = NO;
+        if (forceRefresh) {
+            uint8_t alreadyExecuting =
+                __atomic_exchange_n(
+                    &BHTForcedProviderRedrawExecuting, 1,
+                    __ATOMIC_ACQ_REL);
+            if (alreadyExecuting != 0) return;
+            ownsForcedRedrawGuard = YES;
         }
 
         NSUInteger visited = 0;
@@ -323,21 +390,34 @@ static void BHTScheduleVisibleDynamicColorRefresh(
             BHTVoidGetterIsCompatible(baseMethod)
                 ? method_getImplementation(baseMethod)
                 : NULL;
-        for (UIWindow* window in UIApplication.sharedApplication.windows) {
-            if (window.hidden || window.alpha <= 0.01 ||
-                !window.rootViewController) {
-                continue;
+        @try {
+            for (UIWindow* window
+                 in UIApplication.sharedApplication.windows) {
+                if (window.hidden || window.alpha <= 0.01 ||
+                    !window.rootViewController) {
+                    continue;
+                }
+                UISceneActivationState state =
+                    window.windowScene.activationState;
+                if (window.windowScene &&
+                    state !=
+                        UISceneActivationStateForegroundActive &&
+                    state !=
+                        UISceneActivationStateForegroundInactive) {
+                    continue;
+                }
+                BHTUpdateDynamicColorsInVisibleView(
+                    window, 0, YES, baseImplementation,
+                    &visited, &updated);
             }
-            UISceneActivationState state =
-                window.windowScene.activationState;
-            if (window.windowScene &&
-                state != UISceneActivationStateForegroundActive &&
-                state != UISceneActivationStateForegroundInactive) {
-                continue;
+        } @catch (__unused NSException* exception) {
+            // The pass is a best-effort compatibility fallback.
+        } @finally {
+            if (ownsForcedRedrawGuard) {
+                __atomic_store_n(
+                    &BHTForcedProviderRedrawExecuting, 0,
+                    __ATOMIC_RELEASE);
             }
-            BHTUpdateDynamicColorsInVisibleView(
-                window, 0, YES, baseImplementation, &visited,
-                &updated);
         }
 
         if (generation != BHTThemeRefreshGeneration) return;
@@ -404,6 +484,12 @@ static UIColor* BHTThemedSeparatorColor(id palette, SEL selector) {
     return BHTThemedColorGetter(
         palette, selector, &kBHTPaletteSeparatorColorKey,
         UIColor.separatorColor);
+}
+
+static UIColor* BHTThemedActionColor(id palette, SEL selector) {
+    return BHTThemedColorGetter(
+        palette, selector, &kBHTPaletteActionColorKey,
+        UIColor.systemBlueColor);
 }
 
 static IMP BHTOriginalPrimaryColorIMP(id palette) {
@@ -517,6 +603,9 @@ static void BHTConfigureFullThemeForPalette(
     objc_setAssociatedObject(
         palette, &kBHTPaletteSeparatorColorKey,
         colors[BHTThemeColorSeparatorKey], OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(
+        palette, &kBHTPaletteActionColorKey,
+        colors[BHTThemeColorAccentKey], OBJC_ASSOCIATION_RETAIN);
 
     // Native X and accent-only custom swatches never install these hooks.
     // If a full preset was previously active, the already-installed getters
@@ -537,7 +626,8 @@ static void BHTConfigureFullThemeForPalette(
             @"systemBackgroundColor",
             @"systemGroupedBackgroundColor",
             @"tileBackgroundColor",
-            @"uiPickerBackgroundColor"
+            @"uiPickerBackgroundColor",
+            @"xds_backgroundPrimary"
         ],
         (IMP)BHTThemedBackgroundColor);
     BHTInstallColorGetterGroup(
@@ -560,7 +650,9 @@ static void BHTConfigureFullThemeForPalette(
             @"shareMenuActionBackgroundColor",
             @"sharePromptBackgroundColor",
             @"toastsBackgroundColor",
-            @"voiceTabCellBackgroundColor"
+            @"voiceTabCellBackgroundColor",
+            @"dmTweetAttachmentBackgroundColor",
+            @"xds_backgroundSecondary"
         ],
         (IMP)BHTThemedSurfaceColor);
     BHTInstallColorGetterGroup(
@@ -572,16 +664,20 @@ static void BHTConfigureFullThemeForPalette(
             @"elevatedBackgroundColor",
             @"modalSheetBackgroundColor",
             @"tabCustomizationInactiveGridCellContainerBackgroundColor",
-            @"unreadBackgroundColor"
+            @"unreadBackgroundColor",
+            @"capsuleTabsOnMediaSelectedBackgroundColor",
+            @"xds_backgroundSheets"
         ],
         (IMP)BHTThemedElevatedSurfaceColor);
     BHTInstallColorGetterGroup(
         cls,
         @[
             @"capsuleTabsTextColor",
+            @"capsuleTabsOnMediaTextColor",
             @"textColor",
             @"baseTextColor",
             @"defaultTextColor",
+            @"textDefaultColor",
             @"pillControlTextColor",
             @"boldTextColor"
         ],
@@ -590,9 +686,11 @@ static void BHTConfigureFullThemeForPalette(
         cls,
         @[
             @"detailTextColor",
+            @"textDetailsColor",
             @"placeholderTextColor",
             @"promptSeparatorTextColor",
-            @"tabBarItemColor"
+            @"tabBarItemColor",
+            @"integralTweetActionColor"
         ],
         (IMP)BHTThemedSecondaryTextColor);
     BHTInstallColorGetterGroup(
@@ -607,9 +705,21 @@ static void BHTConfigureFullThemeForPalette(
             @"navigationBarShadowColor",
             @"separatorColor",
             @"promptSeparatorColor",
-            @"voiceTabCellShadowColor"
+            @"voiceTabCellShadowColor",
+            @"capsuleTabsOnMediaBorderColor",
+            @"dividerColor",
+            @"groupedDividerColor"
         ],
         (IMP)BHTThemedSeparatorColor);
+    BHTInstallColorGetterGroup(
+        cls,
+        @[
+            @"retweetButtonColor",
+            @"retweetButtonOverDarkBackgroundColor",
+            @"navigationBarLogoColor",
+            @"highlightBarColor"
+        ],
+        (IMP)BHTThemedActionColor);
 }
 
 static id BHTPaletteFromSettingInfo(id info) {
@@ -646,9 +756,9 @@ static BOOL BHTSettingInfoUsesDarkAppearance(id info) {
     return ((BOOL (*)(id, SEL))objc_msgSend)(info, selector);
 }
 
-static void BHTInstallThemeHookForPalette(id palette,
+static BOOL BHTInstallThemeHookForPalette(id palette,
                                           BOOL darkAppearance) {
-    if (!palette) return;
+    if (!palette) return NO;
     uint64_t generation =
         BHTCurrentThemeConfigurationGeneration();
     NSNumber* configuredGeneration =
@@ -661,7 +771,7 @@ static void BHTInstallThemeHookForPalette(id palette,
     if (configuredGeneration.unsignedLongLongValue == generation &&
         configuredDarkAppearance &&
         configuredDarkAppearance.boolValue == darkAppearance) {
-        return;
+        return NO;
     }
 
     @synchronized(palette) {
@@ -677,7 +787,7 @@ static void BHTInstallThemeHookForPalette(id palette,
         if (configuredGeneration.unsignedLongLongValue == generation &&
             configuredDarkAppearance &&
             configuredDarkAppearance.boolValue == darkAppearance) {
-            return;
+            return NO;
         }
 
         BHTTrackSeenThemePalette(palette);
@@ -764,6 +874,61 @@ static void BHTInstallThemeHookForPalette(id palette,
             palette, &kBHTPaletteConfigurationGenerationKey,
             @(generation), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+    return YES;
+}
+
+static id BHTThemeProviderFromUIColorSelector(SEL selector) {
+    Class colorClass = UIColor.class;
+    if (!selector || ![colorClass respondsToSelector:selector]) {
+        return nil;
+    }
+    Method method = class_getClassMethod(colorClass, selector);
+    if (!BHTColorGetterMethodIsCompatible(method)) return nil;
+    @try {
+        return ((id (*)(id, SEL))objc_msgSend)(colorClass, selector);
+    } @catch (__unused NSException* exception) {
+        return nil;
+    }
+}
+
+static BOOL BHTInstallThemeHooksForProviders(
+    id activePalette, BOOL darkAppearance) {
+    NSMutableArray* providers = [NSMutableArray array];
+    if (activePalette) [providers addObject:activePalette];
+    for (NSString* selectorName in @[
+             @"twitterColors", @"tfnuiColors"
+         ]) {
+        id provider = BHTThemeProviderFromUIColorSelector(
+            NSSelectorFromString(selectorName));
+        if (!provider) continue;
+        BOOL alreadyPresent = NO;
+        for (id existing in providers) {
+            if (existing == provider) {
+                alreadyPresent = YES;
+                break;
+            }
+        }
+        if (!alreadyPresent) [providers addObject:provider];
+    }
+
+    NSMutableArray<NSString*>* providerClasses =
+        [NSMutableArray arrayWithCapacity:providers.count];
+    BOOL configuredProvider = NO;
+    for (id provider in providers) {
+        configuredProvider |=
+            BHTInstallThemeHookForPalette(
+                provider, darkAppearance);
+        NSString* className =
+            NSStringFromClass(object_getClass(provider));
+        if (className.length > 0 &&
+            ![providerClasses containsObject:className]) {
+            [providerClasses addObject:className];
+        }
+    }
+    BHTLastThemeProviderClasses =
+        [[providerClasses
+            sortedArrayUsingSelector:@selector(compare:)] copy];
+    return configuredProvider;
 }
 
 static void BHTReconfigureSeenThemePalettes(void) {
@@ -777,7 +942,8 @@ static void BHTReconfigureSeenThemePalettes(void) {
     }
 }
 
-static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
+static void BHTRefreshActiveThemePalette(
+    BOOL reapplyColor, BOOL forceProviderRedraw) {
     Class settingsClass = objc_getClass("TAEColorSettings");
     SEL sharedSelector = @selector(sharedSettings);
     SEL paletteSelector = @selector(currentColorPalette);
@@ -794,14 +960,28 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
     id palette = BHTPaletteFromSettingInfo(info);
     BOOL darkAppearance =
         BHTSettingInfoUsesDarkAppearance(info);
-    BHTInstallThemeHookForPalette(
-        palette, darkAppearance);
+    BOOL configuredProvider =
+        BHTInstallThemeHooksForProviders(
+            palette, darkAppearance);
 
     if (!reapplyColor) {
-        // Foregrounding is intentionally attach-only. Palette instances can
-        // change while the app is inactive, but an ordinary activation must
-        // not trigger a window traversal or a second native theme apply.
+        // Never invoke X's apply methods from a native reload/foreground
+        // callback. If a provider was swapped while inactive, or X's
+        // synchronous reload observers resolved it before our associations
+        // were attached, one bounded redraw is needed after attachment.
         BHTRecordCurrentThemeRuntime(palette, darkAppearance);
+        BOOL customThemeActive =
+            [BHTThemePresets activePresetIdentifier].length > 0;
+        if (customThemeActive &&
+            (forceProviderRedraw || configuredProvider)) {
+            NSUInteger refreshGeneration =
+                ++BHTThemeRefreshGeneration;
+            BHTLastVisibleViewsVisited = 0;
+            BHTLastDynamicColorViewsUpdated = 0;
+            BHTScheduleVisibleDynamicColorRefresh(
+                refreshGeneration, palette, darkAppearance,
+                YES);
+        }
         return;
     }
 
@@ -813,6 +993,9 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
         BHTLastVisibleViewsVisited = 0;
         BHTLastDynamicColorViewsUpdated = 0;
         BHTResetDynamicColorsReloadObservation();
+        __atomic_store_n(
+            &BHTPostReloadProviderRedrawNeeded, 0,
+            __ATOMIC_RELEASE);
         BHTLastDiagnosticPalette = palette;
         BHTLastDiagnosticDarkAppearance = darkAppearance;
 
@@ -826,9 +1009,16 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
         // did-reload notification asks observers to resolve their colors.
         info = ((id (*)(id, SEL))objc_msgSend)(
             settings, paletteSelector);
-        BHTInstallThemeHookForPalette(
-            BHTPaletteFromSettingInfo(info),
-            BHTSettingInfoUsesDarkAppearance(info));
+        BOOL configuredAfterNativeApply =
+            BHTInstallThemeHooksForProviders(
+                BHTPaletteFromSettingInfo(info),
+                BHTSettingInfoUsesDarkAppearance(info));
+        if (configuredAfterNativeApply &&
+            BHTDidObserveDynamicColorsReload()) {
+            __atomic_store_n(
+                &BHTPostReloadProviderRedrawNeeded, 1,
+                __ATOMIC_RELEASE);
+        }
 
         BOOL appliedFullTheme = NO;
         NSMutableArray<NSString*>* usedT1Selectors =
@@ -897,7 +1087,15 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
         palette = BHTPaletteFromSettingInfo(info);
         darkAppearance =
             BHTSettingInfoUsesDarkAppearance(info);
-        BHTInstallThemeHookForPalette(palette, darkAppearance);
+        BOOL configuredAfterFinalNativeApply =
+            BHTInstallThemeHooksForProviders(
+                palette, darkAppearance);
+        if (configuredAfterFinalNativeApply &&
+            BHTDidObserveDynamicColorsReload()) {
+            __atomic_store_n(
+                &BHTPostReloadProviderRedrawNeeded, 1,
+                __ATOMIC_RELEASE);
+        }
         BHTLastDiagnosticPalette = palette;
         BHTLastDiagnosticDarkAppearance = darkAppearance;
         BHTLastApplyCurrentPaletteUsed =
@@ -908,11 +1106,12 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
             [usedT1Selectors copy];
         // Never synthesize TFN's private reload notification. Its native
         // producer owns the object/userInfo contract. The scheduled bounded
-        // view update checks whether the native signal was observed and runs
-        // only when it was not.
+        // view update normally defers to that signal; the notification
+        // observer schedules one forced pass only if providers were attached
+        // after synchronous observers had already run.
         BHTRecordCurrentThemeRuntime(palette, darkAppearance);
         BHTScheduleVisibleDynamicColorRefresh(
-            refreshGeneration, palette, darkAppearance);
+            refreshGeneration, palette, darkAppearance, NO);
     }
 }
 
@@ -927,10 +1126,22 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
 }
 
 - (void)setCurrentColorPalette:(TAETwitterColorPaletteSettingInfo*)info {
+    uint64_t reloadSequenceBefore = __atomic_load_n(
+        &BHTDynamicColorsReloadSequence, __ATOMIC_ACQUIRE);
     %orig(info);
-    BHTInstallThemeHookForPalette(
-        BHTPaletteFromSettingInfo(info),
-        BHTSettingInfoUsesDarkAppearance(info));
+    BOOL configuredProvider =
+        BHTInstallThemeHooksForProviders(
+            BHTPaletteFromSettingInfo(info),
+            BHTSettingInfoUsesDarkAppearance(info));
+    uint64_t reloadSequenceAfter = __atomic_load_n(
+        &BHTDynamicColorsReloadSequence, __ATOMIC_ACQUIRE);
+    if (configuredProvider &&
+        reloadSequenceAfter != reloadSequenceBefore) {
+        __atomic_store_n(
+            &BHTPostReloadProviderRedrawNeeded, 1,
+            __ATOMIC_RELEASE);
+        BHTScheduleProviderAttachRefresh();
+    }
 }
 
 %end
@@ -962,7 +1173,7 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
                                 // associated role colors immediately when
                                 // returning to Native Blue.
                                 BHTReconfigureSeenThemePalettes();
-                                BHTRefreshActiveThemePalette(YES);
+                                BHTRefreshActiveThemePalette(YES, NO);
                             }];
             }
             [center
@@ -970,9 +1181,9 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
                             object:nil
                              queue:NSOperationQueue.mainQueue
                         usingBlock:^(__unused NSNotification* note) {
-                            BHTRefreshActiveThemePalette(NO);
+                            BHTRefreshActiveThemePalette(NO, NO);
                         }];
-            BHTRefreshActiveThemePalette(YES);
+            BHTRefreshActiveThemePalette(YES, NO);
         });
     }
 }

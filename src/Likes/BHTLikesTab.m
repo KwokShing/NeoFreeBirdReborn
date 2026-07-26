@@ -51,8 +51,11 @@ static NSMutableDictionary* BHTMutableLikesDiagnostics(void) {
             @"navigationMode": @"nativeBookmarksCarrier",
             @"photoRequestVariant": @"orig",
             @"waterfallPreviewVariant": @"medium",
-            @"waterfallImageScaling": @"completeAspectFit",
-            @"waterfallAspectRatioPolicy": @"metadataWithDefensiveBounds",
+            @"waterfallImageScaling": @"completeAspectFitWithDecodedRatioCorrection",
+            @"waterfallAspectRatioPolicy": @"metadataThenDecodedImageAdaptiveMasonry",
+            @"waterfallColumnSpanPolicy": @"wideMediaMaySpanAdjacentColumns",
+            @"waterfallDecodedRatioCorrections": @0,
+            @"waterfallAnchorPreservations": @0,
             @"waterfallActionSheet": @"UIContextMenuInteraction",
             @"waterfallActionFallback": @"TFNMenuSheetViewController",
             @"viewerDismissal": @"percentDrivenModal",
@@ -253,6 +256,7 @@ static UIViewController* BHTMakeNativeLikesController(id account) {
 @property(nonatomic, strong) id mediaEntity;
 @property(nonatomic) BHTMediaActionKind mediaActionKind;
 @property(nonatomic) CGFloat aspectRatio;
+@property(nonatomic) BOOL aspectRatioConfirmedByImage;
 @property(nonatomic) long long statusID;
 @property(nonatomic, copy) NSString* statusText;
 @property(nonatomic, strong) NSURL* statusURL;
@@ -260,6 +264,23 @@ static UIViewController* BHTMakeNativeLikesController(id account) {
 
 @implementation BHTLikedMediaItem
 @end
+
+static CGFloat BHTBoundedMediaAspectRatio(CGFloat ratio) {
+    if (!isfinite(ratio) || ratio <= 0) return 1.0;
+    // Keep pathological or corrupt metadata from producing unbounded layout
+    // attributes while still accommodating long screenshots and panoramas.
+    return MAX(0.10, MIN(10.0, ratio));
+}
+
+static CGFloat BHTDecodedImageAspectRatio(UIImage* image) {
+    if (!image) return 0;
+    CGSize size = image.size;
+    if (!isfinite(size.width) || !isfinite(size.height) ||
+        size.width <= 0 || size.height <= 0) {
+        return 0;
+    }
+    return BHTBoundedMediaAspectRatio(size.width / size.height);
+}
 
 static NSURL* BHTPhotoURLForVariant(NSString* rawURL,
                                     NSString* variant) {
@@ -443,7 +464,11 @@ static NSArray<BHTLikedMediaItem*>* BHTMediaItemsFromSections(NSArray* sections)
                 model.mediaEntity = media;
                 model.mediaActionKind =
                     BHTMediaActionKindForEntity(media);
-                model.aspectRatio = (width > 0 && height > 0) ? width / height : 1.0;
+                model.aspectRatio =
+                    BHTBoundedMediaAspectRatio(
+                        (width > 0 && height > 0)
+                            ? width / height
+                            : 1.0);
                 model.statusID = statusID;
                 model.statusText = BHTReadableStatusText(status);
                 model.statusURL = BHTStatusURL(statusID);
@@ -482,40 +507,105 @@ static NSArray<BHTLikedMediaItem*>* BHTMediaItemsFromSections(NSArray* sections)
     NSInteger count = [self.collectionView numberOfItemsInSection:0];
     NSInteger columns = MAX(2, MIN(5, self.columns));
     CGFloat width = CGRectGetWidth(self.collectionView.bounds);
-    CGFloat itemWidth = floor((width - self.spacing * (columns - 1)) / columns);
+    if (count <= 0 || width <= 0) {
+        self.attributes = @[];
+        self.contentSize = CGSizeMake(MAX(0, width), 0);
+        return;
+    }
+    CGFloat columnWidth =
+        MAX(1, width - self.spacing * (columns - 1)) /
+        columns;
     NSMutableArray<NSNumber*>* heights = [NSMutableArray array];
     for (NSInteger i = 0; i < columns; i++) [heights addObject:@0];
     NSMutableArray* attributes = [NSMutableArray arrayWithCapacity:count];
     id<BHTWaterfallLayoutDelegate> delegate = (id)self.collectionView.delegate;
 
     for (NSInteger item = 0; item < count; item++) {
-        NSInteger column = 0;
-        for (NSInteger candidate = 1; candidate < columns; candidate++) {
-            if (heights[candidate].doubleValue < heights[column].doubleValue) column = candidate;
-        }
         NSIndexPath* indexPath = [NSIndexPath indexPathForItem:item inSection:0];
         CGFloat ratio = [delegate respondsToSelector:@selector(waterfallAspectRatioAtIndexPath:)]
                             ? [delegate waterfallAspectRatioAtIndexPath:indexPath]
                             : 1;
-        // Keep the masonry frame close to the media's real dimensions. The
-        // previous 0.45...2.4 clamp shortened tall artwork and narrowed wide
-        // panoramas, which made the aspect-fill thumbnail visibly crop them.
-        // These wider defensive limits still protect the layout from corrupt
-        // metadata while accommodating ordinary long screenshots and banners.
-        if (!isfinite(ratio) || ratio <= 0) ratio = 1;
-        ratio = MAX(0.20, MIN(5.0, ratio));
-        CGFloat itemHeight = floor(itemWidth / ratio);
-        CGFloat x = column * (itemWidth + self.spacing);
-        CGFloat y = heights[column].doubleValue;
+        ratio = BHTBoundedMediaAspectRatio(ratio);
+
+        // Portrait and square media retain a single masonry column. Landscape
+        // media can span neighboring columns so it stays legible instead of
+        // becoming a very short strip. The decoded image later corrects stale
+        // or absent API dimensions and this same layout adapts to the result.
+        NSInteger desiredSpan = 1;
+        if (ratio >= 3.0 && columns >= 3) {
+            desiredSpan = MIN(3, columns);
+        } else if (ratio >= 1.55) {
+            desiredSpan = MIN(2, columns);
+        }
+
+        NSInteger span = desiredSpan;
+        NSInteger column = 0;
+        CGFloat y = 0;
+        while (span >= 1) {
+            CGFloat bestY = CGFLOAT_MAX;
+            CGFloat bestGap = CGFLOAT_MAX;
+            NSInteger bestColumn = 0;
+            for (NSInteger candidate = 0;
+                 candidate <= columns - span; candidate++) {
+                CGFloat candidateY = 0;
+                for (NSInteger offset = 0; offset < span;
+                     offset++) {
+                    CGFloat columnHeight =
+                        heights[candidate + offset].doubleValue;
+                    candidateY =
+                        MAX(candidateY, columnHeight);
+                }
+                CGFloat gap = 0;
+                for (NSInteger offset = 0; offset < span;
+                     offset++) {
+                    CGFloat columnHeight =
+                        heights[candidate + offset].doubleValue;
+                    gap +=
+                        candidateY - columnHeight;
+                }
+                if (candidateY < bestY ||
+                    (candidateY == bestY && gap < bestGap)) {
+                    bestColumn = candidate;
+                    bestY = candidateY;
+                    bestGap = gap;
+                }
+            }
+
+            // A multi-column tile should not bridge a large vertical hole.
+            // If adjacent columns are too uneven, progressively fall back to
+            // a narrower tile and preserve the dense waterfall.
+            CGFloat acceptedGap =
+                MAX(self.spacing * span,
+                    columnWidth * 0.35 * (span - 1));
+            if (span == 1 || bestGap <= acceptedGap) {
+                column = bestColumn;
+                y = bestY;
+                break;
+            }
+            span--;
+        }
+
+        CGFloat itemWidth =
+            columnWidth * span + self.spacing * (span - 1);
+        CGFloat itemHeight = itemWidth / ratio;
+        CGFloat x = column * (columnWidth + self.spacing);
         UICollectionViewLayoutAttributes* attribute =
             [UICollectionViewLayoutAttributes layoutAttributesForCellWithIndexPath:indexPath];
-        attribute.frame = CGRectMake(x, y, itemWidth, itemHeight);
+        attribute.frame =
+            CGRectMake(x, y, itemWidth, MAX(1, itemHeight));
         [attributes addObject:attribute];
-        heights[column] = @(CGRectGetMaxY(attribute.frame) + self.spacing);
+        CGFloat nextHeight =
+            CGRectGetMaxY(attribute.frame) + self.spacing;
+        for (NSInteger offset = 0; offset < span; offset++) {
+            heights[column + offset] = @(nextHeight);
+        }
     }
 
     self.attributes = attributes;
-    self.contentSize = CGSizeMake(width, [[heights valueForKeyPath:@"@max.self"] doubleValue]);
+    CGFloat maximumHeight =
+        [[heights valueForKeyPath:@"@max.self"] doubleValue];
+    self.contentSize =
+        CGSizeMake(width, MAX(0, maximumHeight - self.spacing));
 }
 
 - (NSArray*)layoutAttributesForElementsInRect:(CGRect)rect {
@@ -559,9 +649,9 @@ static void BHTCancelMediaImageRequest(
     if ((self = [super initWithFrame:frame])) {
         _imageView = [[UIImageView alloc] initWithFrame:self.contentView.bounds];
         _imageView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        // A waterfall tile must show the complete image. The layout already
-        // follows the original media ratio, and AspectFit also handles missing
-        // or stale ratio metadata without silently cutting off an edge.
+        // The adaptive masonry frame follows the media's decoded dimensions.
+        // Aspect Fit remains a final safety net so corrupt metadata can never
+        // silently cut off an edge.
         _imageView.contentMode = UIViewContentModeScaleAspectFit;
         _imageView.clipsToBounds = YES;
         [self applyCurrentThemeSurface];
@@ -2236,6 +2326,8 @@ BHTFullScreenPresenterForController(
                                          : sourceController;
 }
 
+static void BHTRefreshNativeTabViewAppearance(T1TabView* tabView);
+
 @interface BHTLikesViewController : UIViewController <UICollectionViewDataSource,
                                                        UICollectionViewDelegate,
                                                        UICollectionViewDataSourcePrefetching,
@@ -2258,6 +2350,9 @@ BHTFullScreenPresenterForController(
 @property(nonatomic) CFTimeInterval initialResetDeadline;
 @property(nonatomic) CFTimeInterval initialResetHardDeadline;
 @property(nonatomic) NSUInteger loadRequestGeneration;
+@property(nonatomic) BOOL waterfallLayoutInvalidationScheduled;
+@property(nonatomic) BOOL waterfallLayoutInvalidationPendingUntilIdle;
+@property(nonatomic) BOOL themeRefreshScheduled;
 - (void)ingestSections:(NSArray*)sections;
 - (void)loadMoreMedia;
 - (void)resetToNewest;
@@ -2265,6 +2360,10 @@ BHTFullScreenPresenterForController(
 - (void)configureWaterfallInterface;
 - (void)applyCurrentThemeSurfaces;
 - (void)themeDidChange:(NSNotification*)notification;
+- (void)updateAdaptiveAspectRatioForItem:(BHTLikedMediaItem*)item
+                              fromImage:(UIImage*)image;
+- (void)scheduleWaterfallLayoutInvalidation;
+- (void)applyPendingWaterfallLayoutInvalidationIfIdle;
 - (void)invalidateInitialResetDisplayLink;
 - (void)cancelInitialResetGuard;
 - (void)startInitialResetDisplayLinkIfNeeded;
@@ -2293,6 +2392,16 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
     return best;
 }
 
+static UIImage* BHTLikesSolidColorImage(UIColor* color) {
+    if (!color) return nil;
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(1, 1), YES, 0);
+    [color setFill];
+    UIRectFill(CGRectMake(0, 0, 1, 1));
+    UIImage* image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
 @implementation BHTLikesViewController
 
 - (instancetype)init {
@@ -2318,6 +2427,11 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
             addObserver:self
                selector:@selector(themeDidChange:)
                    name:BHTSettingsProfileDidApplyNotification
+                  object:nil];
+        [[NSNotificationCenter defaultCenter]
+            addObserver:self
+               selector:@selector(themeDidChange:)
+                   name:@"TFNDynamicColorsDidReloadNotification"
                  object:nil];
     }
     return self;
@@ -2359,28 +2473,85 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
 
 - (void)themeDidChange:(NSNotification*)notification {
     __weak typeof(self) weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    void (^scheduleOnMain)(void) = ^{
         typeof(self) strongSelf = weakSelf;
-        if (!strongSelf.isViewLoaded) return;
-        [strongSelf applyCurrentThemeSurfaces];
-    });
+        if (!strongSelf || strongSelf.themeRefreshScheduled) return;
+        strongSelf.themeRefreshScheduled = YES;
+        // Run after every observer of X's native reload signal has finished.
+        // This keeps private host views from overwriting the custom surfaces
+        // later in the same notification transaction.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            typeof(self) refreshedSelf = weakSelf;
+            if (!refreshedSelf) return;
+            refreshedSelf.themeRefreshScheduled = NO;
+            if (refreshedSelf.isViewLoaded) {
+                [refreshedSelf applyCurrentThemeSurfaces];
+            }
+        });
+    };
+    if ([NSThread isMainThread]) {
+        scheduleOnMain();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), scheduleOnMain);
+    }
 }
 
 - (void)applyCurrentThemeSurfaces {
     UIColor* background = [Palette currentBackgroundColor];
     UIColor* surface = [Palette currentSurfaceColor];
     UIColor* elevated = [Palette currentElevatedSurfaceColor];
-    UIColor* text = [Palette currentTextColor];
     UIColor* secondaryText = [Palette currentSecondaryTextColor];
+    UIColor* separator = [Palette currentSeparatorColor];
+    UIColor* accent = CurrentAccentColor() ?: UIColor.systemBlueColor;
 
     self.view.backgroundColor = background;
-    if (self.postsController.isViewLoaded) {
-        self.postsController.view.backgroundColor = background;
-    }
+    self.view.tintColor = accent;
+    // The retained Posts controller belongs to X. Its timeline, retweet, and
+    // card surfaces are colored by the guarded provider hooks so transparent
+    // or context-specific native backgrounds are never flattened here.
     self.collectionView.backgroundColor = background;
+    self.collectionView.tintColor = accent;
     self.unavailableLabel.textColor = secondaryText;
+    self.unavailableLabel.backgroundColor = background;
     self.selector.backgroundColor = surface;
+    self.selector.tintColor = accent;
     self.selector.selectedSegmentTintColor = elevated;
+    UIImage* surfaceImage = BHTLikesSolidColorImage(surface);
+    UIImage* elevatedImage = BHTLikesSolidColorImage(elevated);
+    [self.selector
+        setBackgroundImage:surfaceImage
+                  forState:UIControlStateNormal
+                barMetrics:UIBarMetricsDefault];
+    [self.selector
+        setBackgroundImage:elevatedImage
+                  forState:UIControlStateSelected
+                barMetrics:UIBarMetricsDefault];
+    [self.selector
+        setBackgroundImage:elevatedImage
+                  forState:UIControlStateHighlighted
+                barMetrics:UIBarMetricsDefault];
+    [self.selector
+        setBackgroundImage:elevatedImage
+                  forState:(UIControlStateSelected |
+                            UIControlStateHighlighted)
+                barMetrics:UIBarMetricsDefault];
+    UIImage* dividerImage = BHTLikesSolidColorImage(separator);
+    NSArray<NSNumber*>* segmentStates = @[
+        @(UIControlStateNormal), @(UIControlStateSelected)
+    ];
+    for (NSNumber* leftState in segmentStates) {
+        for (NSNumber* rightState in segmentStates) {
+            [self.selector
+                setDividerImage:dividerImage
+                forLeftSegmentState:leftState.unsignedIntegerValue
+                  rightSegmentState:rightState.unsignedIntegerValue
+                        barMetrics:UIBarMetricsDefault];
+        }
+    }
+    self.selector.layer.borderColor = separator.CGColor;
+    self.selector.layer.borderWidth = 0.5;
+    self.selector.layer.cornerRadius = 8;
+    self.selector.layer.masksToBounds = YES;
     [self.selector
         setTitleTextAttributes:@{
             NSForegroundColorAttributeName: secondaryText
@@ -2388,9 +2559,21 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
                     forState:UIControlStateNormal];
     [self.selector
         setTitleTextAttributes:@{
-            NSForegroundColorAttributeName: text
+            NSForegroundColorAttributeName: accent
         }
                     forState:UIControlStateSelected];
+    [self.selector setNeedsLayout];
+    [self.selector setNeedsDisplay];
+
+    // Shared navigation/tab bars and the native Posts controller are owned by
+    // the global guarded theme hooks. Likes only writes its wrapper, selector,
+    // waterfall, and custom cells.
+    UIViewController* nativeNavigation =
+        self.navigationController ?: self.parentViewController;
+    T1TabView* nativeLikesTab =
+        objc_getAssociatedObject(nativeNavigation,
+                                 &kBHTNativeLikesTabViewKey);
+    BHTRefreshNativeTabViewAppearance(nativeLikesTab);
 
     for (UICollectionViewCell* visibleCell
          in self.collectionView.visibleCells) {
@@ -2399,6 +2582,19 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
                 applyCurrentThemeSurface];
         }
     }
+    [self.collectionView setNeedsDisplay];
+    [self.view setNeedsDisplay];
+
+    BHTIncrementLikesDiagnostic(@"themeRefreshes");
+    BHTSetLikesDiagnostic(
+        @"themePreset",
+        [BHTThemePresets activePresetIdentifier] ?: @"native");
+    BHTSetLikesDiagnostic(@"themeSegmentedControl",
+                          @(self.selector != nil));
+    BHTSetLikesDiagnostic(@"themeSharedBarsOwnedByGlobalHook", @YES);
+    BHTSetLikesDiagnostic(@"themeNativePostsOwnedByProviderHooks", @YES);
+    BHTSetLikesDiagnostic(@"themeNativeLikesTab",
+                          @(nativeLikesTab != nil));
 }
 
 - (void)traitCollectionDidChange:
@@ -2477,6 +2673,8 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
         [self.collectionView removeFromSuperview];
         self.collectionView = nil;
         self.waterfallLayout = nil;
+        self.waterfallLayoutInvalidationScheduled = NO;
+        self.waterfallLayoutInvalidationPendingUntilIdle = NO;
         if (self.navigationItem.titleView == self.selector) {
             self.navigationItem.titleView = nil;
         }
@@ -2486,6 +2684,8 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self applyCurrentThemeSurfaces];
+    [self applyPendingWaterfallLayoutInvalidationIfIdle];
     // Reset before UIKit presents the first Likes frame. This keeps X's
     // restored middle position off-screen without an artificial loading view.
     if (!self.needsInitialTopReset) return;
@@ -2624,15 +2824,181 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
     self.collectionView.hidden = !media;
     if (media) {
         [self.view bringSubviewToFront:self.collectionView];
+        [self applyPendingWaterfallLayoutInvalidationIfIdle];
         if (self.mediaItems.count < 12) [self loadMoreMedia];
     }
 }
 
 - (void)pinched:(UIPinchGestureRecognizer*)pinch {
     if (pinch.state != UIGestureRecognizerStateEnded) return;
-    NSInteger delta = pinch.scale > 1 ? -1 : 1;
-    self.waterfallLayout.columns = MAX(2, MIN(5, self.waterfallLayout.columns + delta));
-    [self.waterfallLayout invalidateLayout];
+    NSInteger delta = 0;
+    if (pinch.scale > 1.08) {
+        delta = -1;
+    } else if (pinch.scale < 0.92) {
+        delta = 1;
+    } else {
+        return;
+    }
+    NSInteger columns = MAX(
+        2, MIN(5, self.waterfallLayout.columns + delta));
+    if (columns == self.waterfallLayout.columns) return;
+    self.waterfallLayout.columns = columns;
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [weakSelf scheduleWaterfallLayoutInvalidation];
+        [weakSelf applyPendingWaterfallLayoutInvalidationIfIdle];
+    });
+}
+
+- (void)updateAdaptiveAspectRatioForItem:(BHTLikedMediaItem*)item
+                              fromImage:(UIImage*)image {
+    if (!item || !image) return;
+    if (![NSThread isMainThread]) {
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf updateAdaptiveAspectRatioForItem:item
+                                             fromImage:image];
+        });
+        return;
+    }
+
+    CGFloat decodedRatio = BHTDecodedImageAspectRatio(image);
+    if (decodedRatio <= 0) return;
+    CGFloat suppliedRatio =
+        BHTBoundedMediaAspectRatio(item.aspectRatio);
+    if (item.aspectRatioConfirmedByImage &&
+        fabs(decodedRatio - suppliedRatio) /
+                MAX(decodedRatio, suppliedRatio) <
+            0.01) {
+        return;
+    }
+
+    NSUInteger currentIndex =
+        [self.mediaItems
+            indexOfObjectPassingTest:^BOOL(
+                BHTLikedMediaItem* candidate,
+                __unused NSUInteger index,
+                __unused BOOL* stop) {
+        return candidate == item ||
+               (item.identifier.length > 0 &&
+                [candidate.identifier
+                    isEqualToString:item.identifier]);
+    }];
+    if (currentIndex == NSNotFound) return;
+    item = self.mediaItems[currentIndex];
+
+    CGFloat previousRatio =
+        BHTBoundedMediaAspectRatio(item.aspectRatio);
+    item.aspectRatioConfirmedByImage = YES;
+    CGFloat relativeDifference =
+        fabs(decodedRatio - previousRatio) /
+        MAX(decodedRatio, previousRatio);
+    // Ignore rounding noise from thumbnail decodes. Meaningful differences
+    // are applied once and coalesced into a single next-run-loop layout pass.
+    if (relativeDifference < 0.01) return;
+
+    item.aspectRatio = decodedRatio;
+    BHTIncrementLikesDiagnostic(
+        @"waterfallDecodedRatioCorrections");
+    [self scheduleWaterfallLayoutInvalidation];
+}
+
+- (void)scheduleWaterfallLayoutInvalidation {
+    if (!self.waterfallLayout ||
+        self.waterfallLayoutInvalidationScheduled) {
+        return;
+    }
+    if (self.collectionView.tracking ||
+        self.collectionView.dragging ||
+        self.collectionView.decelerating) {
+        self.waterfallLayoutInvalidationPendingUntilIdle = YES;
+        return;
+    }
+    self.waterfallLayoutInvalidationPendingUntilIdle = NO;
+    self.waterfallLayoutInvalidationScheduled = YES;
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.waterfallLayoutInvalidationScheduled = NO;
+        if (!strongSelf.waterfallLayout ||
+            !strongSelf.collectionView) {
+            return;
+        }
+        if (strongSelf.collectionView.tracking ||
+            strongSelf.collectionView.dragging ||
+            strongSelf.collectionView.decelerating) {
+            strongSelf
+                .waterfallLayoutInvalidationPendingUntilIdle = YES;
+            return;
+        }
+
+        UICollectionView* collectionView =
+            strongSelf.collectionView;
+        NSIndexPath* anchorIndexPath = nil;
+        UICollectionViewLayoutAttributes* anchorAttributes = nil;
+        CGFloat viewportTop = collectionView.contentOffset.y;
+        CGFloat nearestDistance = CGFLOAT_MAX;
+        for (NSIndexPath* indexPath in
+             collectionView.indexPathsForVisibleItems) {
+            UICollectionViewLayoutAttributes* attributes =
+                [strongSelf.waterfallLayout
+                    layoutAttributesForItemAtIndexPath:indexPath];
+            if (!attributes) continue;
+            CGFloat distance =
+                fabs(CGRectGetMinY(attributes.frame) - viewportTop);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                anchorIndexPath = indexPath;
+                anchorAttributes = attributes;
+            }
+        }
+        CGFloat anchorOffset = anchorAttributes
+            ? viewportTop - CGRectGetMinY(anchorAttributes.frame)
+            : 0;
+
+        [strongSelf.waterfallLayout invalidateLayout];
+        [collectionView layoutIfNeeded];
+
+        UICollectionViewLayoutAttributes* updatedAnchor =
+            anchorIndexPath
+                ? [strongSelf.waterfallLayout
+                      layoutAttributesForItemAtIndexPath:
+                          anchorIndexPath]
+                : nil;
+        if (updatedAnchor) {
+            UIEdgeInsets inset = collectionView.adjustedContentInset;
+            CGFloat minimumY = -inset.top;
+            CGFloat maximumY = MAX(
+                minimumY,
+                collectionView.contentSize.height -
+                    CGRectGetHeight(collectionView.bounds) +
+                    inset.bottom);
+            CGFloat targetY =
+                CGRectGetMinY(updatedAnchor.frame) + anchorOffset;
+            if (isfinite(targetY)) {
+                targetY = MIN(maximumY, MAX(minimumY, targetY));
+                [collectionView
+                    setContentOffset:
+                        CGPointMake(collectionView.contentOffset.x,
+                                    targetY)
+                             animated:NO];
+                BHTIncrementLikesDiagnostic(
+                    @"waterfallAnchorPreservations");
+            }
+        }
+    });
+}
+
+- (void)applyPendingWaterfallLayoutInvalidationIfIdle {
+    if (!self.waterfallLayoutInvalidationPendingUntilIdle ||
+        self.collectionView.tracking ||
+        self.collectionView.dragging ||
+        self.collectionView.decelerating) {
+        return;
+    }
+    self.waterfallLayoutInvalidationPendingUntilIdle = NO;
+    [self scheduleWaterfallLayoutInvalidation];
 }
 
 - (void)waterfallMediaLongPressed:
@@ -2697,6 +3063,23 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
         return;
     }
 
+    NSMutableDictionary<NSString*, BHTLikedMediaItem*>*
+        existingMediaByID = [NSMutableDictionary dictionary];
+    for (BHTLikedMediaItem* existingItem in self.mediaItems) {
+        if (existingItem.identifier.length > 0) {
+            existingMediaByID[existingItem.identifier] =
+                existingItem;
+        }
+    }
+    for (BHTLikedMediaItem* incomingItem in incoming) {
+        BHTLikedMediaItem* existingItem =
+            existingMediaByID[incomingItem.identifier];
+        if (existingItem.aspectRatioConfirmedByImage) {
+            incomingItem.aspectRatio = existingItem.aspectRatio;
+            incomingItem.aspectRatioConfirmedByImage = YES;
+        }
+    }
+
     NSMutableSet<NSString*>* incomingIDs = [NSMutableSet set];
     BOOL overlapsExisting = NO;
     for (BHTLikedMediaItem* item in incoming) {
@@ -2741,6 +3124,24 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
         [self.mediaItems valueForKey:@"identifier"];
     NSArray<NSString*>* nextOrder = [ordered valueForKey:@"identifier"];
     BOOL changed = ![previousOrder isEqualToArray:nextOrder];
+    BOOL geometryChanged = changed;
+    if (!geometryChanged &&
+        self.mediaItems.count == ordered.count) {
+        for (NSUInteger index = 0; index < ordered.count;
+             index++) {
+            CGFloat previousRatio = BHTBoundedMediaAspectRatio(
+                self.mediaItems[index].aspectRatio);
+            CGFloat nextRatio = BHTBoundedMediaAspectRatio(
+                ordered[index].aspectRatio);
+            CGFloat relativeDifference =
+                fabs(previousRatio - nextRatio) /
+                MAX(previousRatio, nextRatio);
+            if (relativeDifference >= 0.01) {
+                geometryChanged = YES;
+                break;
+            }
+        }
+    }
     [self.mediaItems setArray:ordered];
     [self.mediaIDs setSet:orderedIDs];
     BHTSetLikesDiagnostic(@"capturedMediaItems", @(self.mediaItems.count));
@@ -2748,6 +3149,10 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
     self.requestedMore = NO;
     if (changed && self.isViewLoaded) {
         [self.collectionView reloadData];
+        [self.activeMediaPager
+            mediaItemsDidUpdateWithItems:self.mediaItems];
+    } else if (geometryChanged && self.isViewLoaded) {
+        [self scheduleWaterfallLayoutInvalidation];
         [self.activeMediaPager
             mediaItemsDidUpdateWithItems:self.mediaItems];
     }
@@ -2772,12 +3177,18 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
             BHTMediaImagePixelBucket(targetPixels));
     if (cached) {
         cell.imageView.image = cached;
+        [self updateAdaptiveAspectRatioForItem:item
+                                     fromImage:cached];
     } else if (item.previewURL) {
         __weak BHTLikedMediaCell* weakCell = cell;
+        __weak typeof(self) weakSelf = self;
         NSURL* url = item.previewURL;
         cell.imageRequest =
             BHTRequestMediaImage(
                 url, targetPixels, ^(UIImage* image) {
+                    [weakSelf
+                        updateAdaptiveAspectRatioForItem:item
+                                               fromImage:image];
                     if ([weakCell.representedURL
                             isEqual:url]) {
                         weakCell.imageView.image = image;
@@ -2818,11 +3229,16 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
             continue;
         }
         __weak typeof(self) weakSelf = self;
+        BHTLikedMediaItem* requestedItem = item;
         self.prefetchRequests[identifier] =
             BHTRequestMediaImage(
                 URL, pixels, ^(UIImage* image) {
                     [weakSelf.prefetchRequests
                         removeObjectForKey:identifier];
+                    [weakSelf
+                        updateAdaptiveAspectRatioForItem:
+                            requestedItem
+                                               fromImage:image];
                 });
     }
 }
@@ -2846,7 +3262,9 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
 }
 
 - (CGFloat)waterfallAspectRatioAtIndexPath:(NSIndexPath*)indexPath {
-    return self.mediaItems[indexPath.item].aspectRatio;
+    return indexPath.item < (NSInteger)self.mediaItems.count
+               ? self.mediaItems[indexPath.item].aspectRatio
+               : 1.0;
 }
 
 - (void)collectionView:(UICollectionView*)collectionView didSelectItemAtIndexPath:(NSIndexPath*)indexPath {
@@ -2924,6 +3342,34 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
     if (scrollView != self.collectionView || self.requestedMore || self.mediaItems.count == 0) return;
     CGFloat remaining = scrollView.contentSize.height - CGRectGetMaxY((CGRect){scrollView.contentOffset, scrollView.bounds.size});
     if (remaining <= 900) [self loadMoreMedia];
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView*)scrollView
+                  willDecelerate:(BOOL)decelerate {
+    if (scrollView == self.collectionView && !decelerate) {
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf applyPendingWaterfallLayoutInvalidationIfIdle];
+        });
+    }
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView*)scrollView {
+    if (scrollView == self.collectionView) {
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf applyPendingWaterfallLayoutInvalidationIfIdle];
+        });
+    }
+}
+
+- (void)scrollViewDidEndScrollingAnimation:(UIScrollView*)scrollView {
+    if (scrollView == self.collectionView) {
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf applyPendingWaterfallLayoutInvalidationIfIdle];
+        });
+    }
 }
 
 @end
@@ -3032,8 +3478,49 @@ BOOL BHTIsNativeLikesEntry(id entry) {
 
 static void BHTRefreshNativeTabViewAppearance(T1TabView* tabView) {
     if (!tabView) return;
-    [tabView _t1_updateTitleLabel];
-    [tabView _t1_updateImageViewAnimated:NO];
+    SEL titleSelector = @selector(_t1_updateTitleLabel);
+    Method titleMethod =
+        class_getInstanceMethod([tabView class], titleSelector);
+    char titleReturnType[16] = {0};
+    if ([tabView respondsToSelector:titleSelector] &&
+        titleMethod &&
+        method_getNumberOfArguments(titleMethod) == 2) {
+        method_getReturnType(
+            titleMethod, titleReturnType,
+            sizeof(titleReturnType));
+        if (titleReturnType[0] == 'v') {
+            @try {
+                ((void (*)(id, SEL))objc_msgSend)(
+                    tabView, titleSelector);
+            } @catch (__unused NSException* exception) {
+            }
+        }
+    }
+
+    SEL imageSelector = @selector(_t1_updateImageViewAnimated:);
+    Method imageMethod =
+        class_getInstanceMethod([tabView class], imageSelector);
+    char imageReturnType[16] = {0};
+    char animatedType[16] = {0};
+    if ([tabView respondsToSelector:imageSelector] &&
+        imageMethod &&
+        method_getNumberOfArguments(imageMethod) == 3) {
+        method_getReturnType(
+            imageMethod, imageReturnType,
+            sizeof(imageReturnType));
+        method_getArgumentType(
+            imageMethod, 2, animatedType,
+            sizeof(animatedType));
+        if (imageReturnType[0] == 'v' &&
+            (animatedType[0] == 'c' ||
+             animatedType[0] == 'B')) {
+            @try {
+                ((void (*)(id, SEL, BOOL))objc_msgSend)(
+                    tabView, imageSelector, NO);
+            } @catch (__unused NSException* exception) {
+            }
+        }
+    }
     [tabView setNeedsLayout];
 }
 

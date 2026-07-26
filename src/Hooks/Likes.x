@@ -63,7 +63,7 @@ static void BHTApplyLikesHeartToTab(T1TabView* tabView) {
         imageView.contentMode = UIViewContentModeCenter;
         imageView.tintColor =
             tabView.selected ? CurrentAccentColor()
-                             : UIColor.secondaryLabelColor;
+                             : [Palette currentSecondaryTextColor];
         imageView.accessibilityLabel = @"Likes";
     }
 }

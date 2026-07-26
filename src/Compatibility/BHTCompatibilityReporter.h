@@ -24,6 +24,7 @@ void BHTRecordThemeRuntimeObservation(
     NSUInteger refreshAttempts,
     NSUInteger configurationGeneration,
     NSUInteger seenPaletteCount,
+    NSArray<NSString*>* providerClasses,
     BOOL applyCurrentColorPaletteUsed,
     NSArray<NSString*>* t1RefreshSelectorsUsed,
     BOOL paletteSetterFallbackUsed,
