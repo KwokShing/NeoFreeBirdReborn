@@ -56,6 +56,8 @@ static NSMutableDictionary* BHTMutableLikesDiagnostics(void) {
             @"waterfallColumnSpanPolicy": @"wideMediaMaySpanAdjacentColumns",
             @"waterfallDecodedRatioCorrections": @0,
             @"waterfallAnchorPreservations": @0,
+            @"waterfallSelectorInstalls": @0,
+            @"waterfallSelectorOwned": @NO,
             @"waterfallActionSheet": @"UIContextMenuInteraction",
             @"waterfallActionFallback": @"TFNMenuSheetViewController",
             @"viewerDismissal": @"percentDrivenModal",
@@ -2358,6 +2360,8 @@ static void BHTRefreshNativeTabViewAppearance(T1TabView* tabView);
 - (void)resetToNewest;
 - (void)activateForFirstPresentation;
 - (void)configureWaterfallInterface;
+- (void)ensureWaterfallSelectorInstalled;
+- (void)restoreWaterfallSelectorVisibilityIfVisible;
 - (void)applyCurrentThemeSurfaces;
 - (void)themeDidChange:(NSNotification*)notification;
 - (void)updateAdaptiveAspectRatioForItem:(BHTLikedMediaItem*)item
@@ -2497,6 +2501,7 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
 }
 
 - (void)applyCurrentThemeSurfaces {
+    [self ensureWaterfallSelectorInstalled];
     UIColor* background = [Palette currentBackgroundColor];
     UIColor* surface = [Palette currentSurfaceColor];
     UIColor* elevated = [Palette currentElevatedSurfaceColor];
@@ -2591,6 +2596,10 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
         [BHTThemePresets activePresetIdentifier] ?: @"native");
     BHTSetLikesDiagnostic(@"themeSegmentedControl",
                           @(self.selector != nil));
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorOwned",
+        @(self.selector != nil &&
+          self.navigationItem.titleView == self.selector));
     BHTSetLikesDiagnostic(@"themeSharedBarsOwnedByGlobalHook", @YES);
     BHTSetLikesDiagnostic(@"themeNativePostsOwnedByProviderHooks", @YES);
     BHTSetLikesDiagnostic(@"themeNativeLikesTab",
@@ -2629,7 +2638,7 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
         [self.selector addTarget:self
                           action:@selector(selectionChanged:)
                 forControlEvents:UIControlEventValueChanged];
-        self.navigationItem.titleView = self.selector;
+        [self ensureWaterfallSelectorInstalled];
 
         self.waterfallLayout = [BHTWaterfallLayout new];
         self.collectionView = [[UICollectionView alloc] initWithFrame:self.view.bounds
@@ -2679,17 +2688,66 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
             self.navigationItem.titleView = nil;
         }
         self.selector = nil;
+        BHTSetLikesDiagnostic(@"waterfallSelectorOwned", @NO);
     }
+}
+
+- (void)ensureWaterfallSelectorInstalled {
+    if (![BHTLikesNavigationUtility waterfallEnabled] ||
+        !self.selector) {
+        return;
+    }
+    if (self.navigationItem.titleView != self.selector) {
+        self.navigationItem.titleView = self.selector;
+        BHTIncrementLikesDiagnostic(
+            @"waterfallSelectorInstalls");
+    }
+    BHTSetLikesDiagnostic(@"waterfallSelectorOwned", @YES);
+}
+
+- (void)restoreWaterfallSelectorVisibilityIfVisible {
+    if (![BHTLikesNavigationUtility waterfallEnabled] ||
+        !self.selector || !self.isViewLoaded ||
+        !self.view.window) {
+        return;
+    }
+    UINavigationController* navigation =
+        self.navigationController;
+    if (navigation && navigation.topViewController != self) {
+        return;
+    }
+    [self ensureWaterfallSelectorInstalled];
+    self.selector.hidden = NO;
+    self.selector.alpha = 1;
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self configureWaterfallInterface];
+    [self ensureWaterfallSelectorInstalled];
     [self applyCurrentThemeSurfaces];
     [self applyPendingWaterfallLayoutInvalidationIfIdle];
     // Reset before UIKit presents the first Likes frame. This keeps X's
     // restored middle position off-screen without an artificial loading view.
     if (!self.needsInitialTopReset) return;
     [self activateForFirstPresentation];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    // Visibility normalization belongs after the transition so it cannot
+    // override UINavigationBar's interactive title fading.
+    [self restoreWaterfallSelectorVisibilityIfVisible];
+
+    // BookmarksNavigationController can replace its title area after
+    // forwarding the child's appearance callback. Reclaim it once at the end
+    // of this run-loop turn, but only if Likes is still the visible root.
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf restoreWaterfallSelectorVisibilityIfVisible];
+    });
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
@@ -2700,6 +2758,12 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
 }
 
 - (void)activateForFirstPresentation {
+    // Swift tab activation can reuse the retained root without forwarding a
+    // fresh UIKit appearance callback. Reclaim the navigation title here too,
+    // but never force the controller's view to load just for the selector.
+    if (self.isViewLoaded) {
+        [self ensureWaterfallSelectorInstalled];
+    }
     if (!self.needsInitialTopReset) return;
     self.needsInitialTopReset = NO;
     [self resetToNewest];

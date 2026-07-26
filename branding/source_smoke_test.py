@@ -176,7 +176,11 @@ def main() -> None:
         '@"providerClasses"',
         '@"dynamicColorsDidReloadObserved"',
         'BHTProbe(@"appearance", @"UIColor", @"twitterColors", YES)',
+        'BHTProbe(@"appearance", @"UIColor", @"setTwitterColors:", YES)',
         'BHTProbe(@"appearance", @"UIColor", @"tfnuiColors", YES)',
+        'BHTProbe(@"appearance", @"UIColor", @"xds_backgroundPrimary", YES)',
+        'BHTProbe(@"appearance", @"UIColor", @"xds_backgroundSheets", YES)',
+        'BHTProbe(@"appearance", @"UIColor", @"colorNamed:inBundle:compatibleWithTraitCollection:", YES)',
         "BHTRailBrandingObservationState",
         "if (unchanged) return;",
     ):
@@ -252,14 +256,34 @@ def main() -> None:
         "TFNDynamicColorsDidReloadNotification",
         "BHTInstallDynamicColorDiagnosticObserver",
         "BHTDidObserveDynamicColorsReload",
-        "kBHTPaletteConfigurationGenerationKey",
-        "kBHTPaletteConfigurationDarkAppearanceKey",
+        "BHTThemeRoleState",
+        "kBHTPaletteRoleStateKey",
+        "BHTThemeAccentState",
+        "kBHTPaletteAccentStateKey",
+        "BHTXDSRoleSnapshot",
+        "BHTXDSRoleSnapshotForCurrentGeneration",
+        "BHTThemeConfigurationToken",
+        "BHTCurrentThemeConfigurationToken",
+        "BHTColorFromRoleState",
+        "BHTPaletteThemeConfigurationIsComplete",
         "BHTCurrentThemeConfigurationGeneration",
         "BHTAdvanceThemeConfigurationGeneration",
         "BHTSeenThemePalettes",
         "weakObjectsHashTable",
         "BHTReconfigureSeenThemePalettes",
         "BHTInstallThemeHooksForProviders",
+        "BHTInstallUIColorProviderGetterHooks",
+        "BHTThemedUIColorProviderSetter",
+        '@"setTwitterColors:"',
+        "BHTThemeRoleForXDSNamedColor",
+        '@"backgroundPrimary"',
+        '@"backgroundSheets"',
+        '@"foregroundPrimary"',
+        '@"borderNormal"',
+        '@"XColorEngine_XColorEngine.bundle"',
+        '@"xcolorengine.XColorEngine.resources"',
+        "colorWithDynamicProvider",
+        "resolvedColorWithTraitCollection",
         '@"twitterColors"',
         '@"tfnuiColors"',
         "BHTLastThemeProviderClasses",
@@ -272,12 +296,11 @@ def main() -> None:
         '@"cardBackgroundColor"',
         '@"darkBackgroundColor"',
         '@"capsuleTabsSelectedBackgroundColor"',
-        '@"capsuleTabsOnMediaSelectedBackgroundColor"',
-        '@"capsuleTabsOnMediaTextColor"',
-        '@"capsuleTabsOnMediaBorderColor"',
         '@"textDetailsColor"',
+        '@"conversationLineColor"',
+        '@"textLinkColor"',
         '@"retweetButtonColor"',
-        "if (colors.count == 0) return;",
+        "if (colors.count == 0) return state;",
         "return original ?",
         '@"_t1_applyTheme"',
         '@"_t1_updateOverrideUserInterfaceStyle"',
@@ -291,6 +314,16 @@ def main() -> None:
         if required not in theme_accent_source:
             raise AssertionError(
                 f"Missing guarded app-wide accent invariant: {required}"
+            )
+    for contrast_sensitive in (
+        '@"capsuleTabsOnMediaSelectedBackgroundColor"',
+        '@"capsuleTabsOnMediaTextColor"',
+        '@"capsuleTabsOnMediaBorderColor"',
+    ):
+        if contrast_sensitive in theme_accent_source:
+            raise AssertionError(
+                "Theme hook must preserve contextual media-tab contrast: "
+                f"{contrast_sensitive}"
             )
     if "postNotificationName" in theme_accent_source:
         raise AssertionError(
@@ -470,6 +503,12 @@ def main() -> None:
         "BHTRefreshNativeTabViewAppearance(nativeLikesTab)",
         "themeRefreshScheduled",
         '@"themeRefreshes"',
+        "ensureWaterfallSelectorInstalled",
+        "restoreWaterfallSelectorVisibilityIfVisible",
+        "self.navigationItem.titleView != self.selector",
+        "navigation.topViewController != self",
+        '@"waterfallSelectorInstalls"',
+        '@"waterfallSelectorOwned"',
         '"viewerPresentation": @"windowFullScreen"',
         "BHTFullScreenPresenterForController",
         "UIModalPresentationFullScreen",
