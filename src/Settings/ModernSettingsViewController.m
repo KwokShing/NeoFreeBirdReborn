@@ -8,15 +8,18 @@
 #import "Settings/ModernSettingsViewController.h"
 #import "Core/BHTBundle.h"
 #import "Core/BHTManager.h"
+#import "Core/BHTSettings.h"
 #import "Settings/ModernSettingsCells.h"
 #import "Settings/ModernSettingsPageViewController.h"
 #import "Settings/Pages/AppearanceSettingsViewController.h"
 #import "Settings/Pages/DebugSettingsViewController.h"
 #import "Settings/Pages/MediaDownloadsSettingsViewController.h"
 #import "Settings/Pages/ProfilesSettingsViewController.h"
+#import "Settings/Pages/PresetSettingsViewController.h"
 #import "Settings/Pages/TimelinesSettingsViewController.h"
 #import "Settings/Pages/TweetsSettingsViewController.h"
 #import "Settings/Pages/WebSettingsViewController.h"
+#import "ThemeColor/BHTThemePresets.h"
 #import "ThemeColor/Palette.h"
 
 static char kBHTRepresentedAvatarURLKey;
@@ -33,10 +36,15 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     return cache;
 }
 
-@interface ModernSettingsViewController () <UITableViewDataSource, UITableViewDelegate>
+@interface ModernSettingsViewController ()
+    <UITableViewDataSource, UITableViewDelegate, UISearchResultsUpdating,
+     UISearchControllerDelegate>
 @property (nonatomic, strong) TFNTwitterAccount* account;
 @property (nonatomic, strong) UITableView* tableView;
 @property (nonatomic, strong) NSArray* sections;
+@property (nonatomic, strong) UISearchController* settingsSearchController;
+@property (nonatomic, copy) NSArray<NSDictionary*>* settingsSearchIndex;
+@property (nonatomic, copy) NSArray<NSDictionary*>* filteredSettingsResults;
 @property (nonatomic, strong) NSArray* developerCells;
 @property (nonatomic, strong) NSArray* coolKidsCells;
 @property (nonatomic, strong) NSArray* specialThanksCells;
@@ -48,6 +56,9 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 #pragma mark - Section Headers
 
 - (UIView*)tableView:(UITableView*)tableView viewForHeaderInSection:(NSInteger)section {
+    if ([self isSettingsSearchActive]) {
+        return nil;
+    }
     if (section == 0) {
         UIView* headerView = [[UIView alloc] init];
         headerView.backgroundColor = [Palette currentBackgroundColor];
@@ -135,6 +146,9 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 }
 
 - (CGFloat)tableView:(UITableView*)tableView heightForHeaderInSection:(NSInteger)section {
+    if ([self isSettingsSearchActive]) {
+        return CGFLOAT_MIN;
+    }
     if (section == 0 || section == 1 || section == 2 || section == 3 || section == 4) {
         return UITableViewAutomaticDimension;
     }
@@ -144,6 +158,9 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 #pragma mark - Section Footers
 
 - (UIView*)tableView:(UITableView*)tableView viewForFooterInSection:(NSInteger)section {
+    if ([self isSettingsSearchActive]) {
+        return nil;
+    }
     if (section == 0) {
         UIView* separator = [[UIView alloc] initWithFrame:CGRectZero];
         separator.backgroundColor = [UIColor separatorColor];
@@ -153,6 +170,9 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 }
 
 - (CGFloat)tableView:(UITableView*)tableView heightForFooterInSection:(NSInteger)section {
+    if ([self isSettingsSearchActive]) {
+        return CGFLOAT_MIN;
+    }
     if (section == 0) {
         return 1.0 / UIScreen.mainScreen.scale;
     }
@@ -178,7 +198,8 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_LAYOUT_SUBTITLE"],
             @"icon": @"settings_stroke",
-            @"action": @"showLayoutSettings"
+            @"action": @"showLayoutSettings",
+            @"pageKey": @"general"
         },
         @{
             @"title":
@@ -186,14 +207,16 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_APPEARANCE_SUBTITLE"],
             @"icon": @"paintbrush_stroke",
-            @"action": @"showAppearanceSettings"
+            @"action": @"showAppearanceSettings",
+            @"pageKey": @"appearance"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_GROK_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_GROK_SUBTITLE"],
             @"icon": @"grok_icon_stroke",
-            @"action": @"showGrokSettings"
+            @"action": @"showGrokSettings",
+            @"pageKey": @"grok"
         },
         @{
             @"title":
@@ -201,56 +224,73 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_TIMELINES_SUBTITLE"],
             @"icon": @"home_stroke",
-            @"action": @"showTimelinesSettings"
+            @"action": @"showTimelinesSettings",
+            @"pageKey": @"timelines"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_TWEETS_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_TWEETS_SUBTITLE"],
             @"icon": @"quill",
-            @"action": @"showTweetsSettings"
+            @"action": @"showTweetsSettings",
+            @"pageKey": @"tweets"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_MEDIA_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_MEDIA_SUBTITLE"],
             @"icon": @"media_tab_stroke",
-            @"action": @"showDownloadsSettings"
+            @"action": @"showDownloadsSettings",
+            @"pageKey": @"media_downloads"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_PROFILES_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_PROFILES_SUBTITLE"],
             @"icon": @"account",
-            @"action": @"showProfilesSettings"
+            @"action": @"showProfilesSettings",
+            @"pageKey": @"profiles"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_SEARCH_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_SEARCH_SUBTITLE"],
             @"icon": @"search_stroke",
-            @"action": @"showSearchSettings"
+            @"action": @"showSearchSettings",
+            @"pageKey": @"search"
+        },
+        @{
+            @"title": [[BHTBundle sharedBundle]
+                localizedStringForKey:@"MODERN_SETTINGS_PRESETS_TITLE"],
+            @"subtitle": [[BHTBundle sharedBundle]
+                localizedStringForKey:@"MODERN_SETTINGS_PRESETS_SUBTITLE"],
+            @"icon": @"settings_stroke",
+            @"action": @"showPresetSettings",
+            @"pageKey": @"presets"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_WEB_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_WEB_SUBTITLE"],
             @"icon": @"globe_stroke",
-            @"action": @"showWebSettings"
+            @"action": @"showWebSettings",
+            @"pageKey": @"web"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_BRANDING_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_BRANDING_SUBTITLE"],
             @"icon": @"hash_stroke",
-            @"action": @"showBrandingSettings"
+            @"action": @"showBrandingSettings",
+            @"pageKey": @"branding"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_DEBUG_TITLE"],
             @"subtitle":
                 [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_DEBUG_SUBTITLE"],
             @"icon": @"code",
-            @"action": @"showDebugSettings"
+            @"action": @"showDebugSettings",
+            @"pageKey": @"debug"
         }
     ];
 }
@@ -326,6 +366,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self setupNavigationBar];
+    [self setupSettingsSearch];
     [self setupTableView];
     [self setupLayout];
     [self setupFooterLabel];
@@ -352,6 +393,203 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     } else {
         self.title = [[BHTBundle sharedBundle] localizedStringForKey:@"NFB_SETTINGS_TITLE"];
     }
+}
+
+- (void)setupSettingsSearch {
+    UISearchController* search =
+        [[UISearchController alloc] initWithSearchResultsController:nil];
+    search.searchResultsUpdater = self;
+    search.delegate = self;
+    search.obscuresBackgroundDuringPresentation = NO;
+    search.searchBar.autocapitalizationType =
+        UITextAutocapitalizationTypeNone;
+    search.searchBar.placeholder = [[BHTBundle sharedBundle]
+        localizedStringForKey:@"SETTINGS_SEARCH_PLACEHOLDER"];
+    self.settingsSearchController = search;
+    self.navigationItem.searchController = search;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.definesPresentationContext = YES;
+    [self buildSettingsSearchIndex];
+}
+
+- (void)buildSettingsSearchIndex {
+    BHTBundle* bundle = [BHTBundle sharedBundle];
+    NSMutableArray<NSDictionary*>* index = [NSMutableArray array];
+    NSMutableDictionary<NSString*, NSDictionary*>* pagesByKey =
+        [NSMutableDictionary dictionary];
+
+    for (NSDictionary* page in self.sections) {
+        NSString* pageKey = page[@"pageKey"];
+        if (pageKey) pagesByKey[pageKey] = page;
+        NSString* searchText =
+            [@[page[@"title"] ?: @"", page[@"subtitle"] ?: @"",
+               pageKey ?: @""]
+                componentsJoinedByString:@" "];
+        [index addObject:@{
+            @"kind": @"page",
+            @"pageKey": pageKey ?: @"",
+            @"identifier": pageKey ?: @"",
+            @"title": page[@"title"] ?: @"",
+            @"subtitle": page[@"subtitle"] ?: @"",
+            @"icon": page[@"icon"] ?: @"settings_stroke",
+            @"searchText": searchText
+        }];
+    }
+
+    for (NSDictionary* setting in [BHTSettings allSearchableSettings]) {
+        NSString* pageKey = setting[@"pageKey"];
+        NSDictionary* page = pagesByKey[pageKey];
+        if (!page) continue;
+
+        NSString* key = setting[@"key"];
+        NSString* titleKey = setting[@"titleKey"];
+        if (!titleKey && key.length > 0) {
+            titleKey =
+                [NSString stringWithFormat:@"%@_TITLE", key.uppercaseString];
+        }
+        NSString* title = [bundle localizedStringForKey:titleKey];
+        if (title.length == 0 || [title isEqualToString:titleKey]) continue;
+
+        NSString* detail = @"";
+        if (key.length > 0) {
+            NSString* detailKey =
+                [NSString stringWithFormat:@"%@_DETAIL",
+                                           key.uppercaseString];
+            NSString* localized = [bundle localizedStringForKey:detailKey];
+            if (![localized isEqualToString:detailKey]) detail = localized;
+        }
+        NSString* sectionTitle = @"";
+        NSString* sectionKey = setting[@"sectionKey"];
+        if (sectionKey.length > 0) {
+            sectionTitle = [bundle localizedStringForKey:sectionKey];
+        }
+        NSString* categoryTitle = page[@"title"] ?: @"";
+        NSString* categorySubtitle = page[@"subtitle"] ?: @"";
+        NSString* resultSubtitle =
+            detail.length > 0
+                ? [NSString stringWithFormat:@"%@ — %@", categoryTitle,
+                                             detail]
+                : categoryTitle;
+        NSString* identifier = key ?: setting[@"titleKey"];
+        NSString* searchText =
+            [@[title ?: @"", detail ?: @"", sectionTitle ?: @"",
+               categoryTitle ?: @"", categorySubtitle ?: @"", key ?: @""]
+                componentsJoinedByString:@" "];
+        [index addObject:@{
+            @"kind": @"setting",
+            @"pageKey": pageKey,
+            @"identifier": identifier ?: @"",
+            @"title": title,
+            @"subtitle": resultSubtitle,
+            @"icon": page[@"icon"] ?: @"settings_stroke",
+            @"searchText": searchText
+        }];
+    }
+
+    NSDictionary* presetsPage = pagesByKey[@"presets"];
+    NSString* presetsCategory = presetsPage[@"title"] ?: @"";
+    NSString* themeSection =
+        [bundle localizedStringForKey:@"THEME_PRESETS_SECTION_TITLE"];
+    for (NSDictionary* preset in [BHTThemePresets availablePresets]) {
+        NSString* title =
+            [bundle localizedStringForKey:preset[@"titleKey"]];
+        NSString* detail =
+            [bundle localizedStringForKey:preset[@"detailKey"]];
+        [index addObject:@{
+            @"kind": @"page",
+            @"pageKey": @"presets",
+            @"identifier": preset[@"identifier"],
+            @"title": title,
+            @"subtitle":
+                [NSString stringWithFormat:@"%@ — %@", presetsCategory,
+                                           detail],
+            @"icon": presetsPage[@"icon"] ?: @"settings_stroke",
+            @"searchText":
+                [@[title, detail, themeSection, presetsCategory]
+                    componentsJoinedByString:@" "]
+        }];
+    }
+    NSString* profileSection =
+        [bundle localizedStringForKey:@"PREFERENCE_PROFILES_SECTION_TITLE"];
+    for (NSDictionary* profileAction in @[
+             @{
+                 @"titleKey": @"EXPORT_PREFERENCE_PROFILE_TITLE",
+                 @"detailKey": @"EXPORT_PREFERENCE_PROFILE_DETAIL"
+             },
+             @{
+                 @"titleKey": @"IMPORT_PREFERENCE_PROFILE_TITLE",
+                 @"detailKey": @"IMPORT_PREFERENCE_PROFILE_DETAIL"
+             }
+         ]) {
+        NSString* title =
+            [bundle localizedStringForKey:profileAction[@"titleKey"]];
+        NSString* detail =
+            [bundle localizedStringForKey:profileAction[@"detailKey"]];
+        [index addObject:@{
+            @"kind": @"page",
+            @"pageKey": @"presets",
+            @"identifier": profileAction[@"titleKey"],
+            @"title": title,
+            @"subtitle":
+                [NSString stringWithFormat:@"%@ — %@", presetsCategory,
+                                           detail],
+            @"icon": presetsPage[@"icon"] ?: @"settings_stroke",
+            @"searchText":
+                [@[title, detail, profileSection, presetsCategory]
+                    componentsJoinedByString:@" "]
+        }];
+    }
+    self.settingsSearchIndex = [index copy];
+    self.filteredSettingsResults = @[];
+}
+
+- (BOOL)isSettingsSearchActive {
+    return self.settingsSearchController.isActive &&
+           self.settingsSearchController.searchBar.text.length > 0;
+}
+
+- (void)updateSearchResultsForSearchController:
+    (UISearchController*)searchController {
+    NSString* query =
+        [searchController.searchBar.text
+            stringByTrimmingCharactersInSet:
+                NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (query.length == 0) {
+        self.filteredSettingsResults = @[];
+    } else {
+        NSMutableArray<NSDictionary*>* matches = [NSMutableArray array];
+        for (NSDictionary* result in self.settingsSearchIndex) {
+            NSRange match =
+                [result[@"searchText"]
+                    rangeOfString:query
+                         options:NSCaseInsensitiveSearch |
+                                 NSDiacriticInsensitiveSearch];
+            if (match.location != NSNotFound) {
+                [matches addObject:result];
+            }
+        }
+        self.filteredSettingsResults = [matches copy];
+    }
+    [self.tableView reloadData];
+    if (query.length > 0 && self.filteredSettingsResults.count == 0) {
+        UILabel* emptyLabel = [UILabel new];
+        emptyLabel.text = [[BHTBundle sharedBundle]
+            localizedStringForKey:@"SETTINGS_SEARCH_NO_RESULTS"];
+        emptyLabel.textAlignment = NSTextAlignmentCenter;
+        emptyLabel.textColor = UIColor.secondaryLabelColor;
+        emptyLabel.font =
+            [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+        emptyLabel.numberOfLines = 0;
+        self.tableView.backgroundView = emptyLabel;
+    } else {
+        self.tableView.backgroundView = nil;
+    }
+}
+
+- (void)didDismissSearchController:(UISearchController*)searchController {
+    self.filteredSettingsResults = @[];
+    self.tableView.backgroundView = nil;
+    [self.tableView reloadData];
 }
 
 - (void)setupTableView {
@@ -420,10 +658,16 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 #pragma mark - UITableViewDataSource
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
+    if ([self isSettingsSearchActive]) {
+        return 1;
+    }
     return 5;
 }
 
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
+    if ([self isSettingsSearchActive]) {
+        return self.filteredSettingsResults.count;
+    }
     if (section == 0) {
         return self.sections.count;
     } else if (section == 1) {
@@ -440,6 +684,16 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
+    if ([self isSettingsSearchActive]) {
+        ModernSettingsTableViewCell* cell =
+            [tableView dequeueReusableCellWithIdentifier:@"SettingsCell"
+                                            forIndexPath:indexPath];
+        NSDictionary* result = self.filteredSettingsResults[indexPath.row];
+        [cell configureWithTitle:result[@"title"]
+                        subtitle:result[@"subtitle"]
+                        iconName:result[@"icon"]];
+        return cell;
+    }
     if (indexPath.section == 0) {
         ModernSettingsTableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:@"SettingsCell"
                                                                             forIndexPath:indexPath];
@@ -626,6 +880,12 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
+    if ([self isSettingsSearchActive]) {
+        NSDictionary* result = self.filteredSettingsResults[indexPath.row];
+        [self openSettingsSearchResult:result];
+        return;
+    }
+
     if (indexPath.section == 0) {
         NSDictionary* sectionData = self.sections[indexPath.row];
         NSString* action = sectionData[@"action"];
@@ -660,73 +920,126 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 
 #pragma mark - Navigation to Sub-pages
 
+- (UIViewController*)settingsControllerForPageKey:(NSString*)pageKey {
+    if ([pageKey isEqualToString:@"appearance"]) {
+        return [[AppearanceSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"timelines"]) {
+        return [[TimelinesSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"tweets"]) {
+        return [[TweetsSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"media_downloads"]) {
+        return [[MediaDownloadsSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"profiles"]) {
+        return [[ProfilesSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"web"]) {
+        return [[WebSettingsViewController alloc] initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"debug"]) {
+        return [[DebugSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"presets"]) {
+        return [[PresetSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([[BHTSettings allPageKeys] containsObject:pageKey]) {
+        return [[ModernSettingsPageViewController alloc]
+            initWithAccount:self.account
+                    pageKey:pageKey];
+    }
+    return nil;
+}
+
+- (void)openSettingsSearchResult:(NSDictionary*)result {
+    NSString* pageKey = result[@"pageKey"];
+    UIViewController* controller =
+        [self settingsControllerForPageKey:pageKey];
+    if (!controller) return;
+
+    if ([result[@"kind"] isEqualToString:@"setting"] &&
+        [controller
+            isKindOfClass:ModernSettingsPageViewController.class]) {
+        ((ModernSettingsPageViewController*)controller)
+            .settingsSearchTargetIdentifier = result[@"identifier"];
+    }
+    self.settingsSearchController.active = NO;
+    [self.navigationController pushViewController:controller animated:YES];
+}
+
 - (void)showLayoutSettings {
-    ModernSettingsPageViewController* vc =
-        [[ModernSettingsPageViewController alloc] initWithAccount:self.account
-                                                          pageKey:@"general"];
+    UIViewController* vc = [self settingsControllerForPageKey:@"general"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showAppearanceSettings {
-    AppearanceSettingsViewController* vc =
-        [[AppearanceSettingsViewController alloc] initWithAccount:self.account];
+    UIViewController* vc =
+        [self settingsControllerForPageKey:@"appearance"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showTimelinesSettings {
-    TimelinesSettingsViewController* vc =
-        [[TimelinesSettingsViewController alloc] initWithAccount:self.account];
+    UIViewController* vc =
+        [self settingsControllerForPageKey:@"timelines"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showGrokSettings {
-    ModernSettingsPageViewController* vc =
-        [[ModernSettingsPageViewController alloc] initWithAccount:self.account
-                                                          pageKey:@"grok"];
+    UIViewController* vc = [self settingsControllerForPageKey:@"grok"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showDownloadsSettings {
-    MediaDownloadsSettingsViewController* vc =
-        [[MediaDownloadsSettingsViewController alloc]
-            initWithAccount:self.account];
+    UIViewController* vc =
+        [self settingsControllerForPageKey:@"media_downloads"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showProfilesSettings {
-    ProfilesSettingsViewController* vc =
-        [[ProfilesSettingsViewController alloc] initWithAccount:self.account];
+    UIViewController* vc =
+        [self settingsControllerForPageKey:@"profiles"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showTweetsSettings {
-    TweetsSettingsViewController* vc =
-        [[TweetsSettingsViewController alloc] initWithAccount:self.account];
+    UIViewController* vc =
+        [self settingsControllerForPageKey:@"tweets"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showBrandingSettings {
-    ModernSettingsPageViewController* vc =
-        [[ModernSettingsPageViewController alloc] initWithAccount:self.account
-                                                          pageKey:@"branding"];
+    UIViewController* vc =
+        [self settingsControllerForPageKey:@"branding"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showDebugSettings {
-    DebugSettingsViewController* vc =
-        [[DebugSettingsViewController alloc] initWithAccount:self.account];
+    UIViewController* vc =
+        [self settingsControllerForPageKey:@"debug"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showSearchSettings {
-    ModernSettingsPageViewController* vc =
-        [[ModernSettingsPageViewController alloc] initWithAccount:self.account
-                                                          pageKey:@"search"];
+    UIViewController* vc = [self settingsControllerForPageKey:@"search"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)showWebSettings {
-    WebSettingsViewController* vc = [[WebSettingsViewController alloc] initWithAccount:self.account];
+    UIViewController* vc = [self settingsControllerForPageKey:@"web"];
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
+- (void)showPresetSettings {
+    UIViewController* vc = [self settingsControllerForPageKey:@"presets"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 

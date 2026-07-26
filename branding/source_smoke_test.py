@@ -143,16 +143,153 @@ def main() -> None:
     )
     for required in (
         "UIUserInterfaceIdiomPad",
-        "BHTUpdateAdaptiveRailBranding",
+        "T1TabBarHostView",
+        "BHTRailHeaderLogoImageView",
+        "BHTThemeDidChangeNotification",
+        "logoView.hidden = enabled && usesPadRail",
     ):
         if required not in theme_source:
             raise AssertionError(f"Missing compatibility fix: {required}")
+    if "BHTAdaptiveRailLogoView" in theme_source:
+        raise AssertionError(
+            "Geometry-based rail branding can replace the Home tab icon"
+        )
+    compatibility_source = (
+        ROOT / "src" / "Compatibility" / "BHTCompatibilityReporter.m"
+    ).read_text(encoding="utf-8")
+    for required in (
+        'BHTProbe(@"appearance", @"T1TabBarHostView", @"logoImageView", NO)',
+        'BHTProbe(@"appearance", @"TAEColorSettings", @"currentColorPalette", NO)',
+    ):
+        if required not in compatibility_source:
+            raise AssertionError(
+                f"Missing branding/theme compatibility probe: {required}"
+            )
 
     branding_source = (
         ROOT / "src" / "Branding" / "BHTBranding.m"
     ).read_text(encoding="utf-8")
     if '@"twitter_bird"' not in branding_source:
         raise AssertionError("Central Twitter bird asset lookup is missing")
+
+    ipa_branding_source = (
+        ROOT / "branding" / "ipa_branding.py"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "_apply_builtin_launch_bird",
+        'stock_name = b"xLogo"',
+        '"tBird@3x.png"',
+        "TWITTER_BLUE = (29, 161, 242)",
+    ):
+        if required not in ipa_branding_source:
+            raise AssertionError(
+                f"Missing pre-injection launch branding: {required}"
+            )
+    merged_car_source = (
+        ROOT / "branding" / "build_merged_car.py"
+    ).read_text(encoding="utf-8")
+    for required in ('name.lower() == "xlogo"', "template-rendering-intent"):
+        if required not in merged_car_source:
+            raise AssertionError(
+                f"Missing xLogo template invariant: {required}"
+            )
+
+    theme_preset_source = (
+        ROOT / "src" / "ThemeColor" / "BHTThemePresets.m"
+    ).read_text(encoding="utf-8")
+    for required in (
+        '@"apollo_inspired"',
+        '@"#0A84FF"',
+        '@"classic_twitter"',
+        '@"#1DA1F2"',
+        '@"native_blue"',
+        "respondsToSelector:@selector(setPrimaryColorOption:)",
+    ):
+        if required not in theme_preset_source:
+            raise AssertionError(f"Missing theme preset invariant: {required}")
+
+    hook_helpers_source = (
+        ROOT / "src" / "Hooks" / "HookHelpers.m"
+    ).read_text(encoding="utf-8")
+    if "[Palette customAccentColor]" not in hook_helpers_source:
+        raise AssertionError("Custom theme accent is not resolved at runtime")
+    theme_accent_source = (
+        ROOT / "src" / "Hooks" / "ThemeAccent.x"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "BHTPrimaryColorMethodIsCompatible",
+        "method_getReturnType",
+        "class_addMethod",
+        "BHTSettingsProfileDidApplyNotification",
+        "[Palette invalidateCustomAccentColorCache]",
+    ):
+        if required not in theme_accent_source:
+            raise AssertionError(
+                f"Missing guarded app-wide accent invariant: {required}"
+            )
+    palette_source = (
+        ROOT / "src" / "ThemeColor" / "Palette.m"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "BHTCustomAccentCacheIsValid",
+        "invalidateCustomAccentColorCache",
+        "BHTSettingsProfileDidApplyNotification",
+    ):
+        if required not in palette_source:
+            raise AssertionError(
+                f"Missing custom-accent cache invariant: {required}"
+            )
+
+    modern_settings_source = (
+        ROOT / "src" / "Settings" / "ModernSettingsViewController.m"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "UISearchResultsUpdating",
+        "allSearchableSettings",
+        'setting[@"sectionKey"]',
+        'page[@"subtitle"]',
+        "showPresetSettings",
+    ):
+        if required not in modern_settings_source:
+            raise AssertionError(
+                f"Missing settings search/profile UI invariant: {required}"
+            )
+
+    for required in (
+        "NeoFreeBird Preference Profile",
+        "exportablePreferenceKeys",
+        "bht_custom_accent_hex",
+        "bht_theme_preset_identifier",
+        "BHTSettingsProfileDidApplyNotification",
+        "[(NSArray*)value count] > 128",
+        "[(NSString*)item length] > 128",
+        '@"apollo_inspired"',
+        '@"classic_twitter"',
+        '@"native_blue"',
+    ):
+        if required not in settings_source:
+            raise AssertionError(
+                f"Missing preference-profile invariant: {required}"
+            )
+    for forbidden in ("password", "cookie", "auth_token", "session_token"):
+        export_method = settings_source.split(
+            "+ (NSSet<NSString*>*)exportablePreferenceKeys", 1
+        )[1].split("+ (NSDictionary*)preferenceProfile", 1)[0]
+        if f'@"{forbidden}"' in export_method:
+            raise AssertionError(
+                f"Sensitive key entered profile allow-list: {forbidden}"
+            )
+
+    for required_key in (
+        "SETTINGS_SEARCH_PLACEHOLDER",
+        "THEME_PRESET_APOLLO_TITLE",
+        "EXPORT_PREFERENCE_PROFILE_TITLE",
+        "IMPORT_PREFERENCE_PROFILE_TITLE",
+    ):
+        if required_key not in localized_keys:
+            raise AssertionError(
+                f"Missing settings/theme localization: {required_key}"
+            )
 
     launch_source = (
         ROOT / "src" / "Hooks" / "AppLifecycle.x"
@@ -164,10 +301,17 @@ def main() -> None:
         ROOT / "src" / "Likes" / "BHTLikesTab.m"
     ).read_text(encoding="utf-8")
     for required in (
+        "BHTLikedMediaContextConfiguration",
+        "UIContextMenuInteraction",
         "TFNMenuSheetViewController",
         "UIPercentDrivenInteractiveTransition",
         'BHTPhotoURLForVariant(rawURL, @"medium")',
         "totalCostLimit = 128 * 1024 * 1024",
+        "BHTCachedMediaImageEntry",
+        "pixelBucket",
+        "BHTPendingMediaImageRequests",
+        "imageRequestsCoalesced",
+        "if (!token.cancelled) completion(image)",
     ):
         if required not in likes_source:
             raise AssertionError(

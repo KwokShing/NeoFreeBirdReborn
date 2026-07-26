@@ -27,7 +27,7 @@ Usage: $(basename "$0") [-t | --twitter-branding] [--twitter-icon PNG] [--resour
 TL;DR: You need to select at least one branding option and a built .ipa/.tipa.
 
 Branding (at least one required):
-  -t, --twitter-branding  Set the app's display name to Twitter
+  -t, --twitter-branding  Set the Twitter name and blue pre-injection launch bird
   --twitter-icon PNG      Add a selectable alternate app icon from a square PNG
   --resource-pack ZIP     (macOS only) Apply a theme pack ZIP
 

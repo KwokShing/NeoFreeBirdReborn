@@ -36,7 +36,10 @@
 "MODERN_SETTINGS_SEARCH_SUBTITLE" = "Change what you see in the Search tab.";
 
 "MODERN_SETTINGS_PRESETS_TITLE" = "Presets";
-"MODERN_SETTINGS_PRESETS_SUBTITLE" = "Apply a set of pre-configured settings, or export and import your own.";
+"MODERN_SETTINGS_PRESETS_SUBTITLE" = "Choose a theme preset, or export and import your NeoFreeBird preferences.";
+
+"SETTINGS_SEARCH_PLACEHOLDER" = "Search NeoFreeBird settings";
+"SETTINGS_SEARCH_NO_RESULTS" = "No matching settings";
 
 "MODERN_SETTINGS_WEB_TITLE" = "Web, links, and sharing";
 "MODERN_SETTINGS_WEB_SUBTITLE" = "Control shared links, tracking parameters, and browser behavior.";
@@ -272,6 +275,26 @@
 /*Theme*/
 "THEME_SETTINGS_NAVIGATION_TITLE" = "Theme";
 "THEME_SETTINGS_NAVIGATION_DETAIL" = "Choose a theme color for your Twitter experience. This can only be seen by you.";
+"THEME_PRESETS_SECTION_TITLE" = "Theme presets";
+"THEME_PRESET_APOLLO_TITLE" = "Apollo-inspired blue";
+"THEME_PRESET_APOLLO_DETAIL" = "A clean, comfortable blue inspired by Apollo’s Default (blue).";
+"THEME_PRESET_CLASSIC_TWITTER_TITLE" = "Classic Twitter blue";
+"THEME_PRESET_CLASSIC_TWITTER_DETAIL" = "The familiar #1DA1F2 accent from classic Twitter.";
+"THEME_PRESET_NATIVE_BLUE_TITLE" = "Native X blue";
+"THEME_PRESET_NATIVE_BLUE_DETAIL" = "Use X’s built-in blue and native color behavior.";
+
+"PREFERENCE_PROFILES_SECTION_TITLE" = "Preference profiles";
+"PREFERENCE_PROFILES_FOOTER" = "Profiles contain only NeoFreeBird settings and layout choices. Account data, passwords, cookies, and cached media are never included. Some imported changes take effect after reopening the app.";
+"EXPORT_PREFERENCE_PROFILE_TITLE" = "Export preference profile";
+"EXPORT_PREFERENCE_PROFILE_DETAIL" = "Save a portable JSON copy of your current NeoFreeBird setup.";
+"IMPORT_PREFERENCE_PROFILE_TITLE" = "Import preference profile";
+"IMPORT_PREFERENCE_PROFILE_DETAIL" = "Apply a profile exported from NeoFreeBird. Newer unknown settings are safely ignored.";
+"IMPORT_PREFERENCE_PROFILE_SIZE_ERROR" = "The selected profile is empty or larger than 512 KB.";
+"IMPORT_PREFERENCE_PROFILE_SUCCESS_TITLE" = "Profile imported";
+"IMPORT_PREFERENCE_PROFILE_SUCCESS_DETAIL" = "Your NeoFreeBird preferences were applied. Reopen the app for settings that cannot update live.";
+"PREFERENCE_PROFILE_ERROR_TITLE" = "Profile could not be imported";
+"PREFERENCE_PROFILE_GENERIC_ERROR" = "The selected profile could not be read.";
+"PREFERENCE_PROFILE_OK" = "OK";
 
 /*Tab bar*/
 "CUSTOM_TAB_BAR_SETTINGS_NAVIGATION_TITLE" = "Custom navigation";

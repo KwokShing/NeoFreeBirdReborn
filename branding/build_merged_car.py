@@ -325,8 +325,18 @@ def main():
                 if ent.get("hclass"):
                     img["height-class"] = ent["hclass"]
                 images.append(img)
+        contents = {
+            "images": images,
+            "info": {"version": 1, "author": "xcode"},
+        }
+        if name.lower() == "xlogo":
+            # LaunchScreen.nib supplies a dynamic tint for this glyph. Preserve
+            # template rendering when replacing its stock X with the bird.
+            contents["properties"] = {
+                "template-rendering-intent": "template"
+            }
         with open(os.path.join(setdir, "Contents.json"), "w") as fh:
-            json.dump({"images": images, "info": {"version": 1, "author": "xcode"}}, fh)
+            json.dump(contents, fh)
 
     # Compile.
     out_dir = os.path.dirname(out_car) or "."

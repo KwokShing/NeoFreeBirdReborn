@@ -35,8 +35,9 @@ Flags (required):
 Options:
   -h, --help     Show this help
 
-Sideloaded and TrollStore builds use the Twitter display name and include the
-selectable classic Twitter bird icon. rebrand.sh can apply other theme packs.
+Sideloaded and TrollStore builds use the Twitter display name, replace the
+pre-injection launch X with a blue bird, and include the selectable classic
+Twitter bird icon. rebrand.sh can apply other theme packs.
 EOF
 }
 

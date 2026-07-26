@@ -21,6 +21,9 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker);
 @property (nonatomic, strong) UITableView* tableView;
 @property (nonatomic, strong) NSArray<NSDictionary*>* toggles;
 @property (nonatomic, strong) NSArray<NSDictionary*>* visibleToggles;
+// Set before presentation by global settings search. The page scrolls to and
+// briefly highlights the matching key or title key once its table is visible.
+@property (nonatomic, copy, nullable) NSString* settingsSearchTargetIdentifier;
 
 - (instancetype)initWithAccount:(TFNTwitterAccount*)account;
 

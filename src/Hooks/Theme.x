@@ -7,6 +7,7 @@
 #import "Branding/BHTBranding.h"
 #import "Compatibility/BHTCompatibilityReporter.h"
 #import "Likes/BHTLikesTab.h"
+#import "ThemeColor/BHTThemePresets.h"
 
 // MARK: - Custom accent color
 
@@ -149,9 +150,6 @@ static BOOL shouldPinCollapsibleTabBar(
     return idiom != UIUserInterfaceIdiomPad;
 }
 
-static void BHTUpdateAdaptiveRailBranding(
-    T1TabBarViewController* controller);
-
 %hook T1TabBarViewController
 
 // X 12.9 consults these capabilities before sending collapse-ratio updates.
@@ -171,21 +169,6 @@ static void BHTUpdateAdaptiveRailBranding(
     } else {
         %orig(ratio);
     }
-}
-
-- (void)viewDidLayoutSubviews {
-    %orig;
-    BHTUpdateAdaptiveRailBranding(self);
-}
-
-- (void)_t1_syncNativeTabBarItems {
-    %orig;
-    BHTUpdateAdaptiveRailBranding(self);
-}
-
-- (void)_t1_syncNativeTabBarSelection {
-    %orig;
-    BHTUpdateAdaptiveRailBranding(self);
 }
 
 %end
@@ -246,88 +229,90 @@ static UIColor* tabItemColor(BOOL selected) {
 static char kBHTOriginalRailLogoImageKey;
 static char kBHTOriginalRailLogoTintKey;
 
-static BOOL BHTUsesPadNavigation(UIViewController* controller) {
-    UIUserInterfaceIdiom idiom =
-        controller.traitCollection.userInterfaceIdiom;
+static BOOL BHTUsesPadNavigation(UITraitCollection* traits) {
+    UIUserInterfaceIdiom idiom = traits.userInterfaceIdiom;
     if (idiom == UIUserInterfaceIdiomUnspecified) {
         idiom = UIDevice.currentDevice.userInterfaceIdiom;
     }
     return idiom == UIUserInterfaceIdiomPad;
 }
 
-static NSMapTable<T1TabBarViewController*, UIImageView*>*
-BHTAdaptiveRailLogoCache(void) {
-    static NSMapTable* cache = nil;
+static NSHashTable<UIImageView*>* BHTBrandedLogoViews(void) {
+    static NSHashTable* views = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        cache = [NSMapTable weakToWeakObjectsMapTable];
+        views = [NSHashTable weakObjectsHashTable];
     });
-    return cache;
+    return views;
 }
 
-static UIImageView* BHTAdaptiveRailLogoView(
-    T1TabBarViewController* controller) {
-    if (!controller.isViewLoaded || !BHTUsesPadNavigation(controller)) {
-        return nil;
-    }
-
-    UIView* root = controller.view;
-    UIImageView* cached =
-        [BHTAdaptiveRailLogoCache() objectForKey:controller];
-    if (cached && [cached isDescendantOfView:root]) {
-        return cached;
-    }
-
-    UIEdgeInsets safeArea = root.safeAreaInsets;
-    // The controller can own either the full iPad canvas or only the narrow
-    // rail. Keep a rail-width-safe minimum so a 50–65 pt centered logo is not
-    // excluded when the root itself is roughly 100–130 pt wide.
-    CGFloat maximumX =
-        MIN(120.0,
-            MAX(76.0, CGRectGetWidth(root.bounds) * 0.12));
-    CGFloat maximumY = MAX(76.0, safeArea.top + 68.0);
-    __block UIImageView* best = nil;
-    __block CGFloat bestScore = CGFLOAT_MAX;
-
-    EnumerateSubviewsRecursively(root, ^(UIView* candidate) {
-        if (![candidate isKindOfClass:UIImageView.class] ||
-            candidate.hidden || candidate.alpha < 0.05) {
-            return;
-        }
-        UIImageView* imageView = (UIImageView*)candidate;
-        if (!imageView.image) return;
-        CGRect rect = [imageView convertRect:imageView.bounds toView:root];
-        CGFloat width = CGRectGetWidth(rect);
-        CGFloat height = CGRectGetHeight(rect);
-        if (width < 16.0 || height < 16.0 ||
-            width > 68.0 || height > 68.0 ||
-            fabs(width - height) > 12.0 ||
-            CGRectGetMidX(rect) > maximumX ||
-            CGRectGetMidY(rect) > maximumY) {
-            return;
-        }
-
-        // The rail mark is the first square image below the status area.
-        // Scoring instead of relying on a private class name keeps this valid
-        // for both compact and expanded iPad split-view layouts.
-        CGFloat targetY = safeArea.top + 30.0;
-        CGFloat score = fabs(CGRectGetMidY(rect) - targetY) +
-                        CGRectGetMidX(rect) * 0.08;
-        if (score < bestScore) {
-            best = imageView;
-            bestScore = score;
-        }
-    });
-    if (best) {
-        [BHTAdaptiveRailLogoCache() setObject:best
-                                       forKey:controller];
-    }
-    return best;
+static void BHTApplyCurrentBirdToImageView(UIImageView* imageView) {
+    if (!imageView) return;
+    BHTApplyTwitterBirdToImageView(imageView, CurrentAccentColor());
+    [BHTBrandedLogoViews() addObject:imageView];
 }
 
-static void BHTUpdateAdaptiveRailBranding(
-    T1TabBarViewController* controller) {
-    UIImageView* logoView = BHTAdaptiveRailLogoView(controller);
+static void BHTInstallBrandingThemeObserver(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        [NSNotificationCenter.defaultCenter
+            addObserverForName:BHTThemeDidChangeNotification
+                        object:nil
+                         queue:NSOperationQueue.mainQueue
+                    usingBlock:^(__unused NSNotification* notification) {
+                        if (![BHTSettings
+                                boolForKey:
+                                    @"color_twitter_icon_in_top_bar"]) {
+                            return;
+                        }
+                        UIColor* accent = CurrentAccentColor();
+                        for (UIImageView* imageView
+                             in BHTBrandedLogoViews().allObjects) {
+                            BHTApplyTwitterBirdToImageView(imageView, accent);
+                        }
+                    }];
+    });
+}
+
+static UIImageView* BHTRailHeaderLogoImageView(UIView* hostView) {
+    // X 12.9 owns the actual iPad header mark in T1TabBarHostView. Resolve its
+    // semantic logo property/ivar only; a geometry scan can mistake the first
+    // Home tab for the header and produce a duplicate bird below the stock X.
+    SEL selector = NSSelectorFromString(@"logoImageView");
+    if ([hostView respondsToSelector:selector]) {
+        id candidate = nil;
+        @try {
+            candidate =
+                ((id (*)(id, SEL))objc_msgSend)(hostView, selector);
+        } @catch (__unused NSException* exception) {
+        }
+        if ([candidate isKindOfClass:UIImageView.class]) {
+            return candidate;
+        }
+    }
+
+    for (Class currentClass = hostView.class;
+         currentClass && currentClass != UIView.class;
+         currentClass = class_getSuperclass(currentClass)) {
+        Ivar ivar =
+            class_getInstanceVariable(currentClass, "_logoImageView");
+        const char* encoding = ivar ? ivar_getTypeEncoding(ivar) : NULL;
+        if (!encoding || encoding[0] != '@') continue;
+        id candidate = nil;
+        @try {
+            candidate = object_getIvar(hostView, ivar);
+        } @catch (__unused NSException* exception) {
+        }
+        if ([candidate isKindOfClass:UIImageView.class]) {
+            return candidate;
+        }
+    }
+    return nil;
+}
+
+static void BHTUpdateRailHostBranding(UIView* hostView) {
+    if (!BHTUsesPadNavigation(hostView.traitCollection)) return;
+    UIImageView* logoView = BHTRailHeaderLogoImageView(hostView);
     if (!logoView) return;
 
     BOOL enabled =
@@ -347,8 +332,10 @@ static void BHTUpdateAdaptiveRailBranding(
                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
         }
-        BHTApplyTwitterBirdToImageView(logoView, CurrentAccentColor());
+        BHTInstallBrandingThemeObserver();
+        BHTApplyCurrentBirdToImageView(logoView);
     } else if (originalImage) {
+        [BHTBrandedLogoViews() removeObject:logoView];
         logoView.image = originalImage;
         UIColor* originalTint =
             objc_getAssociatedObject(logoView,
@@ -363,15 +350,44 @@ static void BHTUpdateAdaptiveRailBranding(
     }
 }
 
+%hook T1TabBarHostView
+
+- (void)didMoveToWindow {
+    %orig;
+    BHTUpdateRailHostBranding((UIView*)self);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    BHTUpdateRailHostBranding((UIView*)self);
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection*)previousTraits {
+    %orig(previousTraits);
+    BHTUpdateRailHostBranding((UIView*)self);
+}
+
+%end
+
 %hook _TtC11TwitterHome39HomeDefaultNavigationBarTitleViewPlugin
 
 - (UIView*)titleView {
     UIView* titleView = %orig;
 
-    if ([BHTSettings boolForKey:@"color_twitter_icon_in_top_bar"] &&
-        [titleView isKindOfClass:[UIImageView class]]) {
+    if ([titleView isKindOfClass:[UIImageView class]]) {
         UIImageView* logoView = (UIImageView*)titleView;
-        BHTApplyTwitterBirdToImageView(logoView, CurrentAccentColor());
+        BOOL enabled =
+            [BHTSettings boolForKey:@"color_twitter_icon_in_top_bar"];
+        BOOL usesPadRail =
+            BHTUsesPadNavigation(titleView.traitCollection);
+        // iPad already has the branded rail header. Suppress this second Home
+        // title mark there; on iPhone it remains the single themed bird.
+        logoView.hidden = enabled && usesPadRail;
+        logoView.accessibilityElementsHidden = logoView.hidden;
+        if (enabled && !usesPadRail) {
+            BHTInstallBrandingThemeObserver();
+            BHTApplyCurrentBirdToImageView(logoView);
+        }
     }
 
     return titleView;

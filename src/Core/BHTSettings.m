@@ -9,6 +9,20 @@
 #import "Core/BHTBundle.h"
 #import "Core/BHTManager.h"
 
+NSString* const BHTSettingsProfileDidApplyNotification =
+    @"BHTSettingsProfileDidApplyNotification";
+
+static NSString* const BHTSettingsProfileErrorDomain =
+    @"com.neofreebird.preference-profile";
+
+static NSArray<NSString*>* BHTSettingsPageOrder(void) {
+    return @[
+        @"general", @"appearance", @"grok", @"timelines", @"tweets",
+        @"media_downloads", @"profiles", @"search", @"web", @"branding",
+        @"debug"
+    ];
+}
+
 static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
     static NSDictionary<NSString*, NSDictionary*>* pages;
     static dispatch_once_t onceToken;
@@ -521,6 +535,68 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsIndex(void) {
     return index;
 }
 
+static NSError* BHTProfileError(NSInteger code, NSString* description) {
+    return [NSError errorWithDomain:BHTSettingsProfileErrorDomain
+                               code:code
+                           userInfo:@{
+                               NSLocalizedDescriptionKey:
+                                   description ?: @"The profile is invalid."
+                           }];
+}
+
+static BOOL BHTIsStringArray(id value) {
+    if (![value isKindOfClass:NSArray.class]) return NO;
+    if ([(NSArray*)value count] > 128) return NO;
+    for (id item in (NSArray*)value) {
+        if (![item isKindOfClass:NSString.class] ||
+            [(NSString*)item length] > 128) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
+static BOOL BHTIsValidCustomAccent(id value) {
+    if (![value isKindOfClass:NSString.class]) return NO;
+    NSString* candidate =
+        [(NSString*)value stringByTrimmingCharactersInSet:
+                              NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if ([candidate hasPrefix:@"#"]) {
+        candidate = [candidate substringFromIndex:1];
+    }
+    if (candidate.length != 6 && candidate.length != 8) return NO;
+    NSCharacterSet* allowed =
+        [NSCharacterSet
+            characterSetWithCharactersInString:@"0123456789abcdefABCDEF"];
+    NSRange invalidRange =
+        [candidate rangeOfCharacterFromSet:[allowed invertedSet]];
+    return invalidRange.location == NSNotFound;
+}
+
+static NSSet<NSString*>* BHTStringPreferenceKeys(void) {
+    return [NSSet setWithArray:@[
+        @"bht_custom_accent_hex",
+        @"bht_theme_preset_identifier",
+        @"bhtwitter_font_1",
+        @"bhtwitter_font_2",
+        @"sharing_domain"
+    ]];
+}
+
+static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
+    return [NSSet setWithArray:@[
+        @"bh_tabs_visible",
+        @"bht_likes_navigation_visible",
+        @"bht_sidebar_navigation_visible",
+        @"bht_media_actions_photo_order",
+        @"bht_media_actions_photo_hidden",
+        @"bht_media_actions_gif_order",
+        @"bht_media_actions_gif_hidden",
+        @"bht_media_actions_video_order",
+        @"bht_media_actions_video_hidden"
+    ]];
+}
+
 @implementation BHTSettings
 
 #pragma mark - Migration
@@ -625,6 +701,22 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsIndex(void) {
     return pageKey ? BHTSettingsPages()[pageKey][@"settings"] : nil;
 }
 
++ (NSArray<NSString*>*)allPageKeys {
+    return BHTSettingsPageOrder();
+}
+
++ (NSArray<NSDictionary*>*)allSearchableSettings {
+    NSMutableArray<NSDictionary*>* settings = [NSMutableArray array];
+    for (NSString* pageKey in BHTSettingsPageOrder()) {
+        for (NSDictionary* setting in [self settingsForPage:pageKey]) {
+            NSMutableDictionary* searchable = [setting mutableCopy];
+            searchable[@"pageKey"] = pageKey;
+            [settings addObject:[searchable copy]];
+        }
+    }
+    return [settings copy];
+}
+
 + (NSString*)titleKeyForPage:(NSString*)pageKey {
     return pageKey ? BHTSettingsPages()[pageKey][@"titleKey"] : nil;
 }
@@ -661,6 +753,192 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsIndex(void) {
         return [value integerValue];
     }
     return [[self settingForKey:key][@"default"] integerValue];
+}
+
++ (NSSet<NSString*>*)exportablePreferenceKeys {
+    static NSSet<NSString*>* keys;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSMutableSet<NSString*>* allowList = [NSMutableSet set];
+        for (NSDictionary* setting in BHTSettingsIndex().allValues) {
+            // Entries without defaults are navigation buttons or font-picker
+            // affordances, not actual preferences.
+            if (setting[@"default"] != nil && setting[@"key"] != nil) {
+                [allowList addObject:setting[@"key"]];
+            }
+        }
+        [allowList addObjectsFromArray:@[
+            @"enable_likes_tab",
+            @"likes_media_waterfall",
+            @"bh_color_theme_selectedColor"
+        ]];
+        [allowList unionSet:BHTStringPreferenceKeys()];
+        [allowList unionSet:BHTStringArrayPreferenceKeys()];
+        keys = [allowList copy];
+    });
+    return keys;
+}
+
++ (NSDictionary*)preferenceProfile {
+    NSUserDefaults* defaults = NSUserDefaults.standardUserDefaults;
+    NSMutableDictionary<NSString*, id>* preferences =
+        [NSMutableDictionary dictionary];
+
+    for (NSString* key in [self exportablePreferenceKeys]) {
+        id value = [defaults objectForKey:key];
+        NSDictionary* setting = [self settingForKey:key];
+        if (!value && setting[@"default"] != nil) {
+            value = setting[@"default"];
+        }
+        if (!value && [key isEqualToString:@"bh_color_theme_selectedColor"]) {
+            NSInteger nativeOption =
+                [defaults objectForKey:@"T1ColorSettingsPrimaryColorOptionKey"]
+                    ? [defaults integerForKey:
+                                   @"T1ColorSettingsPrimaryColorOptionKey"]
+                    : 1;
+            value = @(MIN(6, MAX(1, nativeOption)));
+        }
+        preferences[key] = value ?: NSNull.null;
+    }
+
+    NSISO8601DateFormatter* formatter = [NSISO8601DateFormatter new];
+    return @{
+        @"format": @"NeoFreeBird Preference Profile",
+        @"formatVersion": @1,
+        @"createdAt": [formatter stringFromDate:NSDate.date],
+        @"preferences": [preferences copy]
+    };
+}
+
++ (NSData*)preferenceProfileJSONDataWithError:(NSError**)error {
+    return [NSJSONSerialization dataWithJSONObject:[self preferenceProfile]
+                                           options:NSJSONWritingPrettyPrinted |
+                                                   NSJSONWritingSortedKeys
+                                             error:error];
+}
+
++ (BOOL)applyPreferenceProfile:(NSDictionary*)profile error:(NSError**)error {
+    id format = [profile isKindOfClass:NSDictionary.class]
+                    ? profile[@"format"]
+                    : nil;
+    id formatVersion = [profile isKindOfClass:NSDictionary.class]
+                           ? profile[@"formatVersion"]
+                           : nil;
+    if (![profile isKindOfClass:NSDictionary.class] ||
+        ![format isKindOfClass:NSString.class] ||
+        ![format isEqualToString:@"NeoFreeBird Preference Profile"] ||
+        ![formatVersion isKindOfClass:NSNumber.class] ||
+        [formatVersion integerValue] != 1) {
+        if (error) {
+            *error = BHTProfileError(
+                1, @"This is not a supported NeoFreeBird preference profile.");
+        }
+        return NO;
+    }
+
+    NSDictionary* preferences = profile[@"preferences"];
+    if (![preferences isKindOfClass:NSDictionary.class] ||
+        preferences.count == 0 || preferences.count > 256) {
+        if (error) {
+            *error =
+                BHTProfileError(2, @"The profile has no usable preferences.");
+        }
+        return NO;
+    }
+
+    NSSet<NSString*>* allowed = [self exportablePreferenceKeys];
+    NSMutableDictionary<NSString*, id>* accepted =
+        [NSMutableDictionary dictionary];
+    for (id rawKey in preferences) {
+        if (![rawKey isKindOfClass:NSString.class] ||
+            ![allowed containsObject:rawKey]) {
+            // Ignore preferences introduced by a newer NeoFreeBird build.
+            continue;
+        }
+        NSString* key = rawKey;
+        id value = preferences[key];
+        if (value == NSNull.null) {
+            accepted[key] = value;
+            continue;
+        }
+
+        BOOL valid = NO;
+        NSDictionary* setting = [self settingForKey:key];
+        id defaultValue = setting[@"default"];
+        if ([defaultValue isKindOfClass:NSNumber.class]) {
+            if ([key isEqualToString:@"undo_tweet_timeout"] &&
+                [value isKindOfClass:NSNumber.class]) {
+                valid = [@[@0, @5, @10, @20, @30, @60]
+                    containsObject:value];
+            } else if ([value isKindOfClass:NSNumber.class]) {
+                NSInteger boolValue = [value integerValue];
+                valid = boolValue == 0 || boolValue == 1;
+            }
+        } else if ([BHTStringArrayPreferenceKeys() containsObject:key]) {
+            valid = BHTIsStringArray(value);
+        } else if ([BHTStringPreferenceKeys() containsObject:key]) {
+            valid = [value isKindOfClass:NSString.class] &&
+                    [(NSString*)value length] <= 256;
+            if (valid && [key isEqualToString:@"bht_custom_accent_hex"]) {
+                valid = BHTIsValidCustomAccent(value);
+            } else if (valid &&
+                       [key isEqualToString:
+                                @"bht_theme_preset_identifier"]) {
+                valid = [@[
+                    @"apollo_inspired",
+                    @"classic_twitter",
+                    @"native_blue"
+                ] containsObject:value];
+            }
+        } else if ([key isEqualToString:@"enable_likes_tab"] ||
+                   [key isEqualToString:@"likes_media_waterfall"]) {
+            if ([value isKindOfClass:NSNumber.class]) {
+                NSInteger boolValue = [value integerValue];
+                valid = boolValue == 0 || boolValue == 1;
+            }
+        } else if ([key
+                       isEqualToString:@"bh_color_theme_selectedColor"]) {
+            if ([value isKindOfClass:NSNumber.class]) {
+                NSInteger colorOption = [value integerValue];
+                valid = colorOption >= 1 && colorOption <= 6;
+            }
+        }
+
+        if (!valid) {
+            if (error) {
+                *error = BHTProfileError(
+                    3, [NSString stringWithFormat:
+                                     @"The value for “%@” is invalid.", key]);
+            }
+            return NO;
+        }
+        accepted[key] = value;
+    }
+
+    if (accepted.count == 0) {
+        if (error) {
+            *error =
+                BHTProfileError(4, @"The profile contains no recognized settings.");
+        }
+        return NO;
+    }
+
+    // Validation completes before the first write, so a malformed profile can
+    // never leave the preferences half imported.
+    NSUserDefaults* defaults = NSUserDefaults.standardUserDefaults;
+    [accepted enumerateKeysAndObjectsUsingBlock:^(
+                  NSString* key, id value, BOOL* stop) {
+        if (value == NSNull.null) {
+            [defaults removeObjectForKey:key];
+        } else {
+            [defaults setObject:value forKey:key];
+        }
+    }];
+    [NSNotificationCenter.defaultCenter
+        postNotificationName:BHTSettingsProfileDidApplyNotification
+                      object:nil
+                    userInfo:@{@"keys": accepted.allKeys}];
+    return YES;
 }
 
 @end

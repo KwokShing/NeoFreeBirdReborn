@@ -4,6 +4,7 @@
 //
 
 #import "HookHelpers.h"
+#import "ThemeColor/Palette.h"
 
 void EnumerateSubviewsRecursively(UIView* view,
                                   void (^block)(UIView* currentView)) {
@@ -83,6 +84,11 @@ void MarkEmptiedModuleChrome(NSArray* items, NSMutableIndexSet* removed) {
 }
 
 UIColor* CurrentAccentColor(void) {
+    UIColor* customAccent = [Palette customAccentColor];
+    if (customAccent) {
+        return customAccent;
+    }
+
     Class TAEColorSettingsCls = objc_getClass("TAEColorSettings");
     if (!TAEColorSettingsCls) {
         return [UIColor systemBlueColor];

@@ -8,6 +8,9 @@
 #include <string.h>
 
 static char kBHTHiddenAdCellKey;
+static char kBHTRecordedAdCellKey;
+static char kBHTPromotionClassDecisionKey;
+static char kBHTTimelineFilterDecisionKey;
 
 static const char* BHTUnqualifiedType(const char* type) {
     while (type && strchr("rnNoORV", type[0])) type++;
@@ -73,6 +76,21 @@ static BOOL BHTClassNameMarksPromotion(NSString* className) {
            [lower hasSuffix:@"adcell"];
 }
 
+// This hook is consulted from UICollectionViewCell layout methods, so avoid
+// lowercasing and searching the same runtime class name on every layout pass.
+static BOOL BHTClassMarksPromotion(Class cls) {
+    if (!cls) return NO;
+    NSNumber* cached =
+        objc_getAssociatedObject(cls, &kBHTPromotionClassDecisionKey);
+    if (cached) return cached.boolValue;
+
+    BOOL marksPromotion = BHTClassNameMarksPromotion(NSStringFromClass(cls));
+    objc_setAssociatedObject(cls, &kBHTPromotionClassDecisionKey,
+                             @(marksPromotion),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return marksPromotion;
+}
+
 static id BHTSafeValueForKey(id object, NSString* key) {
     if (!object || key.length == 0) return nil;
     @try {
@@ -88,7 +106,7 @@ static id BHTSafeValueForKey(id object, NSString* key) {
 static BOOL BHTNestedObjectMarksPromotion(id object, NSUInteger depth) {
     if (!object || depth > 2) return NO;
     NSString* className = NSStringFromClass([object classForCoder]);
-    if (BHTClassNameMarksPromotion(className) ||
+    if (BHTClassMarksPromotion([object classForCoder]) ||
         BHTBoolForSelector(object, @selector(isPromoted)) ||
         BHTBoolForSelector(object, NSSelectorFromString(@"isAd")) ||
         BHTBoolForSelector(object, NSSelectorFromString(@"isAdvertisement")) ||
@@ -266,7 +284,8 @@ static BOOL ShouldHideItem(id item, NSString* location) {
             return YES;
         }
 
-        if (StatusItemIsPromoted(item) || BHTClassNameMarksPromotion(className) ||
+        if (StatusItemIsPromoted(item) ||
+            BHTClassMarksPromotion([item classForCoder]) ||
             ScribeItemIsPromoted(item) ||
             ([className isEqualToString:@"T1URTTimelineStatusItemViewModel"] &&
              BHTNestedObjectMarksPromotion(item, 0))) {
@@ -316,11 +335,39 @@ static BOOL ShouldHideItem(id item, NSString* location) {
 
 static BOOL ShouldHideAndRecord(id item, NSString* location) {
     id unwrapped = unwrapDataViewItem(item);
+    if (!unwrapped) return NO;
+
+    // URT timeline view models are immutable after delivery, but X asks about
+    // the same item from section filtering, adapter lookup, cell creation, and
+    // row sizing. Cache the decision per filter settings/location so expensive
+    // Swift/KVC promotion inspection runs once per item instead of per pass.
+    NSUInteger settingsSignature =
+        ([BHTSettings boolForKey:@"hide_promoted"] ? 1u : 0u) |
+        ([BHTSettings boolForKey:@"hide_premium_offer"] ? 2u : 0u) |
+        ([BHTSettings boolForKey:@"hide_trend_videos"] ? 4u : 0u);
+    NSString* cacheLocation = location ?: @"";
+    NSDictionary* cachedDecisions =
+        objc_getAssociatedObject(unwrapped, &kBHTTimelineFilterDecisionKey);
+    NSNumber* packedDecision = cachedDecisions[cacheLocation];
+    if (packedDecision &&
+        (packedDecision.unsignedIntegerValue >> 1) == settingsSignature) {
+        return (packedDecision.unsignedIntegerValue & 1u) != 0;
+    }
+
     BOOL hidden = ShouldHideItem(unwrapped, location);
     BHTRecordTimelineItemObservation(item, location, hidden);
     if (unwrapped != item) {
         BHTRecordTimelineItemObservation(unwrapped, location, hidden);
     }
+
+    NSMutableDictionary* updatedDecisions =
+        cachedDecisions ? [cachedDecisions mutableCopy]
+                        : [NSMutableDictionary dictionaryWithCapacity:1];
+    updatedDecisions[cacheLocation] =
+        @((settingsSignature << 1) | (hidden ? 1u : 0u));
+    objc_setAssociatedObject(unwrapped, &kBHTTimelineFilterDecisionKey,
+                             [updatedDecisions copy],
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return hidden;
 }
 
@@ -489,7 +536,7 @@ static id BHTItemAtIndexPath(TFNItemsDataViewController* controller,
 // the class-name guard keeps normal collection cells untouched.
 static BOOL BHTIsRenderedAdCell(id cell) {
     return [BHTSettings boolForKey:@"hide_promoted"] &&
-           BHTClassNameMarksPromotion(NSStringFromClass([cell classForCoder]));
+           BHTClassMarksPromotion([cell classForCoder]);
 }
 
 static void BHTCollapseRenderedAdCell(UICollectionViewCell* cell) {
@@ -497,7 +544,12 @@ static void BHTCollapseRenderedAdCell(UICollectionViewCell* cell) {
     cell.hidden = YES;
     cell.alpha = 0.0;
     cell.userInteractionEnabled = NO;
-    BHTRecordTimelineItemObservation(cell, @"RENDERED_COLLECTION_CELL", YES);
+    if (![objc_getAssociatedObject(cell, &kBHTRecordedAdCellKey) boolValue]) {
+        BHTRecordTimelineItemObservation(cell, @"RENDERED_COLLECTION_CELL",
+                                         YES);
+        objc_setAssociatedObject(cell, &kBHTRecordedAdCellKey, @YES,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
 }
 
 %hook UICollectionViewCell

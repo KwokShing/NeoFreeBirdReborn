@@ -63,7 +63,8 @@ Status meanings:
 | General | `strip_share_tracking` | Updated | Removes `s`/`t` parameters only when enabled |
 | General | `expand_tco_links` | Updated | No longer unconditional |
 | General | `show_scroll_indicator` | Ported | Typed account feature-switch accessor |
-| Appearance | theme and app icon controls | Updated | Modern settings pages and live theme reapply; sideloaded/TrollStore packages preserve X's stock choices and add the supplied loose Twitter-bird alternate |
+| Appearance | theme and app icon controls | Updated | Modern settings pages and live theme reapply; Apollo-inspired, classic Twitter, and native-blue presets; sideloaded/TrollStore packages preserve X's stock choices and add the supplied loose Twitter-bird alternate |
+| Settings | search and preference profiles | New | Localized global search covers setting titles, details, subsections, and categories; versioned JSON export/import uses a strict NeoFreeBird-only preference allow-list and never includes Twitter account state |
 | Appearance | custom navigation | Combined | Captures/reorders native tab entries; Grok remains native while opt-in Likes is an independent movable entry; selected editor tiles and the preview row both support drag reordering |
 | Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows |
 | Appearance | `tab_bar_theming` | Ported | Native selected/unselected colors |
@@ -80,7 +81,7 @@ Status meanings:
 | Timeline | `hide_custom_timelines` | Updated | Hides without persisting an empty pinned list |
 | Timeline | `remember_timeline_tab` | Updated | Disabled preference now leaves X's native value alone |
 | Timeline | `enable_likes_tab` | New/runtime check | Independent bottom destination backed by native Likes history; opens raw Activity History tab 4 on X 12.9, guards against delayed native offset restoration on its first presentation without a loading cover, and preserves position on later tab switches |
-| Timeline | `likes_media_waterfall` | New/runtime check | Newest-first native-section media extraction, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, native Photo/Video/GIF long-press sheets in both surfaces, and percent-driven modal swipe-down dismissal |
+| Timeline | `likes_media_waterfall` | New/runtime check | Newest-first native-section media extraction, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, Apple-style contextual Photo/Video/GIF previews and action menus in both surfaces (with the guarded TFN sheet retained only as a legacy fallback), and percent-driven modal swipe-down dismissal |
 | Grok | `enable_grok_translations` | Updated | Manual translation gates are no longer forced globally |
 | Grok | `hide_grok_analyze` | Updated | Backend switch plus current button paths |
 | Grok | `hide_grok_sidebar` | Ported | Current navigation model filtering |
@@ -169,11 +170,13 @@ The JSON is also written to:
 `Library/Caches/BHTwitter-X12.9-Compatibility.json`
 
 The first device pass should focus on Photo/Video/GIF action ordering, Download
-and temporary-file Share, first-open Likes position, native waterfall and
-close-up long-press sheets, interactive swipe-down cancellation/completion,
-iPad rail and launch birds, sidebar hiding/reordering, the native Likes post route, DM
-save-action plugin, Home/Spaces Swift aliases, source-label model access, and
-highest-video preference. The report's privacy-safe `likesRuntime` section
+and temporary-file Share, first-open Likes position, waterfall and close-up
+contextual previews, interactive swipe-down cancellation/completion, theme
+presets and profile round-tripping, global settings search, the single iPad
+rail bird and pre-injection launch bird, sidebar hiding/reordering, the native
+Likes post route, DM save-action plugin, Home/Spaces Swift aliases,
+source-label model access, and highest-video preference. The report's
+privacy-safe `likesRuntime` section
 records root creation, selection/reset counts, media count, and URL acceptance.
 Missing private selectors degrade to native behavior and are listed in the
 report rather than being guessed silently.
@@ -183,7 +186,10 @@ uses asynchronous Photos saves, scopes the font-picker customization, avoids
 stacked app-lock presentations, caches and cancels settings-avatar requests,
 and debounces automatic compatibility reports off the main thread.
 
-Beta 15 bounds decoded waterfall images to a 128 MB cost-aware cache,
-downsamples them with ImageIO, defers pager refreshes during horizontal
-transitions, and uses the app's native menu-sheet components for consistent
-iPhone/iPad media actions.
+Beta 15 introduced a 128 MB cost-aware decoded-image cache, ImageIO
+downsampling, and deferred pager refreshes during horizontal transitions. Beta
+16 adds Apple-style contextual previews and menus for consistent iPhone/iPad
+media actions. Equal URL/size-bucket requests are coalesced across prefetching,
+visible cells, contextual previews, and the close-up viewer; each consumer can
+cancel independently, and the shared transfer is cancelled only when no
+consumer remains.
