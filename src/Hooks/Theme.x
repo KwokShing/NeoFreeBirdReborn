@@ -130,6 +130,527 @@ static NSArray* orderedTabEntries(NSArray* entries) {
 
 // MARK: - Keep tab bar visible
 
+static char kBHTOriginalChromeBackgroundColorKey;
+static char kBHTOriginalChromeBackgroundCapturedKey;
+static char kBHTLastChromeCustomBackgroundColorKey;
+static char kBHTOriginalNativeTabBarAppearanceKey;
+static char kBHTNativeTabBarRestoreInProgressKey;
+static char kBHTLastNativeTabBarBackgroundKey;
+static char kBHTLastNativeTabBarSeparatorKey;
+static char kBHTLastNativeTabBarAccentKey;
+static char kBHTLastNativeTabBarSecondaryTextKey;
+static char kBHTTabChromeAppliedGenerationKey;
+static char kBHTTabChromeBackgroundViewIdentityKey;
+static char kBHTTabChromeTabViewIdentityKey;
+static char kBHTTabChromeDividerIdentityKey;
+static char kBHTTabChromeNativeBarIdentityKey;
+static NSUInteger BHTTabChromeThemeGeneration = 1;
+
+static id BHTThemeSafeValue(id object, NSString* key) {
+    if (!object || key.length == 0) return nil;
+    @try {
+        return [object valueForKey:key];
+    } @catch (__unused NSException* exception) {
+        return nil;
+    }
+}
+
+static void BHTApplyThemeToChromeBackground(
+    UIView* view, UIColor* color, BOOL themed) {
+    if (!view) return;
+    BOOL captured =
+        [objc_getAssociatedObject(
+            view, &kBHTOriginalChromeBackgroundCapturedKey)
+            boolValue];
+    if (themed) {
+        if (!captured) {
+            objc_setAssociatedObject(
+                view, &kBHTOriginalChromeBackgroundColorKey,
+                view.backgroundColor ?: NSNull.null,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(
+                view, &kBHTOriginalChromeBackgroundCapturedKey,
+                @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        objc_setAssociatedObject(
+            view, &kBHTLastChromeCustomBackgroundColorKey,
+            color, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (![view.backgroundColor isEqual:color]) {
+            view.backgroundColor = color;
+        }
+    } else if (captured) {
+        id original = objc_getAssociatedObject(
+            view, &kBHTOriginalChromeBackgroundColorKey);
+        UIColor* lastCustom = objc_getAssociatedObject(
+            view, &kBHTLastChromeCustomBackgroundColorKey);
+        // X's native theme pass may already have installed a newer light/dark
+        // color. Only write the captured fallback while our own last custom
+        // value is still present; otherwise preserve X's fresher restoration.
+        if (!lastCustom ||
+            [view.backgroundColor isEqual:lastCustom]) {
+            view.backgroundColor =
+                original == NSNull.null ? nil : original;
+        }
+        objc_setAssociatedObject(
+            view, &kBHTOriginalChromeBackgroundColorKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            view, &kBHTOriginalChromeBackgroundCapturedKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            view, &kBHTLastChromeCustomBackgroundColorKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+static BOOL BHTChromeBackgroundStillMatches(UIView* view) {
+    if (![view isKindOfClass:UIView.class]) return YES;
+    UIColor* expected = objc_getAssociatedObject(
+        view, &kBHTLastChromeCustomBackgroundColorKey);
+    return !expected || [view.backgroundColor isEqual:expected];
+}
+
+static UITabBarAppearance* BHTThemedTabBarAppearance(
+    UITabBarAppearance* source, UIColor* background,
+    UIColor* separator, UIColor* accent,
+    UIColor* secondaryText) {
+    UITabBarAppearance* appearance =
+        [source isKindOfClass:UITabBarAppearance.class]
+            ? [source copy]
+            : [UITabBarAppearance new];
+    if (![source isKindOfClass:UITabBarAppearance.class]) {
+        [appearance configureWithOpaqueBackground];
+    }
+    appearance.backgroundColor = background;
+    appearance.shadowColor = separator;
+    for (UITabBarItemAppearance* itemAppearance in @[
+             appearance.stackedLayoutAppearance,
+             appearance.inlineLayoutAppearance,
+             appearance.compactInlineLayoutAppearance
+         ]) {
+        itemAppearance.normal.iconColor = secondaryText;
+        NSMutableDictionary* normalAttributes =
+            [itemAppearance.normal.titleTextAttributes
+                mutableCopy] ?: [NSMutableDictionary dictionary];
+        normalAttributes[NSForegroundColorAttributeName] =
+            secondaryText;
+        itemAppearance.normal.titleTextAttributes =
+            normalAttributes;
+        itemAppearance.selected.iconColor = accent;
+        NSMutableDictionary* selectedAttributes =
+            [itemAppearance.selected.titleTextAttributes
+                mutableCopy] ?: [NSMutableDictionary dictionary];
+        selectedAttributes[NSForegroundColorAttributeName] =
+            accent;
+        itemAppearance.selected.titleTextAttributes =
+            selectedAttributes;
+    }
+    return appearance;
+}
+
+static BOOL BHTNativeTabBarStillMatches(UITabBar* tabBar);
+
+static void BHTApplyThemeToNativeTabBar(
+    UITabBar* tabBar, BOOL themed, UIColor* background,
+    UIColor* separator, UIColor* accent,
+    UIColor* secondaryText) {
+    if (!tabBar) return;
+    NSDictionary* original =
+        objc_getAssociatedObject(
+            tabBar, &kBHTOriginalNativeTabBarAppearanceKey);
+    if (!themed) {
+        if (!original) return;
+        // As with the surrounding chrome, preserve a fresher native
+        // light/dark restoration if X already replaced our appearance.
+        if (BHTNativeTabBarStillMatches(tabBar)) {
+            id standard = original[@"standard"];
+            id scrollEdge = original[@"scrollEdge"];
+            id backgroundColor = original[@"backgroundColor"];
+            id barTintColor = original[@"barTintColor"];
+            id tintColor = original[@"tintColor"];
+            id unselectedColor = original[@"unselectedColor"];
+            tabBar.standardAppearance =
+                standard == NSNull.null ? nil : standard;
+            tabBar.scrollEdgeAppearance =
+                scrollEdge == NSNull.null ? nil : scrollEdge;
+            tabBar.backgroundColor =
+                backgroundColor == NSNull.null ? nil : backgroundColor;
+            tabBar.barTintColor =
+                barTintColor == NSNull.null ? nil : barTintColor;
+            tabBar.tintColor =
+                tintColor == NSNull.null ? nil : tintColor;
+            tabBar.unselectedItemTintColor =
+                unselectedColor == NSNull.null
+                    ? nil
+                    : unselectedColor;
+        }
+        objc_setAssociatedObject(
+            tabBar, &kBHTOriginalNativeTabBarAppearanceKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            tabBar, &kBHTLastNativeTabBarBackgroundKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            tabBar, &kBHTLastNativeTabBarSeparatorKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            tabBar, &kBHTLastNativeTabBarAccentKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(
+            tabBar, &kBHTLastNativeTabBarSecondaryTextKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return;
+    }
+
+    if (!original) {
+        original = @{
+            @"standard":
+                tabBar.standardAppearance ?: NSNull.null,
+            @"scrollEdge":
+                tabBar.scrollEdgeAppearance ?: NSNull.null,
+            @"backgroundColor":
+                tabBar.backgroundColor ?: NSNull.null,
+            @"barTintColor":
+                tabBar.barTintColor ?: NSNull.null,
+            @"tintColor":
+                tabBar.tintColor ?: NSNull.null,
+            @"unselectedColor":
+                tabBar.unselectedItemTintColor ?: NSNull.null
+        };
+        objc_setAssociatedObject(
+            tabBar, &kBHTOriginalNativeTabBarAppearanceKey,
+            original, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    id originalStandard = original[@"standard"];
+    id originalScrollEdge = original[@"scrollEdge"];
+    UITabBarAppearance* standardSource =
+        [originalStandard isKindOfClass:UITabBarAppearance.class]
+            ? originalStandard
+            : nil;
+    UITabBarAppearance* scrollEdgeSource =
+        [originalScrollEdge isKindOfClass:UITabBarAppearance.class]
+            ? originalScrollEdge
+            : standardSource;
+    tabBar.standardAppearance =
+        BHTThemedTabBarAppearance(
+            standardSource, background, separator,
+            accent, secondaryText);
+    tabBar.scrollEdgeAppearance =
+        BHTThemedTabBarAppearance(
+            scrollEdgeSource, background, separator,
+            accent, secondaryText);
+    tabBar.backgroundColor = background;
+    tabBar.barTintColor = background;
+    tabBar.tintColor = accent;
+    tabBar.unselectedItemTintColor = secondaryText;
+    objc_setAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarBackgroundKey,
+        background, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarSeparatorKey,
+        separator, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarAccentKey,
+        accent, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarSecondaryTextKey,
+        secondaryText, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static BOOL BHTTabBarItemAppearanceMatches(
+    UITabBarItemAppearance* itemAppearance, UIColor* accent,
+    UIColor* secondaryText) {
+    UIColor* normalTitle =
+        itemAppearance.normal
+            .titleTextAttributes[
+                NSForegroundColorAttributeName];
+    UIColor* selectedTitle =
+        itemAppearance.selected
+            .titleTextAttributes[
+                NSForegroundColorAttributeName];
+    return (!secondaryText ||
+            ([itemAppearance.normal.iconColor
+                 isEqual:secondaryText] &&
+             [normalTitle isEqual:secondaryText])) &&
+           (!accent ||
+            ([itemAppearance.selected.iconColor
+                 isEqual:accent] &&
+             [selectedTitle isEqual:accent]));
+}
+
+static BOOL BHTTabBarAppearanceMatches(
+    UITabBarAppearance* appearance, UIColor* background,
+    UIColor* separator, UIColor* accent,
+    UIColor* secondaryText) {
+    return [appearance.backgroundColor isEqual:background] &&
+           (!separator ||
+            [appearance.shadowColor isEqual:separator]) &&
+           BHTTabBarItemAppearanceMatches(
+               appearance.stackedLayoutAppearance,
+               accent, secondaryText) &&
+           BHTTabBarItemAppearanceMatches(
+               appearance.inlineLayoutAppearance,
+               accent, secondaryText) &&
+           BHTTabBarItemAppearanceMatches(
+               appearance.compactInlineLayoutAppearance,
+               accent, secondaryText);
+}
+
+static BOOL BHTNativeTabBarStillMatches(UITabBar* tabBar) {
+    if (!tabBar) return YES;
+    UIColor* background = objc_getAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarBackgroundKey);
+    if (!background) return YES;
+    UIColor* separator = objc_getAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarSeparatorKey);
+    UIColor* accent = objc_getAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarAccentKey);
+    UIColor* secondaryText = objc_getAssociatedObject(
+        tabBar, &kBHTLastNativeTabBarSecondaryTextKey);
+    return BHTTabBarAppearanceMatches(
+               tabBar.standardAppearance, background,
+               separator, accent, secondaryText) &&
+           BHTTabBarAppearanceMatches(
+               tabBar.scrollEdgeAppearance, background,
+               separator, accent, secondaryText) &&
+           (!accent || [tabBar.tintColor isEqual:accent]) &&
+           (!secondaryText ||
+            [tabBar.unselectedItemTintColor
+                isEqual:secondaryText]);
+}
+
+static void BHTApplyCurrentThemeToTabBarController(
+    T1TabBarViewController* controller, BOOL force) {
+    if (!controller || !controller.isViewLoaded) return;
+
+    id backgroundView =
+        BHTThemeSafeValue(controller, @"tabBarBackgroundView");
+    id tabView = BHTThemeSafeValue(controller, @"tabBar");
+    id divider = BHTThemeSafeValue(controller, @"tabBarDivider");
+    id nativeBarValue =
+        BHTThemeSafeValue(controller, @"nativeTabBar");
+    UITabBar* nativeTabBar =
+        [nativeBarValue isKindOfClass:UITabBar.class]
+            ? nativeBarValue
+            : ([tabView isKindOfClass:UITabBar.class]
+                   ? tabView
+                   : nil);
+    NSNumber* appliedGeneration =
+        objc_getAssociatedObject(
+            controller, &kBHTTabChromeAppliedGenerationKey);
+    BOOL identitiesUnchanged =
+        objc_getAssociatedObject(
+            controller,
+            &kBHTTabChromeBackgroundViewIdentityKey) ==
+            backgroundView &&
+        objc_getAssociatedObject(
+            controller, &kBHTTabChromeTabViewIdentityKey) ==
+            tabView &&
+        objc_getAssociatedObject(
+            controller, &kBHTTabChromeDividerIdentityKey) ==
+            divider &&
+        objc_getAssociatedObject(
+            controller, &kBHTTabChromeNativeBarIdentityKey) ==
+            nativeTabBar;
+    BOOL colorsUnchanged =
+        BHTChromeBackgroundStillMatches(controller.view) &&
+        BHTChromeBackgroundStillMatches(backgroundView) &&
+        BHTChromeBackgroundStillMatches(tabView) &&
+        BHTChromeBackgroundStillMatches(divider) &&
+        BHTNativeTabBarStillMatches(nativeTabBar);
+    if (!force && identitiesUnchanged &&
+        colorsUnchanged &&
+        appliedGeneration.unsignedIntegerValue ==
+            BHTTabChromeThemeGeneration) {
+        return;
+    }
+
+    UIColor* background = [Palette
+        customThemeColorForRole:BHTThemeColorBackgroundKey];
+    BOOL themed = background != nil;
+    background = background ?: [Palette currentBackgroundColor];
+    UIColor* separator = [Palette currentSeparatorColor];
+    UIColor* secondaryText = [Palette currentSecondaryTextColor];
+    UIColor* accent = [Palette
+        customThemeColorForRole:BHTThemeColorAccentKey] ?:
+        CurrentAccentColor() ?: UIColor.systemBlueColor;
+
+    BHTApplyThemeToChromeBackground(
+        controller.view, background, themed);
+    for (id value in @[backgroundView ?: NSNull.null,
+                       tabView ?: NSNull.null]) {
+        if ([value isKindOfClass:UIView.class] &&
+            ![value isKindOfClass:UITabBar.class]) {
+            BHTApplyThemeToChromeBackground(
+                value, background, themed);
+        }
+    }
+    if ([divider isKindOfClass:UIView.class]) {
+        BHTApplyThemeToChromeBackground(
+            divider, separator, themed);
+    }
+
+    BOOL hadNativeOverride =
+        nativeTabBar &&
+        objc_getAssociatedObject(
+            nativeTabBar,
+            &kBHTOriginalNativeTabBarAppearanceKey) != nil;
+    BHTApplyThemeToNativeTabBar(
+        nativeTabBar, themed, background, separator,
+        accent, secondaryText);
+    if (!themed && hadNativeOverride &&
+        ![objc_getAssociatedObject(
+            controller,
+            &kBHTNativeTabBarRestoreInProgressKey) boolValue]) {
+        SEL selector =
+            NSSelectorFromString(@"_t1_configureNativeTabBar");
+        Method method =
+            class_getInstanceMethod(
+                object_getClass(controller), selector);
+        char returnType[16] = {0};
+        if ([controller respondsToSelector:selector] && method &&
+            method_getNumberOfArguments(method) == 2) {
+            method_getReturnType(
+                method, returnType, sizeof(returnType));
+            if (returnType[0] == 'v') {
+                objc_setAssociatedObject(
+                    controller,
+                    &kBHTNativeTabBarRestoreInProgressKey, @YES,
+                    OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                @try {
+                    ((void (*)(id, SEL))objc_msgSend)(
+                        controller, selector);
+                } @catch (__unused NSException* exception) {
+                }
+                objc_setAssociatedObject(
+                    controller,
+                    &kBHTNativeTabBarRestoreInProgressKey, nil,
+                    OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+        }
+    }
+
+    objc_setAssociatedObject(
+        controller, &kBHTTabChromeBackgroundViewIdentityKey,
+        backgroundView, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(
+        controller, &kBHTTabChromeTabViewIdentityKey,
+        tabView, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(
+        controller, &kBHTTabChromeDividerIdentityKey,
+        divider, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(
+        controller, &kBHTTabChromeNativeBarIdentityKey,
+        nativeTabBar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(
+        controller, &kBHTTabChromeAppliedGenerationKey,
+        @(BHTTabChromeThemeGeneration),
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static void BHTRefreshCurrentThemeTabItems(
+    T1TabBarViewController* controller) {
+    id value = BHTThemeSafeValue(controller, @"tabViews");
+    if (![value isKindOfClass:NSArray.class]) return;
+    SEL imageSelector =
+        NSSelectorFromString(@"_t1_updateImageViewAnimated:");
+    SEL titleSelector =
+        NSSelectorFromString(@"_t1_updateTitleLabel");
+    for (id tabView in (NSArray*)value) {
+        Method imageMethod =
+            class_getInstanceMethod([tabView class], imageSelector);
+        char imageReturnType[16] = {0};
+        char animatedType[16] = {0};
+        if ([tabView respondsToSelector:imageSelector] &&
+            imageMethod &&
+            method_getNumberOfArguments(imageMethod) == 3) {
+            method_getReturnType(
+                imageMethod, imageReturnType,
+                sizeof(imageReturnType));
+            method_getArgumentType(
+                imageMethod, 2, animatedType,
+                sizeof(animatedType));
+            if (imageReturnType[0] == 'v' &&
+                (animatedType[0] == 'c' ||
+                 animatedType[0] == 'B')) {
+                @try {
+                    ((void (*)(id, SEL, BOOL))objc_msgSend)(
+                        tabView, imageSelector, NO);
+                } @catch (__unused NSException* exception) {
+                }
+            }
+        }
+
+        Method titleMethod =
+            class_getInstanceMethod([tabView class], titleSelector);
+        char titleReturnType[16] = {0};
+        if ([tabView respondsToSelector:titleSelector] &&
+            titleMethod &&
+            method_getNumberOfArguments(titleMethod) == 2) {
+            method_getReturnType(
+                titleMethod, titleReturnType,
+                sizeof(titleReturnType));
+            if (titleReturnType[0] == 'v') {
+                @try {
+                    ((void (*)(id, SEL))objc_msgSend)(
+                        tabView, titleSelector);
+                } @catch (__unused NSException* exception) {
+                }
+            }
+        }
+    }
+}
+
+static NSHashTable* BHTThemedTabBarControllers(void) {
+    static NSHashTable* controllers;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        controllers = [NSHashTable weakObjectsHashTable];
+    });
+    return controllers;
+}
+
+static void BHTTrackThemedTabBarController(
+    T1TabBarViewController* controller) {
+    if (!controller) return;
+    NSHashTable* controllers = BHTThemedTabBarControllers();
+    @synchronized(controllers) {
+        [controllers addObject:controller];
+    }
+    static dispatch_once_t observerToken;
+    dispatch_once(&observerToken, ^{
+        NSNotificationCenter* center =
+            NSNotificationCenter.defaultCenter;
+        for (NSString* name in @[
+                 BHTThemeDidChangeNotification,
+                 BHTSettingsProfileDidApplyNotification
+             ]) {
+            [center
+                addObserverForName:name
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(
+                            __unused NSNotification* notification) {
+                BHTTabChromeThemeGeneration++;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSArray* snapshot = nil;
+                    @synchronized(controllers) {
+                        snapshot = controllers.allObjects;
+                    }
+                    for (T1TabBarViewController* tracked
+                         in snapshot) {
+                        BHTApplyCurrentThemeToTabBarController(
+                            tracked, NO);
+                        BHTRefreshCurrentThemeTabItems(
+                            tracked);
+                    }
+                });
+            }];
+        }
+    });
+}
+
 static BOOL shouldPinCollapsibleTabBar(
     T1TabBarViewController* controller) {
     if (![BHTSettings boolForKey:@"no_tab_bar_hiding"]) {
@@ -151,6 +672,25 @@ static BOOL shouldPinCollapsibleTabBar(
 }
 
 %hook T1TabBarViewController
+
+- (void)viewDidLoad {
+    %orig;
+    BHTTrackThemedTabBarController(self);
+    BHTApplyCurrentThemeToTabBarController(self, YES);
+    BHTRefreshCurrentThemeTabItems(self);
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    BHTApplyCurrentThemeToTabBarController(self, NO);
+}
+
+- (void)traitCollectionDidChange:
+    (UITraitCollection*)previousTraits {
+    %orig(previousTraits);
+    BHTApplyCurrentThemeToTabBarController(self, YES);
+    BHTRefreshCurrentThemeTabItems(self);
+}
 
 // X 12.9 consults these capabilities before sending collapse-ratio updates.
 - (BOOL)tfn_supportsTabBarCollapsing {
@@ -182,6 +722,13 @@ static UIColor* tabItemColor(BOOL selected) {
                     : [Palette currentSecondaryTextColor];
 }
 
+static BOOL BHTShouldThemeTabItems(void) {
+    return [BHTSettings boolForKey:@"tab_bar_theming"] ||
+           [Palette
+               customThemeColorForRole:
+                   BHTThemeColorBackgroundKey] != nil;
+}
+
 %hook T1TabView
 
 - (void)_t1_updateImageViewAnimated:(BOOL)animated {
@@ -192,7 +739,7 @@ static UIColor* tabItemColor(BOOL selected) {
     }
 
     updatingTabIconColor = YES;
-    if ([BHTSettings boolForKey:@"tab_bar_theming"]) {
+    if (BHTShouldThemeTabItems()) {
         self.iconColor = tabItemColor(self.selected);
     } else if (self.iconColor) {
         self.iconColor = nil;
@@ -205,7 +752,7 @@ static UIColor* tabItemColor(BOOL selected) {
 - (void)_t1_updateTitleLabel {
     %orig;
 
-    if ([BHTSettings boolForKey:@"tab_bar_theming"]) {
+    if (BHTShouldThemeTabItems()) {
         self.titleLabel.textColor = tabItemColor(self.selected);
     }
 }

@@ -63,7 +63,7 @@ Status meanings:
 | General | `strip_share_tracking` | Updated | Removes `s`/`t` parameters only when enabled |
 | General | `expand_tco_links` | Updated | No longer unconditional |
 | General | `show_scroll_indicator` | Ported | Typed account feature-switch accessor |
-| Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; Apollo-inspired and classic Twitter presets carry coordinated light/dark background, tweet/card/status/tab/unread/surface, elevated, text, secondary-text, separator, and accent colors. NeoFreeBird uses X 12.9's guarded native palette apply and observes—never synthesizes—its private dynamic-colors-did-reload event. A coalesced, bounded loaded-view-tree refresh runs only as a fallback when that native event is not observed, so changes apply without a force quit and never add scrolling or ordinary-foreground work. Per-palette generation/dark markers keep hot palette reads cheap, while weak tracking clears every still-live palette when Native Blue is restored. Sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
+| Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; Apollo-inspired and classic Twitter presets carry coordinated light/dark background, tweet/card/status/tab/unread/surface, elevated, text, secondary-text, separator, and accent colors. Themes attach only to the validated concrete instances returned by X 12.9's active, Twitter, and TFNUI color providers, covering repost actions, newer text aliases, capsule tabs, and native lower-tab chrome without a process-wide UIView recolor. NeoFreeBird uses X's guarded native palette apply and observes—never synthesizes—its private dynamic-colors-did-reload event. A coalesced, bounded loaded-view-tree refresh runs only when that native event is absent or a replacement provider is attached after its synchronous observers, so changes apply without a force quit and never add scrolling-path work. Per-provider generation/dark markers keep hot palette reads cheap, while weak tracking clears every still-live provider when Native Blue is restored. Sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
 | Settings | search and preference profiles | New | Localized global search covers setting titles, details, subsections, and categories; versioned JSON export/import uses a strict NeoFreeBird-only preference allow-list and never includes Twitter account state |
 | Appearance | custom navigation | Combined | Captures/reorders native tab entries; Grok remains native while opt-in Likes is an independent movable entry; selected editor tiles and the preview row both support drag reordering |
 | Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows |
@@ -196,8 +196,11 @@ rail-header image path, adds complete light/dark theme palettes, and presents
 waterfall close-ups at full app-window size. Beta 18 expands coverage to X
 12.9's dark timeline, tweet, card, modal, and capsule-tab palette tokens,
 reapplies presets through its guarded dynamic-color refresh paths, and changes
-waterfall thumbnails to complete-image aspect fit. Full themes hook only
-validated zero-argument color getters on X's concrete active palette, cache
+waterfall thumbnails to complete-image aspect fit. Beta 19 also attaches those
+roles to X's separate Twitter/TFNUI providers, themes repost and top/bottom tab
+chrome, and makes the Likes waterfall adapt its tile height and span from the
+decoded media dimensions. Full themes hook only
+validated zero-argument color getters on X's concrete provider instances, cache
 colors away from scrolling paths, and fall through to preserved native
 implementations when Native Blue or a standalone accent is selected. The
 close-up viewer is forced to the app window instead of an

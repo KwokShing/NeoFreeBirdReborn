@@ -200,7 +200,8 @@ static BOOL BHTPaletteBoolGetterIsCompatible(id object, SEL selector) {
         [self nativeColorForSelectorNames:@[
             @"textColor",
             @"baseTextColor",
-            @"defaultTextColor"
+            @"defaultTextColor",
+            @"textDefaultColor"
         ]
                                  fallback:UIColor.labelColor];
 }
@@ -210,6 +211,7 @@ static BOOL BHTPaletteBoolGetterIsCompatible(id object, SEL selector) {
                customThemeColorForRole:BHTThemeColorSecondaryTextKey] ?:
         [self nativeColorForSelectorNames:@[
             @"detailTextColor",
+            @"textDetailsColor",
             @"tabBarItemColor",
             @"placeholderTextColor"
         ]

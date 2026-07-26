@@ -173,7 +173,10 @@ def main() -> None:
         '@"themeRuntime": BHTThemeRuntimeObservationSnapshot()',
         '@"configurationGeneration"',
         '@"seenPaletteCount"',
+        '@"providerClasses"',
         '@"dynamicColorsDidReloadObserved"',
+        'BHTProbe(@"appearance", @"UIColor", @"twitterColors", YES)',
+        'BHTProbe(@"appearance", @"UIColor", @"tfnuiColors", YES)',
         "BHTRailBrandingObservationState",
         "if (unchanged) return;",
     ):
@@ -256,13 +259,24 @@ def main() -> None:
         "BHTSeenThemePalettes",
         "weakObjectsHashTable",
         "BHTReconfigureSeenThemePalettes",
+        "BHTInstallThemeHooksForProviders",
+        '@"twitterColors"',
+        '@"tfnuiColors"',
+        "BHTLastThemeProviderClasses",
         "BHTRecordThemeRuntimeObservation",
         '@"_t1_updateDynamicColors"',
         "kBHTMaximumThemeTraversalViews",
-        "BHTRefreshActiveThemePalette(NO)",
+        "BHTScheduleProviderAttachRefresh",
+        "BHTPostReloadProviderRedrawNeeded",
+        "BHTForcedProviderRedrawExecuting",
         '@"cardBackgroundColor"',
         '@"darkBackgroundColor"',
         '@"capsuleTabsSelectedBackgroundColor"',
+        '@"capsuleTabsOnMediaSelectedBackgroundColor"',
+        '@"capsuleTabsOnMediaTextColor"',
+        '@"capsuleTabsOnMediaBorderColor"',
+        '@"textDetailsColor"',
+        '@"retweetButtonColor"',
         "if (colors.count == 0) return;",
         "return original ?",
         '@"_t1_applyTheme"',
@@ -309,6 +323,34 @@ def main() -> None:
             raise AssertionError(
                 f"Missing custom-accent cache invariant: {required}"
             )
+
+    theme_source = (
+        ROOT / "src" / "Hooks" / "Theme.x"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "BHTApplyCurrentThemeToTabBarController",
+        "BHTApplyThemeToNativeTabBar",
+        '@"tabBarBackgroundView"',
+        '@"tabBarDivider"',
+        '@"nativeTabBar"',
+        '@"_t1_configureNativeTabBar"',
+        "BHTShouldThemeTabItems",
+        "BHTTabChromeThemeGeneration",
+        "BHTChromeBackgroundStillMatches",
+        "BHTThemedTabBarAppearance",
+    ):
+        if required not in theme_source:
+            raise AssertionError(
+                f"Missing live tab-bar theme invariant: {required}"
+            )
+
+    likes_hook_source = (
+        ROOT / "src" / "Hooks" / "Likes.x"
+    ).read_text(encoding="utf-8")
+    if "[Palette currentSecondaryTextColor]" not in likes_hook_source:
+        raise AssertionError(
+            "Likes tab must use the active theme's secondary text color"
+        )
 
     editor_colors_source = (
         ROOT / "src" / "CustomTabBar" / "CustomTabBarNativeColors.m"
@@ -402,14 +444,32 @@ def main() -> None:
         "BHTPendingMediaImageRequests",
         "imageRequestsCoalesced",
         "if (!token.cancelled) completion(image)",
-        '"waterfallImageScaling": @"completeAspectFit"',
-        "ratio = MAX(0.20, MIN(5.0, ratio));",
+        '"waterfallImageScaling": @"completeAspectFitWithDecodedRatioCorrection"',
+        '"waterfallAspectRatioPolicy": @"metadataThenDecodedImageAdaptiveMasonry"',
+        '"waterfallColumnSpanPolicy": @"wideMediaMaySpanAdjacentColumns"',
+        "return MAX(0.10, MIN(10.0, ratio));",
+        "waterfallDecodedRatioCorrections",
+        "waterfallAnchorPreservations",
+        "collectionView.indexPathsForVisibleItems",
+        "waterfallLayoutInvalidationPendingUntilIdle",
+        "applyPendingWaterfallLayoutInvalidationIfIdle",
+        "aspectRatioConfirmedByImage",
+        "updateAdaptiveAspectRatioForItem",
+        "desiredSpan = MIN(2, columns);",
+        "bestGap <= acceptedGap",
         "self.imageView.backgroundColor = surfaceColor;",
         "[cell applyCurrentThemeSurface];",
         "BHTThemeDidChangeNotification",
         "BHTSettingsProfileDidApplyNotification",
+        "TFNDynamicColorsDidReloadNotification",
         "applyCurrentThemeSurfaces",
         "self.collectionView.visibleCells",
+        "themeSharedBarsOwnedByGlobalHook",
+        "BHTLikesSolidColorImage",
+        "themeNativePostsOwnedByProviderHooks",
+        "BHTRefreshNativeTabViewAppearance(nativeLikesTab)",
+        "themeRefreshScheduled",
+        '@"themeRefreshes"',
         '"viewerPresentation": @"windowFullScreen"',
         "BHTFullScreenPresenterForController",
         "UIModalPresentationFullScreen",
