@@ -15,4 +15,11 @@
  */
 + (UIColor*)currentBackgroundColor;
 
+// NeoFreeBird's optional custom accent. A nil result means the native X color
+// picker remains authoritative.
++ (nullable UIColor*)customAccentColor;
++ (void)invalidateCustomAccentColorCache;
++ (nullable UIColor*)colorFromHexString:(nullable NSString*)hexString;
++ (nullable NSString*)normalizedHexString:(nullable NSString*)hexString;
+
 @end

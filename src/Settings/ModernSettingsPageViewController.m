@@ -61,6 +61,11 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
     [self setupTable];
 }
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self revealSettingsSearchTargetIfNeeded];
+}
+
 #pragma mark - Page Registry
 
 - (NSString*)pageKey {
@@ -158,6 +163,53 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
         }];
     }
     self.visibleSections = [immutableSections copy];
+}
+
+- (void)revealSettingsSearchTargetIfNeeded {
+    NSString* target = self.settingsSearchTargetIdentifier;
+    if (target.length == 0 || !self.tableView.window) return;
+
+    for (NSDictionary* entry in self.toggles) {
+        if ([entry[@"key"] isEqualToString:target] ||
+            [entry[@"titleKey"] isEqualToString:target]) {
+            NSString* parentKey = entry[@"parentKey"];
+            if (parentKey.length > 0 &&
+                ![BHTSettings boolForKey:parentKey]) {
+                target = parentKey;
+            }
+            break;
+        }
+    }
+
+    NSIndexPath* match = nil;
+    for (NSUInteger section = 0; section < self.visibleSections.count;
+         section++) {
+        NSArray* entries = self.visibleSections[section][@"settings"];
+        for (NSUInteger row = 0; row < entries.count; row++) {
+            NSDictionary* entry = entries[row];
+            if ([entry[@"key"] isEqualToString:target] ||
+                [entry[@"titleKey"] isEqualToString:target]) {
+                match = [NSIndexPath indexPathForRow:row
+                                          inSection:section];
+                break;
+            }
+        }
+        if (match) break;
+    }
+    self.settingsSearchTargetIdentifier = nil;
+    if (!match) return;
+
+    [self.tableView scrollToRowAtIndexPath:match
+                         atScrollPosition:UITableViewScrollPositionMiddle
+                                 animated:YES];
+    [self.tableView selectRowAtIndexPath:match
+                                animated:YES
+                          scrollPosition:UITableViewScrollPositionNone];
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.65 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            [self.tableView deselectRowAtIndexPath:match animated:YES];
+        });
 }
 
 #pragma mark - UITableViewDataSource

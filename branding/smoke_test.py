@@ -60,6 +60,12 @@ def main():
                 output,
                 fmt=plistlib.FMT_BINARY,
             )
+        # X 12.9's compiled launch nib refers to the stock image by this exact
+        # archive string. A synthetic same-shape fixture keeps the
+        # pre-injection replacement covered without redistributing the app.
+        (app / "LaunchScreen.nib").write_bytes(
+            b"synthetic-prefix-xLogo-synthetic-suffix"
+        )
         (source / "iTunesArtwork").write_bytes(b"artwork")
         os.symlink("Info.plist", app / "InfoLink.plist")
 
@@ -88,6 +94,15 @@ def main():
         assert localized_name["CFBundleDisplayName"] == "Twitter"
         assert (expanded / "iTunesArtwork").read_bytes() == b"artwork"
         assert (branded_app / "InfoLink.plist").is_symlink()
+        launch_archive = (branded_app / "LaunchScreen.nib").read_bytes()
+        assert b"xLogo" not in launch_archive
+        assert b"tBird" in launch_archive
+        for filename, size in {
+            "tBird.png": 24,
+            "tBird@2x.png": 48,
+            "tBird@3x.png": 72,
+        }.items():
+            assert png_size(branded_app / filename) == (size, size)
         for key in ("CFBundleIcons", "CFBundleIcons~ipad"):
             alternates = branded[key]["CFBundleAlternateIcons"]
             assert "StockIcon" in alternates

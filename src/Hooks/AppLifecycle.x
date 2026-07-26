@@ -429,12 +429,9 @@ static UIImageView* launchLogoImageView(UIView* launchView) {
     return best;
 }
 
-static UIColor* launchLogoColor(UITraitCollection* traits) {
-    if (@available(iOS 13.0, *)) {
-        if (traits.userInterfaceStyle == UIUserInterfaceStyleDark) {
-            return UIColor.whiteColor;
-        }
-    }
+static UIColor* launchLogoColor(void) {
+    // Keep the animated bird aligned with the active preset/custom accent in
+    // both light and dark appearances.
     return CurrentAccentColor();
 }
 
@@ -448,11 +445,21 @@ static void applyClassicLaunchBird(UIView* launchView) {
             logoView, &kBHTOriginalLaunchLogoImageKey,
             logoView.image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    BHTApplyTwitterBirdToImageView(
-        logoView, launchLogoColor(launchView.traitCollection));
+    BHTApplyTwitterBirdToImageView(logoView, launchLogoColor());
 }
 
 %hook T1AnimatedLaunchScreenView
+
+- (void)didMoveToWindow {
+    %orig;
+    // Run before the first window commit as well as after layout. The packaged
+    // xLogo replacement covers the pre-injection system splash; this covers
+    // the earliest frame owned by X's animated launch view.
+    if ([BHTSettings boolForKey:@"restore_launch_animation"]) {
+        stripLaunchRevealMask((UIView*)self);
+        applyClassicLaunchBird((UIView*)self);
+    }
+}
 
 - (void)layoutSubviews {
     %orig;

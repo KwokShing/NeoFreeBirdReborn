@@ -23,8 +23,9 @@ X 12.9.
   X's adaptive expanded layout instead of using the iPhone collapse clamp.
 - A Posts/Media view for Likes with a pinch-adjustable waterfall gallery,
   newest-first loading, continuous pagination, original-quality photo viewing,
-  highest-available MP4 playback, X-native long-press actions for photos,
-  videos, and GIFs in both views, and interactive swipe-down dismissal.
+  highest-available MP4 playback, Apple-style contextual previews and actions
+  for photos, videos, and GIFs in both views, interactive swipe-down dismissal,
+  and coalesced/prefetched image loading to avoid duplicate iPad work.
 - Sideloaded and TrollStore builds install with the **Twitter** display name and
   include the supplied classic bird as a selectable app icon. The blue Home
   title logo, iPad navigation rail, and classic launch animation can also use
@@ -32,13 +33,18 @@ X 12.9.
 - Updated profile, search, Grok, timeline, confirmation, appearance, branding,
   custom-font, and accessibility-related features.
 - Settings are grouped into named subsections for navigation, ads, media,
-  privacy, profiles, tweets, and links.
+  privacy, profiles, tweets, and links, with global localized search.
+- Apollo-inspired, classic Twitter, and native-blue theme presets, plus
+  allow-listed JSON preference profile export/import that excludes account
+  credentials and host-app data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 15 extends the bird branding to the iPad rail and classic launch animation,
-adds native waterfall and close-up media sheets, replaces the pushed media
-viewer with a fluid percent-driven modal dismissal, and bounds/downsamples its
-image cache for faster scrolling and lower memory use. Beta 14 fixes iPad rail
+Beta 16 removes the pre-injection launch X from sideloaded/TrollStore packages,
+targets the exact iPad rail-header logo without touching Home, adds live theme
+presets, global settings search and portable preference profiles, and upgrades
+the Likes viewer with Apple-style contextual menus plus coalesced image
+requests. Beta 15 added the waterfall viewer's fluid percent-driven dismissal
+and bounded/downsampled image cache. Beta 14 fixes iPad rail
 sizing, removes the first-frame Bookmarks label from My
 Likes, replaces the blue X Home title with the classic Twitter bird, organizes
 the settings pages, isolates temporary media cleanup to NeoFreeBird-owned
@@ -49,6 +55,11 @@ paths. Beta 13 connected the customizable Download and Share File actions to X
 Every new X 12.9 behavior has a setting; custom navigation is controlled from
 its editor. Compatibility shims preserve native behavior when their option is
 off.
+
+Theme presets and portable profiles are under
+`Settings > NeoFreeBird > Presets`. Profile JSON is versioned and allow-listed:
+it includes NeoFreeBird preferences and layout order, but not X account data,
+credentials, cookies, or cached media.
 
 The full per-feature review is in
 [`docs/X12_9_FEATURE_AUDIT.md`](docs/X12_9_FEATURE_AUDIT.md).

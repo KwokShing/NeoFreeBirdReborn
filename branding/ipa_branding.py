@@ -9,9 +9,10 @@ as a subprocess on an already built IPA/TIPA:
 
 It unpacks the IPA once, applies every enabled step — the theme pack in
 RESOURCE_PACK, the loose alternate icon in TWITTER_APP_ICON and, when
-TWITTER_BRANDING=1, the "Twitter" display name — then repackages once. When no
-branding is enabled it exits 0 without touching the IPA. A non-zero exit means
-a requested step failed; rebrand.sh treats that as fatal.
+TWITTER_BRANDING=1, the "Twitter" display name plus blue pre-injection launch
+bird — then repackages once. When no branding is enabled it exits 0 without
+touching the IPA. A non-zero exit means a requested step failed; rebrand.sh
+treats that as fatal.
 
 The sibling helpers (car_extract.m, the .py steps) live alongside this file in
 branding/, so they are resolved relative to this file rather than the caller.
@@ -20,10 +21,13 @@ branding/, so they are resolved relative to this file rather than the caller.
 import os
 import plistlib
 import re
+import binascii
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 from pathlib import Path
 
 BRANDING_DIR = Path(__file__).resolve().parent
@@ -385,6 +389,158 @@ def _xcrun_find(tool):
     return out.stdout.strip() if out.returncode == 0 else None
 
 
+TWITTER_BLUE = (29, 161, 242)
+
+
+def _paeth(left, above, upper_left):
+    estimate = left + above - upper_left
+    left_distance = abs(estimate - left)
+    above_distance = abs(estimate - above)
+    upper_left_distance = abs(estimate - upper_left)
+    if left_distance <= above_distance and left_distance <= upper_left_distance:
+        return left
+    if above_distance <= upper_left_distance:
+        return above
+    return upper_left
+
+
+def _write_recolored_rgba_png(source, destination, rgb):
+    """Write an 8-bit RGBA PNG with every visible pixel set to `rgb`."""
+    raw = Path(source).read_bytes()
+    signature = b"\x89PNG\r\n\x1a\n"
+    if not raw.startswith(signature):
+        raise BrandingError(f"Branding: launch bird is not a PNG: {source}")
+
+    position = len(signature)
+    header = None
+    compressed = bytearray()
+    while position + 12 <= len(raw):
+        length = struct.unpack(">I", raw[position:position + 4])[0]
+        kind = raw[position + 4:position + 8]
+        payload = raw[position + 8:position + 8 + length]
+        position += 12 + length
+        if kind == b"IHDR":
+            header = payload
+        elif kind == b"IDAT":
+            compressed.extend(payload)
+        elif kind == b"IEND":
+            break
+
+    if not header or len(header) != 13:
+        raise BrandingError("Branding: launch bird PNG has no valid header")
+    width, height, depth, color_type, compression, filtering, interlace = (
+        struct.unpack(">IIBBBBB", header)
+    )
+    if (
+        depth != 8
+        or color_type != 6
+        or compression != 0
+        or filtering != 0
+        or interlace != 0
+    ):
+        raise BrandingError(
+            "Branding: launch bird must be a non-interlaced 8-bit RGBA PNG"
+        )
+
+    filtered = zlib.decompress(bytes(compressed))
+    stride = width * 4
+    expected = height * (stride + 1)
+    if len(filtered) != expected:
+        raise BrandingError("Branding: launch bird PNG data is truncated")
+
+    previous = bytearray(stride)
+    output = bytearray()
+    offset = 0
+    for _ in range(height):
+        filter_kind = filtered[offset]
+        scanline = bytearray(filtered[offset + 1:offset + 1 + stride])
+        offset += stride + 1
+        for index in range(stride):
+            left = scanline[index - 4] if index >= 4 else 0
+            above = previous[index]
+            upper_left = previous[index - 4] if index >= 4 else 0
+            if filter_kind == 1:
+                predictor = left
+            elif filter_kind == 2:
+                predictor = above
+            elif filter_kind == 3:
+                predictor = (left + above) // 2
+            elif filter_kind == 4:
+                predictor = _paeth(left, above, upper_left)
+            elif filter_kind == 0:
+                predictor = 0
+            else:
+                raise BrandingError(
+                    f"Branding: unsupported PNG filter {filter_kind}"
+                )
+            scanline[index] = (scanline[index] + predictor) & 0xFF
+
+        for pixel in range(0, stride, 4):
+            scanline[pixel:pixel + 3] = bytes(rgb)
+        output.append(0)
+        output.extend(scanline)
+        previous = scanline
+
+    def chunk(kind, payload):
+        checksum = binascii.crc32(kind)
+        checksum = binascii.crc32(payload, checksum) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", checksum)
+        )
+
+    destination = Path(destination)
+    destination.write_bytes(
+        signature
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(bytes(output), level=9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _apply_builtin_launch_bird(appdir, workdir):
+    """Replace X's pre-injection launch glyph with NeoFreeBird's bird.
+
+    iOS renders LaunchScreen.nib before injected tweak code can execute. X
+    12.9's nib requests `xLogo`; redirect that same-length archive string to a
+    loose blue bird so the fix does not rebuild or disturb the app's Assets.car.
+    """
+    nib = appdir / "LaunchScreen.nib"
+    bird_directory = (
+        BRANDING_DIR.parent
+        / "layout"
+        / "Library"
+        / "Application Support"
+        / "BHT"
+        / "BHTwitter.bundle"
+    )
+    birds = {
+        "tBird.png": bird_directory / "twitter_bird.png",
+        "tBird@2x.png": bird_directory / "twitter_bird@2x.png",
+        "tBird@3x.png": bird_directory / "twitter_bird@3x.png",
+    }
+    if not nib.is_file() or not all(path.is_file() for path in birds.values()):
+        return
+
+    archive = nib.read_bytes()
+    stock_name = b"xLogo"
+    replacement_name = b"tBird"
+    if stock_name not in archive:
+        return
+    if len(stock_name) != len(replacement_name):
+        raise BrandingError("Branding: launch image replacement must be same length")
+    nib.write_bytes(archive.replace(stock_name, replacement_name))
+
+    for filename, source in birds.items():
+        _write_recolored_rgba_png(
+            source,
+            appdir / filename,
+            TWITTER_BLUE,
+        )
+
+
 # --- entry point ------------------------------------------------------------
 
 def apply_ipa_branding(ipa):
@@ -415,6 +571,10 @@ def apply_ipa_branding(ipa):
         if appdir is None:
             raise BrandingError(f"Branding: could not locate .app inside {ipa}")
 
+        # The built-in launch replacement runs first so an explicitly supplied
+        # resource pack can intentionally override it.
+        if twitter_branding:
+            _apply_builtin_launch_bird(appdir, workdir)
         if resource_pack:
             _apply_resource_pack_to_app(appdir, workdir, resource_pack)
         if twitter_app_icon:

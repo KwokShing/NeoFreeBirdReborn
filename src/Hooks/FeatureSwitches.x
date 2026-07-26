@@ -583,6 +583,8 @@ static NSNumber* FeatureSwitchOverrideValueForKey(NSString* key) {
 
 // MARK: - Highest available video quality
 
+static char kBHTSortedVideoVariantsKey;
+
 static long long BHTVideoVariantScore(id variant) {
     @try {
         id bitrate = [variant valueForKey:@"bitrate"];
@@ -596,10 +598,14 @@ static long long BHTVideoVariantScore(id variant) {
     NSString* url = [variant respondsToSelector:@selector(url)]
                         ? ((id (*)(id, SEL))objc_msgSend)(variant, @selector(url))
                         : nil;
-    NSRegularExpression* resolution =
-        [NSRegularExpression regularExpressionWithPattern:@"/(\\d+)x(\\d+)/"
-                                                  options:0
-                                                    error:nil];
+    static NSRegularExpression* resolution;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        resolution =
+            [NSRegularExpression regularExpressionWithPattern:@"/(\\d+)x(\\d+)/"
+                                                      options:0
+                                                        error:nil];
+    });
     NSTextCheckingResult* match =
         [resolution firstMatchInString:url ?: @""
                                options:0
@@ -620,13 +626,29 @@ static long long BHTVideoVariantScore(id variant) {
         variants.count < 2) {
         return variants;
     }
-    return [variants sortedArrayUsingComparator:^NSComparisonResult(id left, id right) {
+
+    // Video info is queried repeatedly while cells are measured and reused.
+    // Keep a result only while X returns the exact same immutable source array,
+    // avoiding repeated KVC, regular-expression work, and sorting on scroll.
+    NSArray* cached =
+        objc_getAssociatedObject(self, &kBHTSortedVideoVariantsKey);
+    if (cached.count == 2 && cached.firstObject == variants) {
+        return cached.lastObject;
+    }
+
+    NSArray* sorted =
+        [variants sortedArrayUsingComparator:^NSComparisonResult(id left,
+                                                                 id right) {
         long long leftScore = BHTVideoVariantScore(left);
         long long rightScore = BHTVideoVariantScore(right);
         if (leftScore > rightScore) return NSOrderedAscending;
         if (leftScore < rightScore) return NSOrderedDescending;
         return NSOrderedSame;
     }];
+    objc_setAssociatedObject(self, &kBHTSortedVideoVariantsKey,
+                             @[ variants, sorted ],
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return sorted;
 }
 
 - (NSString*)primaryUrl {
