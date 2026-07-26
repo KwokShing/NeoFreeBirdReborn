@@ -66,6 +66,13 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
     [self revealSettingsSearchTargetIfNeeded];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.view.backgroundColor = [Palette currentBackgroundColor];
+    self.tableView.backgroundColor = [Palette currentBackgroundColor];
+    [self.tableView reloadData];
+}
+
 #pragma mark - Page Registry
 
 - (NSString*)pageKey {
@@ -355,7 +362,7 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
         detail.numberOfLines = 0;
         detail.font =
             [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
-        detail.textColor = UIColor.secondaryLabelColor;
+        detail.textColor = [Palette currentSecondaryTextColor];
         [header addSubview:detail];
         [NSLayoutConstraint activateConstraints:@[
             [detail.leadingAnchor
@@ -382,7 +389,7 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
         title.numberOfLines = 0;
         title.font =
             [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-        title.textColor = UIColor.labelColor;
+        title.textColor = [Palette currentTextColor];
         [header addSubview:title];
         NSLayoutYAxisAnchor* topAnchor =
             previous ? previous.bottomAnchor : header.topAnchor;

@@ -13,6 +13,7 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
 @property (nonatomic, strong) TFNTwitterAccount* account;
 @property (nonatomic, strong) UITableView* tableView;
 @property (nonatomic, copy) NSArray<NSDictionary*>* themePresets;
+- (void)applyCurrentTheme;
 @end
 
 @implementation PresetSettingsViewController
@@ -52,6 +53,30 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
     [self.view addSubview:self.tableView];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self applyCurrentTheme];
+    [self.tableView reloadData];
+}
+
+- (void)traitCollectionDidChange:
+    (UITraitCollection*)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (previousTraitCollection.userInterfaceStyle !=
+        self.traitCollection.userInterfaceStyle) {
+        [self applyCurrentTheme];
+        [self.tableView reloadData];
+    }
+}
+
+- (void)applyCurrentTheme {
+    self.view.backgroundColor = [Palette currentBackgroundColor];
+    self.tableView.backgroundColor = [Palette currentBackgroundColor];
+    self.tableView.separatorColor = [Palette currentSeparatorColor];
+    self.view.tintColor =
+        [Palette customAccentColor] ?: UIColor.systemBlueColor;
+}
+
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
     return 2;
 }
@@ -88,8 +113,11 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
         cell.textLabel.adjustsFontForContentSizeCategory = YES;
         cell.detailTextLabel.adjustsFontForContentSizeCategory = YES;
         cell.detailTextLabel.numberOfLines = 0;
-        cell.backgroundColor = [Palette currentBackgroundColor];
     }
+    cell.backgroundColor = [Palette currentSurfaceColor];
+    cell.textLabel.textColor = [Palette currentTextColor];
+    cell.detailTextLabel.textColor =
+        [Palette currentSecondaryTextColor];
 
     if (indexPath.section == 0) {
         NSDictionary* preset = self.themePresets[indexPath.row];
@@ -130,7 +158,8 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
         cell.imageView.image =
             [UIImage systemImageNamed:exporting ? @"square.and.arrow.up"
                                                    : @"square.and.arrow.down"];
-        cell.imageView.tintColor = UIColor.systemBlueColor;
+        cell.imageView.tintColor =
+            [Palette customAccentColor] ?: UIColor.systemBlueColor;
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.accessibilityTraits = UIAccessibilityTraitButton;
     }
@@ -144,8 +173,8 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
         NSDictionary* preset = self.themePresets[indexPath.row];
         if ([BHTThemePresets
                 applyPresetIdentifier:preset[@"identifier"]]) {
-            [tableView reloadSections:[NSIndexSet indexSetWithIndex:0]
-                     withRowAnimation:UITableViewRowAnimationAutomatic];
+            [self applyCurrentTheme];
+            [tableView reloadData];
         }
         return;
     }
@@ -222,6 +251,7 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
     }
 
     [BHTThemePresets reapplyCurrentAccent];
+    [self applyCurrentTheme];
     [self.tableView reloadData];
     [self showAlertWithTitleKey:@"IMPORT_PREFERENCE_PROFILE_SUCCESS_TITLE"
                     messageKey:@"IMPORT_PREFERENCE_PROFILE_SUCCESS_DETAIL"];

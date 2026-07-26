@@ -67,6 +67,9 @@ static UIColor* NativeAccentColor(NSUInteger option) {
 @property (nonatomic, strong) NSMutableArray<ColorSwatchControl*>* swatches;
 @property (nonatomic, strong)
     NSMutableDictionary<NSString*, UIButton*>* presetButtons;
+@property (nonatomic, strong) UILabel* detailLabel;
+@property (nonatomic, strong) UILabel* presetTitleLabel;
+- (void)applyCurrentTheme;
 @end
 
 @implementation ColorThemeViewController
@@ -95,9 +98,10 @@ static UIColor* NativeAccentColor(NSUInteger option) {
     detail.text =
         [[BHTBundle sharedBundle] localizedStringForKey:@"THEME_SETTINGS_NAVIGATION_DETAIL"];
     detail.font = [TwitterChirpFont(TwitterFontStyleRegular) fontWithSize:13];
-    detail.textColor = [UIColor secondaryLabelColor];
+    detail.textColor = [Palette currentSecondaryTextColor];
     detail.numberOfLines = 0;
     [contentView addSubview:detail];
+    self.detailLabel = detail;
 
     // Evenly-spread row of swatches, matching the native picker's flex layout.
     UIStackView* row = [[UIStackView alloc] init];
@@ -132,8 +136,9 @@ static UIColor* NativeAccentColor(NSUInteger option) {
         localizedStringForKey:@"THEME_PRESETS_SECTION_TITLE"];
     presetTitle.font =
         [TwitterChirpFont(TwitterFontStyleBold) fontWithSize:17];
-    presetTitle.textColor = UIColor.labelColor;
+    presetTitle.textColor = [Palette currentTextColor];
     [contentView addSubview:presetTitle];
+    self.presetTitleLabel = presetTitle;
 
     UIStackView* presetStack = [UIStackView new];
     presetStack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -205,6 +210,13 @@ static UIColor* NativeAccentColor(NSUInteger option) {
                            constant:-24]
     ]];
 
+    [self applyCurrentTheme];
+    [self refreshSelection];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self applyCurrentTheme];
     [self refreshSelection];
 }
 
@@ -218,14 +230,16 @@ static UIColor* NativeAccentColor(NSUInteger option) {
     button.titleLabel.numberOfLines = 0;
     button.layer.cornerRadius = 14;
     button.layer.borderWidth = 1;
-    button.layer.borderColor = UIColor.separatorColor.CGColor;
-    button.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    button.layer.borderColor = [Palette currentSeparatorColor].CGColor;
+    button.backgroundColor = [Palette currentSurfaceColor];
     button.contentEdgeInsets = UIEdgeInsetsMake(12, 14, 12, 14);
     button.accessibilityIdentifier =
         [@"theme-preset-" stringByAppendingString:preset[@"identifier"]];
     objc_setAssociatedObject(button, @selector(presetTapped:),
                              preset[@"identifier"],
                              OBJC_ASSOCIATION_COPY_NONATOMIC);
+    objc_setAssociatedObject(button, @selector(buttonForPreset:),
+                             preset, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     NSString* title = [[BHTBundle sharedBundle]
         localizedStringForKey:preset[@"titleKey"]];
@@ -237,13 +251,14 @@ static UIColor* NativeAccentColor(NSUInteger option) {
     [label addAttributes:@{
         NSFontAttributeName:
             [TwitterChirpFont(TwitterFontStyleBold) fontWithSize:16],
-        NSForegroundColorAttributeName: UIColor.labelColor
+        NSForegroundColorAttributeName: [Palette currentTextColor]
     }
                    range:NSMakeRange(0, title.length)];
     [label addAttributes:@{
         NSFontAttributeName:
             [TwitterChirpFont(TwitterFontStyleRegular) fontWithSize:13],
-        NSForegroundColorAttributeName: UIColor.secondaryLabelColor
+        NSForegroundColorAttributeName:
+            [Palette currentSecondaryTextColor]
     }
                    range:NSMakeRange(title.length + 1, detail.length)];
     [button setAttributedTitle:label forState:UIControlStateNormal];
@@ -271,10 +286,58 @@ static UIColor* NativeAccentColor(NSUInteger option) {
     return button;
 }
 
+- (void)applyCurrentTheme {
+    self.view.backgroundColor = [Palette currentBackgroundColor];
+    self.detailLabel.textColor = [Palette currentSecondaryTextColor];
+    self.presetTitleLabel.textColor = [Palette currentTextColor];
+    self.view.tintColor =
+        [Palette customAccentColor] ?: NativeAccentColor(1);
+
+    [self.presetButtons enumerateKeysAndObjectsUsingBlock:^(
+                            __unused NSString* identifier,
+                            UIButton* button, __unused BOOL* stop) {
+        NSDictionary* preset =
+            objc_getAssociatedObject(button,
+                                     @selector(buttonForPreset:));
+        NSString* title = [[BHTBundle sharedBundle]
+            localizedStringForKey:preset[@"titleKey"]];
+        NSString* detail = [[BHTBundle sharedBundle]
+            localizedStringForKey:preset[@"detailKey"]];
+        NSMutableAttributedString* label =
+            [[NSMutableAttributedString alloc]
+                initWithString:
+                    [NSString stringWithFormat:@"%@\n%@", title,
+                                               detail]];
+        [label addAttributes:@{
+            NSFontAttributeName:
+                [TwitterChirpFont(TwitterFontStyleBold)
+                    fontWithSize:16],
+            NSForegroundColorAttributeName:
+                [Palette currentTextColor]
+        }
+                       range:NSMakeRange(0, title.length)];
+        [label addAttributes:@{
+            NSFontAttributeName:
+                [TwitterChirpFont(TwitterFontStyleRegular)
+                    fontWithSize:13],
+            NSForegroundColorAttributeName:
+                [Palette currentSecondaryTextColor]
+        }
+                       range:NSMakeRange(title.length + 1,
+                                         detail.length)];
+        [button setAttributedTitle:label
+                         forState:UIControlStateNormal];
+        button.backgroundColor = [Palette currentSurfaceColor];
+        button.layer.borderColor =
+            [Palette currentSeparatorColor].CGColor;
+    }];
+}
+
 - (void)presetTapped:(UIButton*)button {
     NSString* identifier =
         objc_getAssociatedObject(button, @selector(presetTapped:));
     if (![BHTThemePresets applyPresetIdentifier:identifier]) return;
+    [self applyCurrentTheme];
     [self refreshSelection];
     [self reapplyTabBarAccent];
 }
@@ -293,7 +356,8 @@ static UIColor* NativeAccentColor(NSUInteger option) {
         BOOL selectedPreset = [identifier isEqualToString:activePreset];
         button.layer.borderWidth = selectedPreset ? 2 : 1;
         button.layer.borderColor =
-            (selectedPreset ? button.tintColor : UIColor.separatorColor).CGColor;
+            (selectedPreset ? button.tintColor
+                            : [Palette currentSeparatorColor]).CGColor;
         button.accessibilityTraits =
             selectedPreset ? UIAccessibilityTraitButton |
                                  UIAccessibilityTraitSelected
@@ -307,6 +371,7 @@ static UIColor* NativeAccentColor(NSUInteger option) {
                                                forKey:@"bh_color_theme_selectedColor"];
     [BHTThemePresets reapplyCurrentAccent];
 
+    [self applyCurrentTheme];
     [self refreshSelection];
     [self reapplyTabBarAccent];
 }
@@ -316,6 +381,7 @@ static UIColor* NativeAccentColor(NSUInteger option) {
     [super traitCollectionDidChange:previousTraitCollection];
     if (previousTraitCollection.userInterfaceStyle !=
         self.traitCollection.userInterfaceStyle) {
+        [self applyCurrentTheme];
         [self refreshSelection];
     }
 }

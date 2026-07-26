@@ -2,9 +2,9 @@
 //  ThemeAccent.x
 //  NeoFreeBird
 //
-//  Applies NeoFreeBird's optional custom accent through X's active palette.
-//  The concrete palette class changes between light/dark appearances and X
-//  releases, so the hook is installed only after validating the live method.
+//  Applies NeoFreeBird's optional accent and full theme presets through X's
+//  active palette. The concrete palette class changes between light/dark
+//  appearances and X releases, so every hook validates the live method first.
 //
 
 #import "HookHelpers.h"
@@ -15,8 +15,17 @@ static char kBHTPaletteAccentColorKey;
 static char kBHTPaletteAccentOptionKey;
 static char kBHTPaletteHookInstalledKey;
 static char kBHTPaletteOriginalPrimaryColorIMPKey;
+static char kBHTPaletteOriginalColorGetterIMPsKey;
+static char kBHTPaletteInstalledColorGettersKey;
+static char kBHTPaletteBackgroundColorKey;
+static char kBHTPaletteSurfaceColorKey;
+static char kBHTPaletteElevatedSurfaceColorKey;
+static char kBHTPaletteTextColorKey;
+static char kBHTPaletteSecondaryTextColorKey;
+static char kBHTPaletteSeparatorColorKey;
 
 typedef UIColor* (*BHTPrimaryColorForOptionIMP)(id, SEL, NSUInteger);
+typedef UIColor* (*BHTColorGetterIMP)(id, SEL);
 
 static const char* BHTUnqualifiedThemeType(const char* type) {
     while (type && strchr("rnNoORV", type[0])) type++;
@@ -35,6 +44,74 @@ static BOOL BHTPrimaryColorMethodIsCompatible(Method method) {
     return unqualifiedReturn && unqualifiedReturn[0] == '@' &&
            unqualifiedOption &&
            strchr("cCsSiIlLqQ", unqualifiedOption[0]) != NULL;
+}
+
+static BOOL BHTColorGetterMethodIsCompatible(Method method) {
+    if (!method || method_getNumberOfArguments(method) != 2) return NO;
+    char returnType[32] = {0};
+    method_getReturnType(method, returnType, sizeof(returnType));
+    const char* unqualifiedReturn =
+        BHTUnqualifiedThemeType(returnType);
+    return unqualifiedReturn && unqualifiedReturn[0] == '@';
+}
+
+static IMP BHTOriginalColorGetterIMP(id palette, SEL selector) {
+    NSString* selectorName = NSStringFromSelector(selector);
+    for (Class cls = object_getClass(palette); cls;
+         cls = class_getSuperclass(cls)) {
+        NSDictionary<NSString*, NSValue*>* originals =
+            objc_getAssociatedObject(
+                cls, &kBHTPaletteOriginalColorGetterIMPsKey);
+        NSValue* value = originals[selectorName];
+        if (value.pointerValue) return (IMP)value.pointerValue;
+    }
+    return NULL;
+}
+
+static UIColor* BHTThemedColorGetter(id palette, SEL selector,
+                                     const void* colorKey,
+                                     UIColor* fallback) {
+    UIColor* color = objc_getAssociatedObject(palette, colorKey);
+    if (color) return color;
+    IMP original = BHTOriginalColorGetterIMP(palette, selector);
+    return original ? ((BHTColorGetterIMP)original)(palette, selector)
+                    : fallback;
+}
+
+static UIColor* BHTThemedBackgroundColor(id palette, SEL selector) {
+    return BHTThemedColorGetter(
+        palette, selector, &kBHTPaletteBackgroundColorKey,
+        UIColor.systemBackgroundColor);
+}
+
+static UIColor* BHTThemedSurfaceColor(id palette, SEL selector) {
+    return BHTThemedColorGetter(
+        palette, selector, &kBHTPaletteSurfaceColorKey,
+        UIColor.secondarySystemBackgroundColor);
+}
+
+static UIColor* BHTThemedElevatedSurfaceColor(id palette, SEL selector) {
+    return BHTThemedColorGetter(
+        palette, selector, &kBHTPaletteElevatedSurfaceColorKey,
+        UIColor.tertiarySystemBackgroundColor);
+}
+
+static UIColor* BHTThemedTextColor(id palette, SEL selector) {
+    return BHTThemedColorGetter(
+        palette, selector, &kBHTPaletteTextColorKey,
+        UIColor.labelColor);
+}
+
+static UIColor* BHTThemedSecondaryTextColor(id palette, SEL selector) {
+    return BHTThemedColorGetter(
+        palette, selector, &kBHTPaletteSecondaryTextColorKey,
+        UIColor.secondaryLabelColor);
+}
+
+static UIColor* BHTThemedSeparatorColor(id palette, SEL selector) {
+    return BHTThemedColorGetter(
+        palette, selector, &kBHTPaletteSeparatorColorKey,
+        UIColor.separatorColor);
 }
 
 static IMP BHTOriginalPrimaryColorIMP(id palette) {
@@ -66,19 +143,182 @@ static UIColor* BHTThemedPrimaryColorForOption(id palette, SEL selector,
     return UIColor.systemBlueColor;
 }
 
+static void BHTInstallColorGetter(Class cls, NSString* selectorName,
+                                  IMP replacement) {
+    SEL selector = NSSelectorFromString(selectorName);
+    Method method = class_getInstanceMethod(cls, selector);
+    if (!BHTColorGetterMethodIsCompatible(method)) return;
+
+    @synchronized(cls) {
+        NSDictionary<NSString*, NSNumber*>* installed =
+            objc_getAssociatedObject(
+                cls, &kBHTPaletteInstalledColorGettersKey);
+        if ([installed[selectorName] boolValue]) return;
+
+        IMP current = method_getImplementation(method);
+        if (current != replacement) {
+            NSMutableDictionary<NSString*, NSValue*>* originals =
+                [objc_getAssociatedObject(
+                    cls, &kBHTPaletteOriginalColorGetterIMPsKey)
+                    mutableCopy] ?:
+                [NSMutableDictionary dictionary];
+            originals[selectorName] =
+                [NSValue valueWithPointer:(const void*)current];
+            objc_setAssociatedObject(
+                cls, &kBHTPaletteOriginalColorGetterIMPsKey,
+                [originals copy], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+            // Keep the override on the concrete active palette. Adding an
+            // inherited getter avoids affecting sibling light/dark palettes.
+            if (!class_addMethod(cls, selector, replacement,
+                                 method_getTypeEncoding(method))) {
+                Method ownedMethod =
+                    class_getInstanceMethod(cls, selector);
+                IMP ownedCurrent =
+                    ownedMethod ? method_getImplementation(ownedMethod) : NULL;
+                if (ownedCurrent && ownedCurrent != replacement) {
+                    method_setImplementation(ownedMethod, replacement);
+                }
+            }
+        }
+
+        NSMutableDictionary<NSString*, NSNumber*>* updatedInstalled =
+            [installed mutableCopy] ?:
+            [NSMutableDictionary dictionary];
+        updatedInstalled[selectorName] = @YES;
+        objc_setAssociatedObject(
+            cls, &kBHTPaletteInstalledColorGettersKey,
+            [updatedInstalled copy], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+static void BHTInstallColorGetterGroup(Class cls,
+                                       NSArray<NSString*>* selectorNames,
+                                       IMP replacement) {
+    for (NSString* selectorName in selectorNames) {
+        BHTInstallColorGetter(cls, selectorName, replacement);
+    }
+}
+
+static void BHTConfigureFullThemeForPalette(
+    id palette, BOOL darkAppearance) {
+    NSDictionary<NSString*, UIColor*>* colors =
+        [Palette
+            customThemeColorsForDarkAppearance:darkAppearance];
+    objc_setAssociatedObject(
+        palette, &kBHTPaletteBackgroundColorKey,
+        colors[BHTThemeColorBackgroundKey], OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(
+        palette, &kBHTPaletteSurfaceColorKey,
+        colors[BHTThemeColorSurfaceKey], OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(
+        palette, &kBHTPaletteElevatedSurfaceColorKey,
+        colors[BHTThemeColorElevatedSurfaceKey],
+        OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(
+        palette, &kBHTPaletteTextColorKey,
+        colors[BHTThemeColorTextKey], OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(
+        palette, &kBHTPaletteSecondaryTextColorKey,
+        colors[BHTThemeColorSecondaryTextKey],
+        OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(
+        palette, &kBHTPaletteSeparatorColorKey,
+        colors[BHTThemeColorSeparatorKey], OBJC_ASSOCIATION_RETAIN);
+
+    // Native X and accent-only custom swatches never install these hooks.
+    // If a full preset was previously active, the already-installed getters
+    // simply fall through to their preserved original IMPs after colors clear.
+    if (colors.count == 0) return;
+
+    Class cls = object_getClass(palette);
+    BHTInstallColorGetterGroup(
+        cls,
+        @[
+            @"backgroundColor",
+            @"defaultBackgroundColor",
+            @"rowBackgroundColor",
+            @"statusBackgroundColor"
+        ],
+        (IMP)BHTThemedBackgroundColor);
+    BHTInstallColorGetterGroup(
+        cls,
+        @[
+            @"alternateBackgroundColor",
+            @"secondaryBackgroundColor",
+            @"faintBackgroundColor",
+            @"cardBackgroundColor",
+            @"cardDetailsBackgroundColor",
+            @"cardHeaderBackgroundColor",
+            @"compositionBackgroundColor",
+            @"composeInlineReplyBackgroundColor"
+        ],
+        (IMP)BHTThemedSurfaceColor);
+    BHTInstallColorGetterGroup(
+        cls, @[@"elevatedBackgroundColor"],
+        (IMP)BHTThemedElevatedSurfaceColor);
+    BHTInstallColorGetterGroup(
+        cls,
+        @[
+            @"textColor",
+            @"baseTextColor",
+            @"defaultTextColor",
+            @"boldTextColor"
+        ],
+        (IMP)BHTThemedTextColor);
+    BHTInstallColorGetterGroup(
+        cls,
+        @[
+            @"detailTextColor",
+            @"placeholderTextColor",
+            @"tabBarItemColor"
+        ],
+        (IMP)BHTThemedSecondaryTextColor);
+    BHTInstallColorGetterGroup(
+        cls,
+        @[
+            @"navigationBarShadowColor",
+            @"separatorColor",
+            @"promptSeparatorColor"
+        ],
+        (IMP)BHTThemedSeparatorColor);
+}
+
 static id BHTPaletteFromSettingInfo(id info) {
     SEL selector = @selector(colorPalette);
     if (!info || ![info respondsToSelector:selector]) return nil;
     NSMethodSignature* signature = [info methodSignatureForSelector:selector];
+    if (signature.numberOfArguments != 2) return nil;
     const char* returnType =
         BHTUnqualifiedThemeType(signature.methodReturnType);
     if (!returnType || returnType[0] != '@') return nil;
     return ((id (*)(id, SEL))objc_msgSend)(info, selector);
 }
 
-static void BHTInstallThemeHookForPalette(id palette) {
+static BOOL BHTSettingInfoUsesDarkAppearance(id info) {
+    SEL selector = @selector(isDark);
+    if (!info || ![info respondsToSelector:selector]) {
+        return UITraitCollection.currentTraitCollection
+                   .userInterfaceStyle == UIUserInterfaceStyleDark;
+    }
+    NSMethodSignature* signature =
+        [info methodSignatureForSelector:selector];
+    const char* returnType =
+        BHTUnqualifiedThemeType(signature.methodReturnType);
+    if (signature.numberOfArguments != 2 || !returnType ||
+        strchr("BcC", returnType[0]) == NULL) {
+        return UITraitCollection.currentTraitCollection
+                   .userInterfaceStyle == UIUserInterfaceStyleDark;
+    }
+    return ((BOOL (*)(id, SEL))objc_msgSend)(info, selector);
+}
+
+static void BHTInstallThemeHookForPalette(id palette,
+                                          BOOL darkAppearance) {
     if (!palette) return;
     Class cls = object_getClass(palette);
+    BHTConfigureFullThemeForPalette(palette, darkAppearance);
+
     SEL selector = @selector(primaryColorForOption:);
     Method method = class_getInstanceMethod(cls, selector);
     if (!BHTPrimaryColorMethodIsCompatible(method)) return;
@@ -149,14 +389,36 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
     if (!settings || ![settings respondsToSelector:paletteSelector]) return;
     id info =
         ((id (*)(id, SEL))objc_msgSend)(settings, paletteSelector);
-    BHTInstallThemeHookForPalette(BHTPaletteFromSettingInfo(info));
+    BHTInstallThemeHookForPalette(
+        BHTPaletteFromSettingInfo(info),
+        BHTSettingInfoUsesDarkAppearance(info));
 
     Class colorSettingsClass = objc_getClass("T1ColorSettings");
-    SEL applySelector =
-        NSSelectorFromString(@"_t1_applyPrimaryColorOption");
-    if (reapplyColor &&
-        [colorSettingsClass respondsToSelector:applySelector]) {
-        ((void (*)(id, SEL))objc_msgSend)(colorSettingsClass, applySelector);
+    if (reapplyColor) {
+        NSArray<NSString*>* applySelectors = @[
+            @"_t1_applyTheme",
+            @"_t1_applyPrimaryColorOption"
+        ];
+        for (NSString* selectorName in applySelectors) {
+            SEL selector = NSSelectorFromString(selectorName);
+            Method method =
+                class_getClassMethod(colorSettingsClass, selector);
+            if (![colorSettingsClass respondsToSelector:selector] ||
+                !method || method_getNumberOfArguments(method) != 2) {
+                continue;
+            }
+            char returnType[16] = {0};
+            method_getReturnType(method, returnType,
+                                 sizeof(returnType));
+            const char* unqualifiedReturn =
+                BHTUnqualifiedThemeType(returnType);
+            if (!unqualifiedReturn ||
+                unqualifiedReturn[0] != 'v') {
+                continue;
+            }
+            ((void (*)(id, SEL))objc_msgSend)(colorSettingsClass,
+                                              selector);
+        }
     }
 }
 
@@ -164,13 +426,17 @@ static void BHTRefreshActiveThemePalette(BOOL reapplyColor) {
 
 - (TAETwitterColorPaletteSettingInfo*)currentColorPalette {
     TAETwitterColorPaletteSettingInfo* info = %orig;
-    BHTInstallThemeHookForPalette(BHTPaletteFromSettingInfo(info));
+    BHTInstallThemeHookForPalette(
+        BHTPaletteFromSettingInfo(info),
+        BHTSettingInfoUsesDarkAppearance(info));
     return info;
 }
 
 - (void)setCurrentColorPalette:(TAETwitterColorPaletteSettingInfo*)info {
     %orig(info);
-    BHTInstallThemeHookForPalette(BHTPaletteFromSettingInfo(info));
+    BHTInstallThemeHookForPalette(
+        BHTPaletteFromSettingInfo(info),
+        BHTSettingInfoUsesDarkAppearance(info));
 }
 
 %end

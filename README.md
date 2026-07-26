@@ -24,8 +24,9 @@ X 12.9.
 - A Posts/Media view for Likes with a pinch-adjustable waterfall gallery,
   newest-first loading, continuous pagination, original-quality photo viewing,
   highest-available MP4 playback, Apple-style contextual previews and actions
-  for photos, videos, and GIFs in both views, interactive swipe-down dismissal,
-  and coalesced/prefetched image loading to avoid duplicate iPad work.
+  for photos, videos, and GIFs in both views, a window-level edge-to-edge viewer
+  on iPhone and iPad, interactive swipe-down dismissal, and
+  coalesced/prefetched image loading to avoid duplicate iPad work.
 - Sideloaded and TrollStore builds install with the **Twitter** display name and
   include the supplied classic bird as a selectable app icon. The blue Home
   title logo, iPad navigation rail, and classic launch animation can also use
@@ -34,17 +35,21 @@ X 12.9.
   custom-font, and accessibility-related features.
 - Settings are grouped into named subsections for navigation, ads, media,
   privacy, profiles, tweets, and links, with global localized search.
-- Apollo-inspired, classic Twitter, and native-blue theme presets, plus
-  allow-listed JSON preference profile export/import that excludes account
-  credentials and host-app data.
+- Apollo-inspired and classic Twitter presets coordinate light/dark timeline,
+  tweet, navigation, settings, surface, text, separator, and accent colors.
+  Native Blue restores X's original surface behavior. Allow-listed JSON
+  preference profile export/import excludes account credentials and host-app
+  data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 16 removes the pre-injection launch X from sideloaded/TrollStore packages,
-targets the exact iPad rail-header logo without touching Home, adds live theme
-presets, global settings search and portable preference profiles, and upgrades
-the Likes viewer with Apple-style contextual menus plus coalesced image
-requests. Beta 15 added the waterfall viewer's fluid percent-driven dismissal
-and bounded/downsampled image cache. Beta 14 fixes iPad rail
+Beta 17 targets the actual iPad rail-header image even though X 12.9 exposes no
+logo property, expands Apollo-inspired and Classic Twitter into coordinated
+app-wide light/dark palettes, and forces waterfall close-ups into the full app
+window on iPhone and iPad. Beta 16 removed the pre-injection launch X from
+sideloaded/TrollStore packages, added global settings search and portable
+preference profiles, and upgraded the Likes viewer with Apple-style contextual
+menus plus coalesced image requests. Beta 15 added the waterfall viewer's
+fluid percent-driven dismissal and bounded/downsampled image cache. Beta 14 fixes iPad rail
 sizing, removes the first-frame Bookmarks label from My
 Likes, replaces the blue X Home title with the classic Twitter bird, organizes
 the settings pages, isolates temporary media cleanup to NeoFreeBird-owned

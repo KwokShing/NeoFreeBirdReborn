@@ -178,7 +178,8 @@ static BOOL shouldPinCollapsibleTabBar(
 static BOOL updatingTabIconColor = NO;
 
 static UIColor* tabItemColor(BOOL selected) {
-    return selected ? CurrentAccentColor() : [UIColor secondaryLabelColor];
+    return selected ? CurrentAccentColor()
+                    : [Palette currentSecondaryTextColor];
 }
 
 %hook T1TabView
@@ -228,6 +229,8 @@ static UIColor* tabItemColor(BOOL selected) {
 
 static char kBHTOriginalRailLogoImageKey;
 static char kBHTOriginalRailLogoTintKey;
+static char kBHTRailDeferredUpdatePendingKey;
+static char kBHTRailResolvedLogoViewKey;
 
 static BOOL BHTUsesPadNavigation(UITraitCollection* traits) {
     UIUserInterfaceIdiom idiom = traits.userInterfaceIdiom;
@@ -274,10 +277,135 @@ static void BHTInstallBrandingThemeObserver(void) {
     });
 }
 
-static UIImageView* BHTRailHeaderLogoImageView(UIView* hostView) {
+static BOOL BHTRailHeaderCandidateIsVisible(UIView* candidate,
+                                            UIView* hostView) {
+    for (UIView* current = candidate; current;
+         current = current.superview) {
+        if (current.hidden || current.alpha <= 0.01) return NO;
+        if (current == hostView) break;
+    }
+    return YES;
+}
+
+static BOOL BHTRailHeaderCandidateBelongsToTab(UIView* candidate,
+                                               UIView* hostView) {
+    Class tabViewClass = NSClassFromString(@"T1TabView");
+    if (!tabViewClass) return NO;
+    for (UIView* current = candidate.superview;
+         current && current != hostView;
+         current = current.superview) {
+        if ([current isKindOfClass:tabViewClass]) {
+            // The Home house and every other navigation item live inside a
+            // T1TabView. The rail header mark does not, so this is a stronger
+            // guard than comparing icon pixels or relying on view order.
+            return YES;
+        }
+    }
+    return NO;
+}
+
+static BOOL BHTIsSafeRailHeaderCandidate(UIImageView* candidate,
+                                         UIView* hostView,
+                                         CGRect* resolvedFrame) {
+    if (!candidate || !hostView ||
+        ![candidate isDescendantOfView:hostView] ||
+        BHTRailHeaderCandidateBelongsToTab(candidate, hostView) ||
+        !BHTRailHeaderCandidateIsVisible(candidate, hostView)) {
+        return NO;
+    }
+
+    CGRect frame = [candidate convertRect:candidate.bounds toView:hostView];
+    if (CGRectIsNull(frame) || CGRectIsInfinite(frame) ||
+        CGRectIsEmpty(frame)) {
+        return NO;
+    }
+    CGFloat width = CGRectGetWidth(frame);
+    CGFloat height = CGRectGetHeight(frame);
+    if (!isfinite(width) || !isfinite(height) ||
+        width < 16.0 || height < 16.0 ||
+        width > 56.0 || height > 56.0) {
+        return NO;
+    }
+    CGFloat aspectRatio = width / MAX(height, 1.0);
+    if (aspectRatio < 0.65 || aspectRatio > 1.35) return NO;
+
+    // FLEX identified the X 12.9 rail header as a 28x28 UIImageView at
+    // {34,35}. Keep the fallback inside the safe-area header band so the
+    // first Home tab can never qualify even if its internal class changes.
+    UIEdgeInsets safeAreaInsets = hostView.safeAreaInsets;
+    CGFloat headerBottom = MAX(72.0, safeAreaInsets.top + 48.0);
+    if (CGRectGetMinY(frame) < -1.0 ||
+        CGRectGetMaxY(frame) > headerBottom) {
+        return NO;
+    }
+
+    CGFloat hostWidth = CGRectGetWidth(hostView.bounds);
+    if (hostWidth <= 0.0) return NO;
+    CGFloat edgeBand =
+        MIN(144.0, MAX(80.0, hostWidth * 0.18));
+    UIUserInterfaceLayoutDirection direction =
+        [UIView userInterfaceLayoutDirectionForSemanticContentAttribute:
+                    hostView.semanticContentAttribute];
+    BOOL inRailColumn =
+        direction == UIUserInterfaceLayoutDirectionRightToLeft
+            ? CGRectGetMinX(frame) >= hostWidth - edgeBand
+            : CGRectGetMaxX(frame) <= edgeBand;
+    if (!inRailColumn) return NO;
+
+    if (resolvedFrame) *resolvedFrame = frame;
+    return YES;
+}
+
+static UIImageView* BHTGuardedRailHeaderImageScan(UIView* hostView,
+                                                   NSUInteger* matchCount) {
+    __block UIImageView* best = nil;
+    __block CGFloat bestScore = CGFLOAT_MAX;
+    __block NSUInteger matches = 0;
+    EnumerateSubviewsRecursively(hostView, ^(UIView* view) {
+        if (![view isKindOfClass:UIImageView.class]) return;
+        CGRect frame = CGRectZero;
+        UIImageView* imageView = (UIImageView*)view;
+        if (!BHTIsSafeRailHeaderCandidate(imageView, hostView, &frame)) {
+            return;
+        }
+        matches++;
+        CGFloat iconSize =
+            (CGRectGetWidth(frame) + CGRectGetHeight(frame)) / 2.0;
+        CGFloat edgeDistance =
+            MIN(CGRectGetMinX(frame),
+                MAX(0.0, CGRectGetWidth(hostView.bounds) -
+                             CGRectGetMaxX(frame)));
+        CGFloat score = CGRectGetMidY(frame) * 10.0 +
+                        fabs(iconSize - 28.0) * 2.0 +
+                        edgeDistance;
+        if (score < bestScore) {
+            bestScore = score;
+            best = imageView;
+        }
+    });
+    if (matchCount) *matchCount = matches;
+    return best;
+}
+
+static UIImageView* BHTRailHeaderLogoImageView(UIView* hostView,
+                                               NSString** resolution,
+                                               NSUInteger* matchCount) {
+    UIImageView* cached =
+        objc_getAssociatedObject(hostView,
+                                 &kBHTRailResolvedLogoViewKey);
+    if (BHTIsSafeRailHeaderCandidate(cached, hostView, NULL)) {
+        if (resolution) *resolution = @"cachedGuardedHeader";
+        if (matchCount) *matchCount = 1;
+        return cached;
+    }
+    if (cached) {
+        objc_setAssociatedObject(
+            hostView, &kBHTRailResolvedLogoViewKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
     // X 12.9 owns the actual iPad header mark in T1TabBarHostView. Resolve its
-    // semantic logo property/ivar only; a geometry scan can mistake the first
-    // Home tab for the header and produce a duplicate bird below the stock X.
+    // semantic logo property/ivar first.
     SEL selector = NSSelectorFromString(@"logoImageView");
     if ([hostView respondsToSelector:selector]) {
         id candidate = nil;
@@ -286,7 +414,13 @@ static UIImageView* BHTRailHeaderLogoImageView(UIView* hostView) {
                 ((id (*)(id, SEL))objc_msgSend)(hostView, selector);
         } @catch (__unused NSException* exception) {
         }
-        if ([candidate isKindOfClass:UIImageView.class]) {
+        if ([candidate isKindOfClass:UIImageView.class] &&
+            BHTIsSafeRailHeaderCandidate(candidate, hostView, NULL)) {
+            if (resolution) *resolution = @"semanticSelector";
+            if (matchCount) *matchCount = 1;
+            objc_setAssociatedObject(
+                hostView, &kBHTRailResolvedLogoViewKey, candidate,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             return candidate;
         }
     }
@@ -294,26 +428,66 @@ static UIImageView* BHTRailHeaderLogoImageView(UIView* hostView) {
     for (Class currentClass = hostView.class;
          currentClass && currentClass != UIView.class;
          currentClass = class_getSuperclass(currentClass)) {
-        Ivar ivar =
-            class_getInstanceVariable(currentClass, "_logoImageView");
-        const char* encoding = ivar ? ivar_getTypeEncoding(ivar) : NULL;
-        if (!encoding || encoding[0] != '@') continue;
-        id candidate = nil;
-        @try {
-            candidate = object_getIvar(hostView, ivar);
-        } @catch (__unused NSException* exception) {
+        unsigned int ivarCount = 0;
+        Ivar* ivars = class_copyIvarList(currentClass, &ivarCount);
+        for (unsigned int index = 0; index < ivarCount; index++) {
+            Ivar ivar = ivars[index];
+            const char* rawName = ivar_getName(ivar);
+            const char* encoding = ivar_getTypeEncoding(ivar);
+            NSString* name =
+                rawName ? [NSString stringWithUTF8String:rawName] : @"";
+            if (!encoding || encoding[0] != '@' ||
+                [name.lowercaseString rangeOfString:@"logo"].location ==
+                    NSNotFound) {
+                continue;
+            }
+            id candidate = nil;
+            @try {
+                candidate = object_getIvar(hostView, ivar);
+            } @catch (__unused NSException* exception) {
+            }
+            if ([candidate isKindOfClass:UIImageView.class] &&
+                BHTIsSafeRailHeaderCandidate(candidate, hostView, NULL)) {
+                free(ivars);
+                if (resolution) {
+                    *resolution =
+                        [@"semanticIvar:" stringByAppendingString:name];
+                }
+                if (matchCount) *matchCount = 1;
+                objc_setAssociatedObject(
+                    hostView, &kBHTRailResolvedLogoViewKey, candidate,
+                    OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                return candidate;
+            }
         }
-        if ([candidate isKindOfClass:UIImageView.class]) {
-            return candidate;
-        }
+        free(ivars);
     }
-    return nil;
+
+    UIImageView* fallback =
+        BHTGuardedRailHeaderImageScan(hostView, matchCount);
+    if (resolution) {
+        *resolution =
+            fallback ? @"guardedHeaderScan" : @"unresolved";
+    }
+    if (fallback) {
+        objc_setAssociatedObject(
+            hostView, &kBHTRailResolvedLogoViewKey, fallback,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return fallback;
 }
 
 static void BHTUpdateRailHostBranding(UIView* hostView) {
     if (!BHTUsesPadNavigation(hostView.traitCollection)) return;
-    UIImageView* logoView = BHTRailHeaderLogoImageView(hostView);
-    if (!logoView) return;
+    NSString* resolution = nil;
+    NSUInteger matchCount = 0;
+    UIImageView* logoView =
+        BHTRailHeaderLogoImageView(hostView, &resolution, &matchCount);
+    if (!logoView) {
+        BHTRecordRailBrandingObservation(
+            resolution ?: @"unresolved", hostView, nil, matchCount);
+        return;
+    }
 
     BOOL enabled =
         [BHTSettings boolForKey:@"color_twitter_icon_in_top_bar"];
@@ -348,6 +522,28 @@ static void BHTUpdateRailHostBranding(UIView* hostView) {
             logoView, &kBHTOriginalRailLogoTintKey, nil,
             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+    BHTRecordRailBrandingObservation(
+        resolution ?: @"unresolved", hostView, logoView, matchCount);
+}
+
+static void BHTScheduleDeferredRailHostBranding(UIView* hostView) {
+    if (!hostView ||
+        objc_getAssociatedObject(
+            hostView, &kBHTRailDeferredUpdatePendingKey)) {
+        return;
+    }
+    objc_setAssociatedObject(
+        hostView, &kBHTRailDeferredUpdatePendingKey, @YES,
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView* weakHostView = hostView;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView* strongHostView = weakHostView;
+        if (!strongHostView) return;
+        objc_setAssociatedObject(
+            strongHostView, &kBHTRailDeferredUpdatePendingKey, nil,
+            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        BHTUpdateRailHostBranding(strongHostView);
+    });
 }
 
 %hook T1TabBarHostView
@@ -355,16 +551,32 @@ static void BHTUpdateRailHostBranding(UIView* hostView) {
 - (void)didMoveToWindow {
     %orig;
     BHTUpdateRailHostBranding((UIView*)self);
+    BHTScheduleDeferredRailHostBranding((UIView*)self);
 }
 
 - (void)layoutSubviews {
     %orig;
     BHTUpdateRailHostBranding((UIView*)self);
+    // The stock rail may assign its X image from a child layout later in the
+    // same pass. Re-apply once at the end of the main run loop without a
+    // timer, polling, or a process-wide UIImageView hook.
+    BHTScheduleDeferredRailHostBranding((UIView*)self);
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraits {
     %orig(previousTraits);
     BHTUpdateRailHostBranding((UIView*)self);
+    BHTScheduleDeferredRailHostBranding((UIView*)self);
+}
+
+- (void)didAddSubview:(UIView*)subview {
+    %orig(subview);
+    BHTScheduleDeferredRailHostBranding((UIView*)self);
+}
+
+- (void)setTabBarViewController:(id)controller {
+    %orig(controller);
+    BHTScheduleDeferredRailHostBranding((UIView*)self);
 }
 
 %end
