@@ -16,6 +16,8 @@
 #import "Hooks/HookHelpers.h"
 #import "Likes/BHTLikesNavigationUtility.h"
 #import "MediaActions/BHTMediaActionUtility.h"
+#import "ThemeColor/BHTThemePresets.h"
+#import "ThemeColor/Palette.h"
 
 static NSString* const kBHTLikesPage = @"likes";
 static char kBHTLikesEntryKey;
@@ -49,6 +51,8 @@ static NSMutableDictionary* BHTMutableLikesDiagnostics(void) {
             @"navigationMode": @"nativeBookmarksCarrier",
             @"photoRequestVariant": @"orig",
             @"waterfallPreviewVariant": @"medium",
+            @"waterfallImageScaling": @"completeAspectFit",
+            @"waterfallAspectRatioPolicy": @"metadataWithDefensiveBounds",
             @"waterfallActionSheet": @"UIContextMenuInteraction",
             @"waterfallActionFallback": @"TFNMenuSheetViewController",
             @"viewerDismissal": @"percentDrivenModal",
@@ -493,7 +497,13 @@ static NSArray<BHTLikedMediaItem*>* BHTMediaItemsFromSections(NSArray* sections)
         CGFloat ratio = [delegate respondsToSelector:@selector(waterfallAspectRatioAtIndexPath:)]
                             ? [delegate waterfallAspectRatioAtIndexPath:indexPath]
                             : 1;
-        ratio = MAX(0.45, MIN(2.4, ratio));
+        // Keep the masonry frame close to the media's real dimensions. The
+        // previous 0.45...2.4 clamp shortened tall artwork and narrowed wide
+        // panoramas, which made the aspect-fill thumbnail visibly crop them.
+        // These wider defensive limits still protect the layout from corrupt
+        // metadata while accommodating ordinary long screenshots and banners.
+        if (!isfinite(ratio) || ratio <= 0) ratio = 1;
+        ratio = MAX(0.20, MIN(5.0, ratio));
         CGFloat itemHeight = floor(itemWidth / ratio);
         CGFloat x = column * (itemWidth + self.spacing);
         CGFloat y = heights[column].doubleValue;
@@ -540,6 +550,7 @@ static void BHTCancelMediaImageRequest(
 @property(nonatomic, strong) UIImageView* videoBadge;
 @property(nonatomic, strong) BHTMediaImageRequestToken* imageRequest;
 @property(nonatomic, strong) NSURL* representedURL;
+- (void)applyCurrentThemeSurface;
 @end
 
 @implementation BHTLikedMediaCell
@@ -548,9 +559,12 @@ static void BHTCancelMediaImageRequest(
     if ((self = [super initWithFrame:frame])) {
         _imageView = [[UIImageView alloc] initWithFrame:self.contentView.bounds];
         _imageView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        _imageView.contentMode = UIViewContentModeScaleAspectFill;
+        // A waterfall tile must show the complete image. The layout already
+        // follows the original media ratio, and AspectFit also handles missing
+        // or stale ratio metadata without silently cutting off an edge.
+        _imageView.contentMode = UIViewContentModeScaleAspectFit;
         _imageView.clipsToBounds = YES;
-        _imageView.backgroundColor = UIColor.secondarySystemBackgroundColor;
+        [self applyCurrentThemeSurface];
         [self.contentView addSubview:_imageView];
 
         _videoBadge = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"play.circle.fill"]];
@@ -569,12 +583,20 @@ static void BHTCancelMediaImageRequest(
     return self;
 }
 
+- (void)applyCurrentThemeSurface {
+    UIColor* surfaceColor = [Palette currentSurfaceColor];
+    self.backgroundColor = surfaceColor;
+    self.contentView.backgroundColor = surfaceColor;
+    self.imageView.backgroundColor = surfaceColor;
+}
+
 - (void)prepareForReuse {
     [super prepareForReuse];
     BHTCancelMediaImageRequest(self.imageRequest);
     self.imageRequest = nil;
     self.representedURL = nil;
     self.imageView.image = nil;
+    [self applyCurrentThemeSurface];
 }
 
 @end
@@ -2222,6 +2244,7 @@ BHTFullScreenPresenterForController(
 @property(nonatomic, strong) UISegmentedControl* selector;
 @property(nonatomic, strong) UICollectionView* collectionView;
 @property(nonatomic, strong) BHTWaterfallLayout* waterfallLayout;
+@property(nonatomic, strong) UILabel* unavailableLabel;
 @property(nonatomic, strong) NSMutableArray<BHTLikedMediaItem*>* mediaItems;
 @property(nonatomic, strong) NSMutableSet<NSString*>* mediaIDs;
 @property(nonatomic, strong)
@@ -2240,6 +2263,8 @@ BHTFullScreenPresenterForController(
 - (void)resetToNewest;
 - (void)activateForFirstPresentation;
 - (void)configureWaterfallInterface;
+- (void)applyCurrentThemeSurfaces;
+- (void)themeDidChange:(NSNotification*)notification;
 - (void)invalidateInitialResetDisplayLink;
 - (void)cancelInitialResetGuard;
 - (void)startInitialResetDisplayLinkIfNeeded;
@@ -2284,6 +2309,16 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
                selector:@selector(likesNavigationSettingsChanged:)
                    name:BHTLikesNavigationSettingsDidChangeNotification
                  object:nil];
+        [[NSNotificationCenter defaultCenter]
+            addObserver:self
+               selector:@selector(themeDidChange:)
+                   name:BHTThemeDidChangeNotification
+                 object:nil];
+        [[NSNotificationCenter defaultCenter]
+            addObserver:self
+               selector:@selector(themeDidChange:)
+                   name:BHTSettingsProfileDidApplyNotification
+                 object:nil];
     }
     return self;
 }
@@ -2299,7 +2334,7 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.view.backgroundColor = [Palette currentBackgroundColor];
 
     if (self.postsController) {
         [self addChildViewController:self.postsController];
@@ -2314,10 +2349,66 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
         unavailable.textAlignment = NSTextAlignmentCenter;
         unavailable.text = [[BHTBundle sharedBundle]
             localizedStringForKey:@"LIKES_UNAVAILABLE_MESSAGE"];
+        self.unavailableLabel = unavailable;
         [self.view addSubview:unavailable];
     }
 
     [self configureWaterfallInterface];
+    [self applyCurrentThemeSurfaces];
+}
+
+- (void)themeDidChange:(NSNotification*)notification {
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf.isViewLoaded) return;
+        [strongSelf applyCurrentThemeSurfaces];
+    });
+}
+
+- (void)applyCurrentThemeSurfaces {
+    UIColor* background = [Palette currentBackgroundColor];
+    UIColor* surface = [Palette currentSurfaceColor];
+    UIColor* elevated = [Palette currentElevatedSurfaceColor];
+    UIColor* text = [Palette currentTextColor];
+    UIColor* secondaryText = [Palette currentSecondaryTextColor];
+
+    self.view.backgroundColor = background;
+    if (self.postsController.isViewLoaded) {
+        self.postsController.view.backgroundColor = background;
+    }
+    self.collectionView.backgroundColor = background;
+    self.unavailableLabel.textColor = secondaryText;
+    self.selector.backgroundColor = surface;
+    self.selector.selectedSegmentTintColor = elevated;
+    [self.selector
+        setTitleTextAttributes:@{
+            NSForegroundColorAttributeName: secondaryText
+        }
+                    forState:UIControlStateNormal];
+    [self.selector
+        setTitleTextAttributes:@{
+            NSForegroundColorAttributeName: text
+        }
+                    forState:UIControlStateSelected];
+
+    for (UICollectionViewCell* visibleCell
+         in self.collectionView.visibleCells) {
+        if ([visibleCell isKindOfClass:BHTLikedMediaCell.class]) {
+            [(BHTLikedMediaCell*)visibleCell
+                applyCurrentThemeSurface];
+        }
+    }
+}
+
+- (void)traitCollectionDidChange:
+    (UITraitCollection*)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (!self.isViewLoaded) return;
+    if (previousTraitCollection.userInterfaceStyle !=
+        self.traitCollection.userInterfaceStyle) {
+        [self applyCurrentThemeSurfaces];
+    }
 }
 
 - (void)likesNavigationSettingsChanged:(NSNotification*)notification {
@@ -2348,7 +2439,8 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
         self.collectionView = [[UICollectionView alloc] initWithFrame:self.view.bounds
                                                  collectionViewLayout:self.waterfallLayout];
         self.collectionView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        self.collectionView.backgroundColor = UIColor.systemBackgroundColor;
+        self.collectionView.backgroundColor =
+            [Palette currentBackgroundColor];
         self.collectionView.dataSource = self;
         self.collectionView.delegate = self;
         self.collectionView.prefetchDataSource = self;
@@ -2372,6 +2464,7 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
         [self.collectionView.panGestureRecognizer
             addTarget:self
                action:@selector(cancelInitialResetFromPan:)];
+        [self applyCurrentThemeSurfaces];
     } else if (!waterfallEnabled && self.collectionView) {
         for (BHTMediaImageRequestToken* request in
              self.prefetchRequests.allValues) {
@@ -2668,6 +2761,7 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
                  cellForItemAtIndexPath:(NSIndexPath*)indexPath {
     BHTLikedMediaCell* cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"media" forIndexPath:indexPath];
     BHTLikedMediaItem* item = self.mediaItems[indexPath.item];
+    [cell applyCurrentThemeSurface];
     cell.videoBadge.hidden = item.videoURL == nil;
     cell.representedURL = item.previewURL;
     CGFloat targetPixels =
