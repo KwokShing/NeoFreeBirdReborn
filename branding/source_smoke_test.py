@@ -498,7 +498,16 @@ def main() -> None:
         "applyCurrentThemeSurfaces",
         "self.collectionView.visibleCells",
         "themeSharedBarsOwnedByGlobalHook",
-        "BHTLikesSolidColorImage",
+        "BHTLikesModeSelector",
+        "intrinsicContentSize",
+        "MAX(size.height, 32.0)",
+        "setBackgroundImage:nil",
+        "setDividerImage:nil",
+        "invalidateIntrinsicContentSize",
+        "recordWaterfallSelectorRuntimeState",
+        '@"waterfallSelectorGeometryState"',
+        '@"waterfallSelectorIntrinsicHeight"',
+        '@"waterfallSelectorCustomBackgroundArtwork"',
         "themeNativePostsOwnedByProviderHooks",
         "BHTRefreshNativeTabViewAppearance(nativeLikesTab)",
         "themeRefreshScheduled",
@@ -521,6 +530,11 @@ def main() -> None:
             raise AssertionError(
                 f"Missing Likes media improvement: {required}"
             )
+    if "BHTLikesSolidColorImage" in likes_source:
+        raise AssertionError(
+            "Likes selector must not use 1x1 custom artwork that collapses "
+            "its navigation-title height"
+        )
 
     print(
         f"Source smoke test passed ({len(setting_keys)} settings, "

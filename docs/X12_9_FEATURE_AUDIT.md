@@ -81,7 +81,7 @@ Status meanings:
 | Timeline | `hide_custom_timelines` | Updated | Hides without persisting an empty pinned list |
 | Timeline | `remember_timeline_tab` | Updated | Disabled preference now leaves X's native value alone |
 | Timeline | `enable_likes_tab` | New/runtime check | Independent bottom destination backed by native Likes history; opens raw Activity History tab 4 on X 12.9, guards against delayed native offset restoration on its first presentation without a loading cover, and preserves position on later tab switches |
-| Timeline | `likes_media_waterfall` | New/runtime check | Newest-first native-section media extraction, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, a window-level edge-to-edge viewer on iPhone and iPad, Apple-style contextual Photo/Video/GIF previews and action menus in both surfaces (with the guarded TFN sheet retained only as a legacy fallback), and percent-driven modal swipe-down dismissal |
+| Timeline | `likes_media_waterfall` | New/runtime check | Newest-first native-section media extraction, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, a window-level edge-to-edge viewer on iPhone and iPad, a Posts/Media selector with native segmented-control artwork and a guarded 32-point minimum navigation-title height, Apple-style contextual Photo/Video/GIF previews and action menus in both surfaces (with the guarded TFN sheet retained only as a legacy fallback), and percent-driven modal swipe-down dismissal |
 | Grok | `enable_grok_translations` | Updated | Manual translation gates are no longer forced globally |
 | Grok | `hide_grok_analyze` | Updated | Backend switch plus current button paths |
 | Grok | `hide_grok_sidebar` | Ported | Current navigation model filtering |
@@ -202,7 +202,10 @@ chrome, and makes the Likes waterfall adapt its tile height and span from the
 decoded media dimensions. Beta 20 adds the narrowly scoped XDS named-color path
 used by both Objective-C and Swift Following, Tweet Details, and reused
 timeline cells, and restores the Likes Posts/Media selector after native
-navigation rebuilds. Full themes hook only
+navigation rebuilds. Beta 21 removes the one-pixel segmented-control artwork
+that could collapse that selector on iPhone, preserves native sizing with a
+minimum intrinsic height, and exports its live geometry for diagnosis. Full
+themes hook only
 validated zero-argument color getters on X's concrete provider instances plus
 the exact neutral XColorEngine named assets, cache provider colors away from
 scrolling paths, and fall through to preserved native implementations when
