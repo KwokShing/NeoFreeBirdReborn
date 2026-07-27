@@ -42,12 +42,16 @@ X 12.9.
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 19 attaches full themes to X 12.9's active, Twitter, and TFNUI color
-providers so repost actions, the For You/Following strip, and the lower
-Home/Explore/Likes chrome share the selected palette. The custom Likes screen
-now repaints all of its chrome live, while its media view uses decoded image
-dimensions, variable masonry heights, and multi-column landscape tiles to show
-complete media without fixed black bars. Beta 18 applies preset changes through
+Beta 20 covers X 12.9's direct XDS and Swift-package color paths so Following,
+Tweet Details, and reused timeline posts keep the selected palette after
+navigation. It also reattaches the retained Posts/Media selector whenever the
+native Likes navigation controller rebuilds its title area. Beta 19 attaches
+full themes to X 12.9's active, Twitter, and TFNUI color providers so repost
+actions, the For You/Following strip, and the lower Home/Explore/Likes chrome
+share the selected palette. The custom Likes screen now repaints all of its
+chrome live, while its media view uses decoded image dimensions, variable
+masonry heights, and multi-column landscape tiles to show complete media
+without fixed black bars. Beta 18 applies preset changes through
 X 12.9's guarded native palette refresh,
 using a bounded loaded-view refresh only when X emits no dynamic-color reload
 or when a replacement provider must be attached after that synchronous signal.

@@ -63,7 +63,7 @@ Status meanings:
 | General | `strip_share_tracking` | Updated | Removes `s`/`t` parameters only when enabled |
 | General | `expand_tco_links` | Updated | No longer unconditional |
 | General | `show_scroll_indicator` | Ported | Typed account feature-switch accessor |
-| Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; Apollo-inspired and classic Twitter presets carry coordinated light/dark background, tweet/card/status/tab/unread/surface, elevated, text, secondary-text, separator, and accent colors. Themes attach only to the validated concrete instances returned by X 12.9's active, Twitter, and TFNUI color providers, covering repost actions, newer text aliases, capsule tabs, and native lower-tab chrome without a process-wide UIView recolor. NeoFreeBird uses X's guarded native palette apply and observes—never synthesizes—its private dynamic-colors-did-reload event. A coalesced, bounded loaded-view-tree refresh runs only when that native event is absent or a replacement provider is attached after its synchronous observers, so changes apply without a force quit and never add scrolling-path work. Per-provider generation/dark markers keep hot palette reads cheap, while weak tracking clears every still-live provider when Native Blue is restored. Sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
+| Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; Apollo-inspired and classic Twitter presets carry coordinated light/dark background, tweet/card/status/tab/unread/surface, elevated, text, secondary-text, separator, and accent colors. Themes attach to the validated active, Twitter, and TFNUI palette providers. A narrow public named-color bridge covers only matching neutral assets from `XColorEngine_XColorEngine.bundle`, which keeps both Objective-C XDS and Swift Following/detail surfaces themed while preserving destructive, media-overlay, and other context-sensitive native colors. NeoFreeBird uses X's guarded native palette apply and observes—never synthesizes—its private dynamic-colors-did-reload event. A coalesced, bounded loaded-view-tree refresh runs only when that native event is absent or a replacement provider is attached after its synchronous observers, so changes apply without a force quit and never add scrolling-path work. Immutable per-provider generation/dark snapshots prevent mixed or stale colors while keeping hot palette reads cheap, and weak tracking clears every still-live provider when Native Blue is restored. Sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
 | Settings | search and preference profiles | New | Localized global search covers setting titles, details, subsections, and categories; versioned JSON export/import uses a strict NeoFreeBird-only preference allow-list and never includes Twitter account state |
 | Appearance | custom navigation | Combined | Captures/reorders native tab entries; Grok remains native while opt-in Likes is an independent movable entry; selected editor tiles and the preview row both support drag reordering |
 | Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows |
@@ -199,10 +199,14 @@ reapplies presets through its guarded dynamic-color refresh paths, and changes
 waterfall thumbnails to complete-image aspect fit. Beta 19 also attaches those
 roles to X's separate Twitter/TFNUI providers, themes repost and top/bottom tab
 chrome, and makes the Likes waterfall adapt its tile height and span from the
-decoded media dimensions. Full themes hook only
-validated zero-argument color getters on X's concrete provider instances, cache
-colors away from scrolling paths, and fall through to preserved native
-implementations when Native Blue or a standalone accent is selected. The
+decoded media dimensions. Beta 20 adds the narrowly scoped XDS named-color path
+used by both Objective-C and Swift Following, Tweet Details, and reused
+timeline cells, and restores the Likes Posts/Media selector after native
+navigation rebuilds. Full themes hook only
+validated zero-argument color getters on X's concrete provider instances plus
+the exact neutral XColorEngine named assets, cache provider colors away from
+scrolling paths, and fall through to preserved native implementations when
+Native Blue or a standalone accent is selected. The
 close-up viewer is forced to the app window instead of an
 adaptive iPad column while keeping its safe-area controls, rotation, paging,
 zoom, video playback, and percent-driven dismissal. Equal URL/size-bucket

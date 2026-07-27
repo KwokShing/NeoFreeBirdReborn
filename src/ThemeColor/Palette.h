@@ -25,6 +25,7 @@
 + (nullable UIColor*)customThemeColorForRole:(NSString*)role;
 + (nullable NSDictionary<NSString*, UIColor*>*)
     customThemeColorsForDarkAppearance:(BOOL)darkAppearance;
++ (BOOL)currentPaletteUsesDarkAppearance;
 
 // NeoFreeBird's optional custom accent. A nil result means the native X color
 // picker remains authoritative.
