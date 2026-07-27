@@ -58,6 +58,20 @@ static NSMutableDictionary* BHTMutableLikesDiagnostics(void) {
             @"waterfallAnchorPreservations": @0,
             @"waterfallSelectorInstalls": @0,
             @"waterfallSelectorOwned": @NO,
+            @"waterfallSelectorSizingPolicy":
+                @"nativeArtworkMinimum216x32",
+            @"waterfallSelectorGeometryState": @"notCreated",
+            @"waterfallSelectorHeight": @0,
+            @"waterfallSelectorIntrinsicHeight": @0,
+            @"waterfallSelectorFittingHeight": @0,
+            @"waterfallSelectorHidden": @YES,
+            @"waterfallSelectorAlpha": @0,
+            @"waterfallSelectorWindowAttached": @NO,
+            @"waterfallSelectorSuperviewClass": @"none",
+            @"waterfallSelectorCustomBackgroundArtwork": @NO,
+            @"waterfallNavigationBarHidden": @NO,
+            @"waterfallNavigationBarHeight": @0,
+            @"waterfallNavigationTopControllerMatches": @NO,
             @"waterfallActionSheet": @"UIContextMenuInteraction",
             @"waterfallActionFallback": @"TFNMenuSheetViewController",
             @"viewerDismissal": @"percentDrivenModal",
@@ -2330,6 +2344,27 @@ BHTFullScreenPresenterForController(
 
 static void BHTRefreshNativeTabViewAppearance(T1TabView* tabView);
 
+@interface BHTLikesModeSelector : UISegmentedControl
+@end
+
+@implementation BHTLikesModeSelector
+
+- (CGSize)intrinsicContentSize {
+    CGSize size = [super intrinsicContentSize];
+    size.width = MAX(size.width, 216.0);
+    size.height = MAX(size.height, 32.0);
+    return size;
+}
+
+- (CGSize)sizeThatFits:(CGSize)size {
+    CGSize fitted = [super sizeThatFits:size];
+    fitted.width = MAX(fitted.width, 216.0);
+    fitted.height = MAX(fitted.height, 32.0);
+    return fitted;
+}
+
+@end
+
 @interface BHTLikesViewController : UIViewController <UICollectionViewDataSource,
                                                        UICollectionViewDelegate,
                                                        UICollectionViewDataSourcePrefetching,
@@ -2362,6 +2397,7 @@ static void BHTRefreshNativeTabViewAppearance(T1TabView* tabView);
 - (void)configureWaterfallInterface;
 - (void)ensureWaterfallSelectorInstalled;
 - (void)restoreWaterfallSelectorVisibilityIfVisible;
+- (void)recordWaterfallSelectorRuntimeState;
 - (void)applyCurrentThemeSurfaces;
 - (void)themeDidChange:(NSNotification*)notification;
 - (void)updateAdaptiveAspectRatioForItem:(BHTLikedMediaItem*)item
@@ -2394,16 +2430,6 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
     CGFloat bestScore = -1;
     BHTFindVerticalScrollView(view, &best, &bestScore);
     return best;
-}
-
-static UIImage* BHTLikesSolidColorImage(UIColor* color) {
-    if (!color) return nil;
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(1, 1), YES, 0);
-    [color setFill];
-    UIRectFill(CGRectMake(0, 0, 1, 1));
-    UIImage* image = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    return image;
 }
 
 @implementation BHTLikesViewController
@@ -2518,41 +2544,37 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
     self.collectionView.tintColor = accent;
     self.unavailableLabel.textColor = secondaryText;
     self.unavailableLabel.backgroundColor = background;
-    self.selector.backgroundColor = surface;
-    self.selector.tintColor = accent;
-    self.selector.selectedSegmentTintColor = elevated;
-    UIImage* surfaceImage = BHTLikesSolidColorImage(surface);
-    UIImage* elevatedImage = BHTLikesSolidColorImage(elevated);
-    [self.selector
-        setBackgroundImage:surfaceImage
-                  forState:UIControlStateNormal
-                barMetrics:UIBarMetricsDefault];
-    [self.selector
-        setBackgroundImage:elevatedImage
-                  forState:UIControlStateSelected
-                barMetrics:UIBarMetricsDefault];
-    [self.selector
-        setBackgroundImage:elevatedImage
-                  forState:UIControlStateHighlighted
-                barMetrics:UIBarMetricsDefault];
-    [self.selector
-        setBackgroundImage:elevatedImage
-                  forState:(UIControlStateSelected |
-                            UIControlStateHighlighted)
-                barMetrics:UIBarMetricsDefault];
-    UIImage* dividerImage = BHTLikesSolidColorImage(separator);
-    NSArray<NSNumber*>* segmentStates = @[
+
+    // Keep UIKit's native segmented-control artwork. Supplying 1x1 custom
+    // background images makes an unconstrained UINavigationItem titleView
+    // advertise a roughly one-point fitting height on iOS 18.
+    NSArray<NSNumber*>* selectorBackgroundStates = @[
+        @(UIControlStateNormal),
+        @(UIControlStateSelected),
+        @(UIControlStateHighlighted),
+        @(UIControlStateSelected | UIControlStateHighlighted)
+    ];
+    for (NSNumber* state in selectorBackgroundStates) {
+        [self.selector
+            setBackgroundImage:nil
+                      forState:state.unsignedIntegerValue
+                    barMetrics:UIBarMetricsDefault];
+    }
+    NSArray<NSNumber*>* selectorDividerStates = @[
         @(UIControlStateNormal), @(UIControlStateSelected)
     ];
-    for (NSNumber* leftState in segmentStates) {
-        for (NSNumber* rightState in segmentStates) {
+    for (NSNumber* leftState in selectorDividerStates) {
+        for (NSNumber* rightState in selectorDividerStates) {
             [self.selector
-                setDividerImage:dividerImage
+                setDividerImage:nil
                 forLeftSegmentState:leftState.unsignedIntegerValue
                   rightSegmentState:rightState.unsignedIntegerValue
                         barMetrics:UIBarMetricsDefault];
         }
     }
+    self.selector.backgroundColor = surface;
+    self.selector.tintColor = accent;
+    self.selector.selectedSegmentTintColor = elevated;
     self.selector.layer.borderColor = separator.CGColor;
     self.selector.layer.borderWidth = 0.5;
     self.selector.layer.cornerRadius = 8;
@@ -2566,9 +2588,12 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
         setTitleTextAttributes:@{
             NSForegroundColorAttributeName: accent
         }
-                    forState:UIControlStateSelected];
+                     forState:UIControlStateSelected];
+    [self.selector invalidateIntrinsicContentSize];
+    [self.selector sizeToFit];
     [self.selector setNeedsLayout];
     [self.selector setNeedsDisplay];
+    [self.navigationController.navigationBar setNeedsLayout];
 
     // Shared navigation/tab bars and the native Posts controller are owned by
     // the global guarded theme hooks. Likes only writes its wrapper, selector,
@@ -2629,12 +2654,18 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
         [BHTLikesNavigationUtility waterfallEnabled];
     if (waterfallEnabled && !self.collectionView) {
         BHTBundle* bundle = [BHTBundle sharedBundle];
-        self.selector = [[UISegmentedControl alloc]
+        self.selector = [[BHTLikesModeSelector alloc]
             initWithItems:@[
                 [bundle localizedStringForKey:@"LIKES_POSTS_SEGMENT"],
                 [bundle localizedStringForKey:@"LIKES_MEDIA_SEGMENT"]
             ]];
         self.selector.selectedSegmentIndex = 0;
+        [self.selector
+            setContentCompressionResistancePriority:
+                UILayoutPriorityRequired
+                                         forAxis:
+                UILayoutConstraintAxisVertical];
+        [self.selector sizeToFit];
         [self.selector addTarget:self
                           action:@selector(selectionChanged:)
                 forControlEvents:UIControlEventValueChanged];
@@ -2707,18 +2738,111 @@ static UIImage* BHTLikesSolidColorImage(UIColor* color) {
 
 - (void)restoreWaterfallSelectorVisibilityIfVisible {
     if (![BHTLikesNavigationUtility waterfallEnabled] ||
-        !self.selector || !self.isViewLoaded ||
-        !self.view.window) {
+        !self.selector) {
+        return;
+    }
+    if (!self.isViewLoaded || !self.view.window) {
+        [self recordWaterfallSelectorRuntimeState];
         return;
     }
     UINavigationController* navigation =
         self.navigationController;
     if (navigation && navigation.topViewController != self) {
+        [self recordWaterfallSelectorRuntimeState];
         return;
     }
     [self ensureWaterfallSelectorInstalled];
     self.selector.hidden = NO;
     self.selector.alpha = 1;
+    [self.selector invalidateIntrinsicContentSize];
+    [self.selector sizeToFit];
+    [navigation.navigationBar setNeedsLayout];
+    [navigation.navigationBar layoutIfNeeded];
+    [self recordWaterfallSelectorRuntimeState];
+}
+
+- (void)recordWaterfallSelectorRuntimeState {
+    UISegmentedControl* selector = self.selector;
+    UINavigationController* navigation = self.navigationController;
+    UINavigationBar* navigationBar = navigation.navigationBar;
+    BOOL navigationBarHidden =
+        navigationBar ? navigationBar.hidden : NO;
+    CGFloat navigationBarHeight =
+        navigationBar
+            ? CGRectGetHeight(navigationBar.bounds)
+            : 0;
+    BOOL owned =
+        selector && self.navigationItem.titleView == selector;
+    BOOL topControllerMatches =
+        !navigation || navigation.topViewController == self;
+    CGFloat height = selector
+        ? CGRectGetHeight(selector.bounds)
+        : 0;
+    CGSize intrinsicSize = selector
+        ? selector.intrinsicContentSize
+        : CGSizeZero;
+    CGSize fittingSize = selector
+        ? [selector sizeThatFits:CGSizeZero]
+        : CGSizeZero;
+    BOOL customBackgroundArtwork =
+        selector &&
+        [selector
+            backgroundImageForState:UIControlStateNormal
+                           barMetrics:UIBarMetricsDefault] != nil;
+
+    NSString* geometryState = @"visibleGeometry";
+    if (!selector) {
+        geometryState = @"notCreated";
+    } else if (!owned) {
+        geometryState = @"notOwned";
+    } else if (navigationBarHidden) {
+        geometryState = @"navigationBarHidden";
+    } else if (selector.hidden || selector.alpha <= 0.01) {
+        geometryState = @"selectorHidden";
+    } else if (height < 24.0 ||
+               intrinsicSize.height < 24.0 ||
+               fittingSize.height < 24.0) {
+        geometryState = @"collapsedHeight";
+    } else if (!selector.window) {
+        geometryState = @"notInWindow";
+    } else if (!topControllerMatches) {
+        geometryState = @"notTopController";
+    }
+
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorGeometryState", geometryState);
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorHeight", @(height));
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorIntrinsicHeight",
+        @(intrinsicSize.height));
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorFittingHeight",
+        @(fittingSize.height));
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorHidden", @(selector.hidden));
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorAlpha", @(selector.alpha));
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorWindowAttached",
+        @(selector.window != nil));
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorSuperviewClass",
+        selector.superview
+            ? NSStringFromClass(selector.superview.class)
+            : @"none");
+    BHTSetLikesDiagnostic(
+        @"waterfallSelectorCustomBackgroundArtwork",
+        @(customBackgroundArtwork));
+    BHTSetLikesDiagnostic(
+        @"waterfallNavigationBarHidden",
+        @(navigationBarHidden));
+    BHTSetLikesDiagnostic(
+        @"waterfallNavigationBarHeight",
+        @(navigationBarHeight));
+    BHTSetLikesDiagnostic(
+        @"waterfallNavigationTopControllerMatches",
+        @(topControllerMatches));
 }
 
 - (void)viewWillAppear:(BOOL)animated {
