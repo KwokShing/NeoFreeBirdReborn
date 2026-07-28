@@ -20,6 +20,13 @@ ENGLISH = (
     / "Localizable.strings"
 )
 BUNDLE = ENGLISH.parents[1]
+THEME_BUILDER = (
+    ROOT
+    / "src"
+    / "ThemeColor"
+    / "BHTThemeBuilderViewController.m"
+)
+THEME_BUILDER_HEADER = THEME_BUILDER.with_suffix(".h")
 
 
 def png_size(path: Path) -> tuple[int, int]:
@@ -27,6 +34,56 @@ def png_size(path: Path) -> tuple[int, int]:
     if raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR":
         raise AssertionError(f"{path} is not a PNG")
     return struct.unpack(">II", raw[16:24])
+
+
+def relative_luminance(hex_color: str) -> float:
+    channels = [
+        int(hex_color[offset : offset + 2], 16) / 255
+        for offset in (1, 3, 5)
+    ]
+    linear = [
+        channel / 12.92
+        if channel <= 0.04045
+        else ((channel + 0.055) / 1.055) ** 2.4
+        for channel in channels
+    ]
+    return (
+        0.2126 * linear[0]
+        + 0.7152 * linear[1]
+        + 0.0722 * linear[2]
+    )
+
+
+def contrast_ratio(first: str, second: str) -> float:
+    first_luminance = relative_luminance(first)
+    second_luminance = relative_luminance(second)
+    lighter = max(first_luminance, second_luminance)
+    darker = min(first_luminance, second_luminance)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def source_section(
+    source: str, start: str, end: str, description: str
+) -> str:
+    """Return a bounded source section with a useful invariant failure."""
+    if start not in source:
+        raise AssertionError(
+            f"Could not inspect {description}; its source boundaries moved"
+        )
+    remainder = source.split(start, 1)[1]
+    if end not in remainder:
+        raise AssertionError(
+            f"Could not inspect {description}; its source boundaries moved"
+        )
+    return remainder.split(end, 1)[0]
+
+
+def require_source_tokens(
+    source: str, required: tuple[str, ...], description: str
+) -> None:
+    for token in required:
+        if token not in source:
+            raise AssertionError(f"Missing {description}: {token}")
 
 
 def main() -> None:
@@ -157,6 +214,20 @@ def main() -> None:
     ):
         if required not in theme_source:
             raise AssertionError(f"Missing compatibility fix: {required}")
+    branding_theme_observer = source_section(
+        theme_source,
+        "static void BHTInstallBrandingThemeObserver(void)",
+        "static BOOL BHTRailHeaderCandidateIsVisible",
+        "branding theme observer",
+    )
+    require_source_tokens(
+        branding_theme_observer,
+        (
+            "BHTThemeDidChangeNotification",
+            "BHTSettingsProfileDidApplyNotification",
+        ),
+        "live bird-tint refresh notification",
+    )
     if "BHTAdaptiveRailLogoView" in theme_source:
         raise AssertionError(
             "Geometry-based rail branding can replace the Home tab icon"
@@ -187,6 +258,39 @@ def main() -> None:
         if required not in compatibility_source:
             raise AssertionError(
                 f"Missing branding/theme compatibility probe: {required}"
+            )
+    theme_diagnostic = source_section(
+        compatibility_source,
+        "void BHTRecordThemeRuntimeObservation(",
+        "void BHTRecordMediaActionObservation(",
+        "theme compatibility diagnostic",
+    )
+    require_source_tokens(
+        theme_diagnostic,
+        (
+            "[BHTThemePresets isUserPresetIdentifier:presetIdentifier]",
+            '@"activePreset": reportedPreset',
+        ),
+        "custom-theme diagnostic privacy mask",
+    )
+    if not re.search(
+        r"isUserPresetIdentifier:presetIdentifier\]\s*"
+        r'\?\s*@"user_theme"',
+        theme_diagnostic,
+    ):
+        raise AssertionError(
+            "Compatibility diagnostics must mask every custom theme as "
+            "user_theme"
+        )
+    for private_lookup in (
+        '@"activePreset": presetIdentifier',
+        "displayNameForPreset:",
+        "presetForIdentifier:",
+    ):
+        if private_lookup in theme_diagnostic:
+            raise AssertionError(
+                "Compatibility diagnostics must not expose a custom theme "
+                f"name or persistent identifier: {private_lookup}"
             )
 
     branding_source = (
@@ -222,21 +326,321 @@ def main() -> None:
     ).read_text(encoding="utf-8")
     for required in (
         '@"apollo_inspired"',
-        '@"#0A84FF"',
         '@"classic_twitter"',
-        '@"#1DA1F2"',
+        '@"midnight_oled"',
+        '@"evergreen"',
+        '@"rose_quartz"',
+        '@"solarized_coast"',
+        '@"amethyst"',
+        '@"cinder"',
         '@"native_blue"',
         '@"lightColors"',
         '@"darkColors"',
+        "BHTThemeColorAccentKey",
         "BHTThemeColorBackgroundKey",
         "BHTThemeColorSurfaceKey",
         "BHTThemeColorTextKey",
         "BHTThemeColorSeparatorKey",
         "activeAppColorsForDarkAppearance",
+        "newUserThemeDraftBasedOnPreset",
+        "validatedUserThemesFromObject",
+        "userThemesByMergingImportedThemes",
+        "replaceUserThemes",
+        "BHTMaximumUserThemeCount = 64",
+        "BHTNormalizedOpaqueThemeHex",
+        "BHTThemeVersionIsExactly",
+        "CFBooleanGetTypeID",
+        "Preflight both modes",
         "respondsToSelector:@selector(setPrimaryColorOption:)",
     ):
         if required not in theme_preset_source:
             raise AssertionError(f"Missing theme preset invariant: {required}")
+
+    built_in_source = theme_preset_source.split(
+        "+ (BOOL)isBuiltInPresetIdentifier:", 1
+    )[0]
+    chunks = built_in_source.split('@"identifier": @"')[1:]
+    parsed_presets = []
+    required_roles = {
+        "Accent",
+        "Background",
+        "Surface",
+        "ElevatedSurface",
+        "Text",
+        "SecondaryText",
+        "Separator",
+    }
+    for chunk in chunks:
+        identifier, remainder = chunk.split('"', 1)
+        title_match = re.search(r'@"titleKey": @"([^"]+)"', remainder)
+        detail_match = re.search(r'@"detailKey": @"([^"]+)"', remainder)
+        if not title_match or not detail_match:
+            raise AssertionError(
+                f"Preset lacks title/detail localization: {identifier}"
+            )
+        title_key = title_match.group(1)
+        detail_key = detail_match.group(1)
+        if title_key not in localized_keys or detail_key not in localized_keys:
+            raise AssertionError(
+                f"Preset localization is missing: {identifier}"
+            )
+
+        maps = {}
+        for mode in ("lightColors", "darkColors"):
+            map_match = re.search(
+                rf'@"{mode}": @\{{(.*?)\n\s*\}}',
+                remainder,
+                flags=re.DOTALL,
+            )
+            if map_match:
+                colors = dict(
+                    re.findall(
+                        r"BHTThemeColor"
+                        r"(Accent|Background|Surface|ElevatedSurface|"
+                        r"Text|SecondaryText|Separator)"
+                        r'Key: @"(#[0-9A-F]{6})"',
+                        map_match.group(1),
+                    )
+                )
+                if set(colors) != required_roles:
+                    raise AssertionError(
+                        f"Incomplete {mode} palette: {identifier}"
+                    )
+                maps[mode] = colors
+
+        if identifier == "native_blue":
+            if maps:
+                raise AssertionError(
+                    "Native Blue must preserve X's native palette"
+                )
+        else:
+            if set(maps) != {"lightColors", "darkColors"}:
+                raise AssertionError(
+                    f"Full preset lacks both appearances: {identifier}"
+                )
+            for mode, colors in maps.items():
+                surfaces = [
+                    colors["Background"],
+                    colors["Surface"],
+                    colors["ElevatedSurface"],
+                ]
+                for role in ("Text", "SecondaryText", "Accent"):
+                    minimum = min(
+                        contrast_ratio(colors[role], surface)
+                        for surface in surfaces
+                    )
+                    if minimum < 4.5:
+                        raise AssertionError(
+                            f"{identifier} {mode} {role} contrast "
+                            f"is only {minimum:.2f}:1"
+                        )
+        parsed_presets.append(identifier)
+
+    if len(parsed_presets) != len(set(parsed_presets)):
+        raise AssertionError("Theme preset identifiers must be unique")
+    if len(parsed_presets) < 9:
+        raise AssertionError("Expected the expanded built-in theme library")
+
+    save_user_theme = source_section(
+        theme_preset_source,
+        "+ (NSDictionary*)saveUserTheme:",
+        "+ (BOOL)deleteUserThemeIdentifier:",
+        "custom-theme save",
+    )
+    if "applyPresetIdentifier:" in save_user_theme:
+        raise AssertionError(
+            "Saving a custom theme must remain storage-only so Save & Apply "
+            "cannot trigger two full theme refreshes"
+        )
+
+    if not THEME_BUILDER.exists() or not THEME_BUILDER_HEADER.exists():
+        raise AssertionError(
+            "The custom theme builder implementation and header must ship"
+        )
+    theme_builder_source = THEME_BUILDER.read_text(encoding="utf-8")
+    theme_builder_header = THEME_BUILDER_HEADER.read_text(encoding="utf-8")
+    require_source_tokens(
+        theme_builder_header,
+        (
+            "@interface BHTThemeBuilderViewController",
+            "initWithTheme:",
+        ),
+        "theme-builder public entry point",
+    )
+
+    builder_roles = source_section(
+        theme_builder_source,
+        "static NSArray<NSString*>* BHTThemeBuilderRoles(void)",
+        "static NSString* BHTThemeBuilderRoleName",
+        "theme-builder role list",
+    )
+    expected_builder_roles = {
+        "BHTThemeColorAccentKey",
+        "BHTThemeColorBackgroundKey",
+        "BHTThemeColorSurfaceKey",
+        "BHTThemeColorElevatedSurfaceKey",
+        "BHTThemeColorTextKey",
+        "BHTThemeColorSecondaryTextKey",
+        "BHTThemeColorSeparatorKey",
+    }
+    builder_role_list = re.findall(
+        r"\bBHTThemeColor[A-Za-z]+Key\b", builder_roles
+    )
+    actual_builder_roles = set(builder_role_list)
+    if actual_builder_roles != expected_builder_roles:
+        raise AssertionError(
+            "Theme builder must edit exactly the seven coordinated roles: "
+            f"{sorted(actual_builder_roles)}"
+        )
+    if len(builder_role_list) != len(expected_builder_roles):
+        raise AssertionError(
+            "Theme builder must expose each coordinated role exactly once"
+        )
+
+    opaque_hex_validation = source_section(
+        theme_builder_source,
+        "static NSString* BHTThemeBuilderNormalizedOpaqueHex",
+        "static CGFloat BHTThemeBuilderClampColorComponent",
+        "theme-builder opaque hex validation",
+    )
+    require_source_tokens(
+        opaque_hex_validation,
+        (
+            "[Palette normalizedHexString:value]",
+            "normalized.length == 7",
+        ),
+        "exact #RRGGBB validation",
+    )
+    require_source_tokens(
+        theme_builder_source,
+        (
+            "@interface BHTThemeBuilderColorWell : UIColorWell",
+            "self.colorWell.supportsAlpha = NO",
+            "candidate.length > 7",
+            'characterSetWithCharactersInString:@"#0123456789ABCDEFabcdef"',
+        ),
+        "opaque system color-well editing",
+    )
+
+    builder_initialization = source_section(
+        theme_builder_source,
+        "- (instancetype)initWithTheme:(NSDictionary*)theme",
+        "- (void)viewDidLoad",
+        "theme-builder draft initialization",
+    )
+    require_source_tokens(
+        builder_initialization,
+        (
+            "_draft = [source mutableCopy]",
+            '_draft[@"lightColors"] = lightColors',
+            '_draft[@"darkColors"] = darkColors',
+            "_lastValidLightColors = [lightColors mutableCopy]",
+            "_lastValidDarkColors = [darkColors mutableCopy]",
+        ),
+        "isolated local theme draft",
+    )
+    preview_section = source_section(
+        theme_builder_source,
+        "- (NSDictionary*)previewColorsForCurrentAppearance",
+        "- (BHTThemeBuilderColorCell*)colorCellContainingView",
+        "theme-builder local preview",
+    )
+    if "lastValidColorsForMapKey" not in preview_section:
+        raise AssertionError(
+            "Theme-builder preview must use the last valid local draft colors"
+        )
+    before_save = theme_builder_source.split(
+        "#pragma mark - Save and validation", 1
+    )[0]
+    for persistent_action in ("saveUserTheme:", "applyPresetIdentifier:"):
+        if persistent_action in before_save:
+            raise AssertionError(
+                "Theme-builder editing must not change the active theme "
+                f"before Save & Apply: {persistent_action}"
+            )
+
+    copy_actions = source_section(
+        theme_builder_source,
+        "- (void)tableView:(UITableView*)tableView\n"
+        "    didSelectRowAtIndexPath:(NSIndexPath*)indexPath",
+        "#pragma mark - Editing",
+        "theme-builder copy actions",
+    )
+    require_source_tokens(
+        copy_actions,
+        (
+            'copyColorsFromMapKey:@"lightColors"',
+            'toMapKey:@"darkColors"',
+            'copyColorsFromMapKey:@"darkColors"',
+            'toMapKey:@"lightColors"',
+        ),
+        "two-way Light/Dark palette copy action",
+    )
+    require_source_tokens(
+        theme_builder_source,
+        (
+            "THEME_BUILDER_COPY_LIGHT_TO_DARK",
+            "THEME_BUILDER_COPY_DARK_TO_LIGHT",
+            "theme-builder-copy-light-to-dark",
+            "theme-builder-copy-dark-to-light",
+        ),
+        "discoverable two-way copy controls",
+    )
+
+    save_validation = theme_builder_source.split(
+        "#pragma mark - Save and validation", 1
+    )[1]
+    require_source_tokens(
+        save_validation,
+        (
+            '@[@"lightColors", @"darkColors"]',
+            "BHTThemeBuilderContrastRatio(primary, surface) < 4.5",
+            "BHTThemeBuilderContrastRatio(secondary, surface) < 3.0",
+            "BHTThemeBuilderContrastRatio(accent, surface) < 3.0",
+            "THEME_BUILDER_LOW_CONTRAST_WARNING",
+            "THEME_BUILDER_SAVE_ANYWAY",
+            "[BHTThemePresets saveUserTheme:self.draft error:&error]",
+            "[BHTThemePresets applyPresetIdentifier:identifier]",
+        ),
+        "contrast warning and explicit save/apply flow",
+    )
+    if theme_builder_source.count("saveUserTheme:") != 1:
+        raise AssertionError(
+            "Theme-builder persistence must have one explicit save path"
+        )
+
+    require_source_tokens(
+        theme_builder_source,
+        (
+            "BHTThemeBuilderMaximumReadableWidth = 720.0",
+            "constraintLessThanOrEqualToConstant:",
+            "BHTThemeBuilderMaximumReadableWidth",
+            'self.tableView.accessibilityIdentifier = @"theme-builder-table"',
+            '@"theme-builder-save-apply"',
+            '@"theme-builder-preview"',
+            "self.hexField.accessibilityLabel",
+            "self.hexField.accessibilityIdentifier",
+            "self.colorWell.accessibilityLabel",
+            "self.colorWell.accessibilityIdentifier",
+            "UIAccessibilityTraitButton",
+        ),
+        "720-point readable layout and accessibility metadata",
+    )
+
+    referenced_builder_localizations = set(
+        re.findall(
+            r'@"((?:THEME_BUILDER|THEME_LIBRARY)_[A-Z0-9_]+)"',
+            theme_builder_source,
+        )
+    )
+    missing_builder_localizations = sorted(
+        referenced_builder_localizations - localized_keys
+    )
+    if missing_builder_localizations:
+        raise AssertionError(
+            "Theme-builder localization keys are missing from English: "
+            f"{missing_builder_localizations}"
+        )
 
     hook_helpers_source = (
         ROOT / "src" / "Hooks" / "HookHelpers.m"
@@ -440,16 +844,86 @@ def main() -> None:
         "bht_custom_accent_hex",
         "bht_theme_preset_identifier",
         "BHTSettingsProfileDidApplyNotification",
+        "BHTProfileVersionIsExactly",
+        "CFBooleanGetTypeID",
+        '@"formatVersion": @2',
+        '@"userThemes": [BHTThemePresets userThemes]',
+        "validatedUserThemesFromObject",
+        "userThemesByMergingImportedThemes",
+        "isBuiltInPresetIdentifier",
+        "BHTUserThemeIdentifierExists",
         "[(NSArray*)value count] > 128",
         "[(NSString*)item length] > 128",
-        '@"apollo_inspired"',
-        '@"classic_twitter"',
-        '@"native_blue"',
     ):
         if required not in settings_source:
             raise AssertionError(
                 f"Missing preference-profile invariant: {required}"
             )
+    profile_export = source_section(
+        settings_source,
+        "+ (NSDictionary*)preferenceProfile",
+        "+ (NSData*)preferenceProfileJSONDataWithError:",
+        "preference-profile export",
+    )
+    require_source_tokens(
+        profile_export,
+        (
+            '@"formatVersion": @2',
+            '@"preferences": [preferences copy]',
+            '@"userThemes": [BHTThemePresets userThemes]',
+        ),
+        "version 2 profile with a top-level custom-theme library",
+    )
+    profile_import = source_section(
+        settings_source,
+        "+ (BOOL)applyPreferenceProfile:",
+        "\n@end",
+        "preference-profile import",
+    )
+    require_source_tokens(
+        profile_import,
+        (
+            "(version != 1 && version != 2)",
+            "BHTProfileVersionIsExactly(formatVersion, 1)",
+            "BHTProfileVersionIsExactly(formatVersion, 2)",
+            "[BHTThemePresets userThemes]",
+            "BOOL replacesUserThemes = version == 2",
+            "if (replacesUserThemes)",
+            "validatedUserThemesFromObject:",
+            "userThemesByMergingImportedThemes:",
+            "BHTUserThemeIdentifierExists(",
+        ),
+        "backward-compatible profile validation",
+    )
+    first_preference_write = profile_import.find(
+        "[accepted enumerateKeysAndObjectsUsingBlock:"
+    )
+    theme_validation = profile_import.find(
+        "validatedUserThemesFromObject:"
+    )
+    theme_merge = profile_import.find(
+        "userThemesByMergingImportedThemes:"
+    )
+    theme_replace = profile_import.find(
+        "[BHTThemePresets replaceUserThemes:"
+    )
+    if not (
+        0 <= theme_validation < first_preference_write
+        and 0 <= theme_merge < first_preference_write
+        and theme_replace > first_preference_write
+    ):
+        raise AssertionError(
+            "Imported themes must validate and merge before preference writes, "
+            "then replace the library only after accepted preferences are ready"
+        )
+    replace_guard = profile_import.rfind(
+        "if (replacesUserThemes", 0, theme_replace
+    )
+    if replace_guard < first_preference_write:
+        raise AssertionError(
+            "Version 1 profiles must preserve the existing custom-theme library"
+        )
+
     for forbidden in ("password", "cookie", "auth_token", "session_token"):
         export_method = settings_source.split(
             "+ (NSSet<NSString*>*)exportablePreferenceKeys", 1
@@ -458,10 +932,25 @@ def main() -> None:
             raise AssertionError(
                 f"Sensitive key entered profile allow-list: {forbidden}"
             )
+    for nested_theme_key in (
+        '@"userThemes"',
+        "BHTUserThemeLibraryPreferenceKey",
+    ):
+        if nested_theme_key in export_method:
+            raise AssertionError(
+                "Custom theme data must remain a validated top-level profile "
+                f"field, not a generic preference: {nested_theme_key}"
+            )
 
     for required_key in (
         "SETTINGS_SEARCH_PLACEHOLDER",
         "THEME_PRESET_APOLLO_TITLE",
+        "THEME_PRESET_MIDNIGHT_OLED_TITLE",
+        "THEME_PRESET_CINDER_DETAIL",
+        "THEME_LIBRARY_CREATE",
+        "THEME_LIBRARY_MY_THEMES",
+        "THEME_BUILDER_NEW_TITLE",
+        "THEME_BUILDER_LOW_CONTRAST_WARNING",
         "EXPORT_PREFERENCE_PROFILE_TITLE",
         "IMPORT_PREFERENCE_PROFILE_TITLE",
     ):
@@ -483,6 +972,38 @@ def main() -> None:
     likes_source = (
         ROOT / "src" / "Likes" / "BHTLikesTab.m"
     ).read_text(encoding="utf-8")
+    likes_theme_diagnostic = source_section(
+        likes_source,
+        "NSString* activeTheme =",
+        'BHTSetLikesDiagnostic(@"themeSegmentedControl"',
+        "Likes theme diagnostic",
+    )
+    require_source_tokens(
+        likes_theme_diagnostic,
+        (
+            "[BHTThemePresets isUserPresetIdentifier:activeTheme]",
+            ': (activeTheme ?: @"native")',
+        ),
+        "Likes custom-theme diagnostic privacy mask",
+    )
+    if not re.search(
+        r"isUserPresetIdentifier:activeTheme\]\s*\?\s*"
+        r'@"user_theme"',
+        likes_theme_diagnostic,
+    ):
+        raise AssertionError(
+            "Likes diagnostics must mask every custom theme as user_theme"
+        )
+    for private_lookup in (
+        "displayNameForPreset:",
+        "presetForIdentifier:",
+        '@"themePreset", activeTheme',
+    ):
+        if private_lookup in likes_theme_diagnostic:
+            raise AssertionError(
+                "Likes diagnostics must not expose a custom theme name or "
+                f"persistent identifier: {private_lookup}"
+            )
     for required in (
         "BHTLikedMediaContextConfiguration",
         "UIContextMenuInteraction",

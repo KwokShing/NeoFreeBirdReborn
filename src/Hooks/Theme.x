@@ -662,22 +662,28 @@ static void BHTApplyCurrentBirdToImageView(UIImageView* imageView) {
 static void BHTInstallBrandingThemeObserver(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        [NSNotificationCenter.defaultCenter
-            addObserverForName:BHTThemeDidChangeNotification
-                        object:nil
-                         queue:NSOperationQueue.mainQueue
-                    usingBlock:^(__unused NSNotification* notification) {
-                        if (![BHTSettings
-                                boolForKey:
-                                    @"color_twitter_icon_in_top_bar"]) {
-                            return;
-                        }
-                        UIColor* accent = CurrentAccentColor();
-                        for (UIImageView* imageView
-                             in BHTBrandedLogoViews().allObjects) {
-                            BHTApplyTwitterBirdToImageView(imageView, accent);
-                        }
-                    }];
+        for (NSString* name in @[
+                 BHTThemeDidChangeNotification,
+                 BHTSettingsProfileDidApplyNotification
+             ]) {
+            [NSNotificationCenter.defaultCenter
+                addObserverForName:name
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(
+                            __unused NSNotification* notification) {
+                if (![BHTSettings
+                        boolForKey:
+                            @"color_twitter_icon_in_top_bar"]) {
+                    return;
+                }
+                UIColor* accent = CurrentAccentColor();
+                for (UIImageView* imageView
+                     in BHTBrandedLogoViews().allObjects) {
+                    BHTApplyTwitterBirdToImageView(imageView, accent);
+                }
+            }];
+        }
     });
 }
 

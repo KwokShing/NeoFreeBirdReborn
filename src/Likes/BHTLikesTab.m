@@ -2616,9 +2616,13 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
     [self.view setNeedsDisplay];
 
     BHTIncrementLikesDiagnostic(@"themeRefreshes");
+    NSString* activeTheme =
+        [BHTThemePresets activePresetIdentifier];
     BHTSetLikesDiagnostic(
         @"themePreset",
-        [BHTThemePresets activePresetIdentifier] ?: @"native");
+        [BHTThemePresets isUserPresetIdentifier:activeTheme]
+            ? @"user_theme"
+            : (activeTheme ?: @"native"));
     BHTSetLikesDiagnostic(@"themeSegmentedControl",
                           @(self.selector != nil));
     BHTSetLikesDiagnostic(

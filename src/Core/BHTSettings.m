@@ -8,6 +8,7 @@
 #import "Core/BHTSettings.h"
 #import "Core/BHTBundle.h"
 #import "Core/BHTManager.h"
+#import "ThemeColor/BHTThemePresets.h"
 
 NSString* const BHTSettingsProfileDidApplyNotification =
     @"BHTSettingsProfileDidApplyNotification";
@@ -573,6 +574,25 @@ static BOOL BHTIsValidCustomAccent(id value) {
     return invalidRange.location == NSNotFound;
 }
 
+static BOOL BHTProfileVersionIsExactly(id value, NSInteger expected) {
+    if (![value isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) {
+        return NO;
+    }
+    return [value doubleValue] == (double)expected;
+}
+
+static BOOL BHTUserThemeIdentifierExists(
+    NSString* identifier, NSArray<NSDictionary*>* themes) {
+    if (![BHTThemePresets isUserPresetIdentifier:identifier]) return NO;
+    for (NSDictionary* theme in themes) {
+        if ([theme[@"identifier"] isEqualToString:identifier]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 static NSSet<NSString*>* BHTStringPreferenceKeys(void) {
     return [NSSet setWithArray:@[
         @"bht_custom_accent_hex",
@@ -804,9 +824,10 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
     NSISO8601DateFormatter* formatter = [NSISO8601DateFormatter new];
     return @{
         @"format": @"NeoFreeBird Preference Profile",
-        @"formatVersion": @1,
+        @"formatVersion": @2,
         @"createdAt": [formatter stringFromDate:NSDate.date],
-        @"preferences": [preferences copy]
+        @"preferences": [preferences copy],
+        @"userThemes": [BHTThemePresets userThemes]
     };
 }
 
@@ -824,11 +845,15 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
     id formatVersion = [profile isKindOfClass:NSDictionary.class]
                            ? profile[@"formatVersion"]
                            : nil;
+    NSInteger version = BHTProfileVersionIsExactly(formatVersion, 1)
+                            ? 1
+                            : (BHTProfileVersionIsExactly(formatVersion, 2)
+                                   ? 2
+                                   : NSNotFound);
     if (![profile isKindOfClass:NSDictionary.class] ||
         ![format isKindOfClass:NSString.class] ||
         ![format isEqualToString:@"NeoFreeBird Preference Profile"] ||
-        ![formatVersion isKindOfClass:NSNumber.class] ||
-        [formatVersion integerValue] != 1) {
+        (version != 1 && version != 2)) {
         if (error) {
             *error = BHTProfileError(
                 1, @"This is not a supported NeoFreeBird preference profile.");
@@ -844,6 +869,22 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
                 BHTProfileError(2, @"The profile has no usable preferences.");
         }
         return NO;
+    }
+
+    NSArray<NSDictionary*>* mergedUserThemes =
+        [BHTThemePresets userThemes];
+    BOOL replacesUserThemes = version == 2;
+    if (replacesUserThemes) {
+        NSArray<NSDictionary*>* importedUserThemes =
+            [BHTThemePresets
+                validatedUserThemesFromObject:profile[@"userThemes"]
+                                        error:error];
+        if (!importedUserThemes) return NO;
+        mergedUserThemes =
+            [BHTThemePresets
+                userThemesByMergingImportedThemes:importedUserThemes
+                                            error:error];
+        if (!mergedUserThemes) return NO;
     }
 
     NSSet<NSString*>* allowed = [self exportablePreferenceKeys];
@@ -883,12 +924,12 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
                 valid = BHTIsValidCustomAccent(value);
             } else if (valid &&
                        [key isEqualToString:
-                                @"bht_theme_preset_identifier"]) {
-                valid = [@[
-                    @"apollo_inspired",
-                    @"classic_twitter",
-                    @"native_blue"
-                ] containsObject:value];
+                                 @"bht_theme_preset_identifier"]) {
+                valid =
+                    [BHTThemePresets
+                        isBuiltInPresetIdentifier:value] ||
+                    BHTUserThemeIdentifierExists(
+                        value, mergedUserThemes);
             }
         } else if ([key isEqualToString:@"enable_likes_tab"] ||
                    [key isEqualToString:@"likes_media_waterfall"]) {
@@ -934,6 +975,11 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
             [defaults setObject:value forKey:key];
         }
     }];
+    if (replacesUserThemes &&
+        ![BHTThemePresets replaceUserThemes:mergedUserThemes
+                                      error:error]) {
+        return NO;
+    }
     [NSNotificationCenter.defaultCenter
         postNotificationName:BHTSettingsProfileDidApplyNotification
                       object:nil

@@ -37,12 +37,19 @@ X 12.9.
   privacy, profiles, tweets, and links, with global localized search.
 - Apollo-inspired and classic Twitter presets coordinate light/dark timeline,
   tweet, navigation, settings, surface, text, separator, and accent colors.
+  Midnight OLED, Evergreen, Rose Quartz, Solarized Coast, Amethyst, and Cinder
+  add six more contrast-checked palettes. A visual theme builder can create,
+  preview, save, apply, edit, duplicate, and delete personal light/dark themes;
+  saved themes travel with preference-profile exports.
   Native Blue restores X's original surface behavior. Allow-listed JSON
   preference profile export/import excludes account credentials and host-app
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 22 preserves X's own bottom-tab background and transparency while
+Beta 23 adds six built-in palettes and a native visual theme builder with
+separate light/dark colors, live previews, exact hex entry, native color
+pickers, contrast warnings, a persistent custom-theme library, and versioned
+profile export/import. Beta 22 preserves X's own bottom-tab background and transparency while
 theming its icons and labels, so the bar collapses completely with the controls
 instead of leaving an opaque themed strip over the timeline. Beta 21 keeps the
 Likes Posts/Media selector at a native minimum height after

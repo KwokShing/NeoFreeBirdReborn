@@ -14,6 +14,7 @@
 #import "Core/BHTBundle.h"
 #import "Core/TwitterChirpFont.h"
 #import "Headers/TWHeaders.h"
+#import "ThemeColor/BHTThemeBuilderViewController.h"
 #import "ThemeColor/BHTThemePresets.h"
 #import "ThemeColor/Palette.h"
 
@@ -69,6 +70,7 @@ static UIColor* NativeAccentColor(NSUInteger option) {
     NSMutableDictionary<NSString*, UIButton*>* presetButtons;
 @property (nonatomic, strong) UILabel* detailLabel;
 @property (nonatomic, strong) UILabel* presetTitleLabel;
+@property (nonatomic, strong) UIButton* builderButton;
 - (void)applyCurrentTheme;
 @end
 
@@ -152,6 +154,30 @@ static UIColor* NativeAccentColor(NSUInteger option) {
         [presetStack addArrangedSubview:button];
         self.presetButtons[preset[@"identifier"]] = button;
     }
+    UIButton* builderButton =
+        [UIButton buttonWithType:UIButtonTypeSystem];
+    builderButton.translatesAutoresizingMaskIntoConstraints = NO;
+    builderButton.layer.cornerRadius = 14;
+    builderButton.layer.borderWidth = 1;
+    builderButton.contentHorizontalAlignment =
+        UIControlContentHorizontalAlignmentLeading;
+    builderButton.contentEdgeInsets =
+        UIEdgeInsetsMake(14, 16, 14, 16);
+    [builderButton setTitle:[[BHTBundle sharedBundle]
+                                localizedStringForKey:
+                                    @"THEME_LIBRARY_CREATE"]
+                  forState:UIControlStateNormal];
+    [builderButton setImage:
+                       [UIImage systemImageNamed:@"paintpalette.fill"]
+                  forState:UIControlStateNormal];
+    builderButton.imageEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 12);
+    [builderButton addTarget:self
+                      action:@selector(openThemeBuilder)
+            forControlEvents:UIControlEventTouchUpInside];
+    [builderButton.heightAnchor
+        constraintGreaterThanOrEqualToConstant:54].active = YES;
+    [presetStack addArrangedSubview:builderButton];
+    self.builderButton = builderButton;
 
     [NSLayoutConstraint activateConstraints:@[
         [scrollView.topAnchor
@@ -263,10 +289,11 @@ static UIColor* NativeAccentColor(NSUInteger option) {
                    range:NSMakeRange(title.length + 1, detail.length)];
     [button setAttributedTitle:label forState:UIControlStateNormal];
 
-    id hex = preset[@"accentHex"];
     UIColor* color =
-        hex == NSNull.null ? NativeAccentColor(1)
-                           : [Palette colorFromHexString:hex];
+        [BHTThemePresets
+            previewAccentColorForPreset:preset
+                         darkAppearance:
+                             [Palette currentPaletteUsesDarkAppearance]];
     UIImageSymbolConfiguration* configuration =
         [UIImageSymbolConfiguration configurationWithPointSize:14
                                                         weight:
@@ -292,6 +319,14 @@ static UIColor* NativeAccentColor(NSUInteger option) {
     self.presetTitleLabel.textColor = [Palette currentTextColor];
     self.view.tintColor =
         [Palette customAccentColor] ?: NativeAccentColor(1);
+    self.builderButton.backgroundColor = [Palette currentSurfaceColor];
+    self.builderButton.layer.borderColor =
+        [Palette currentSeparatorColor].CGColor;
+    self.builderButton.tintColor =
+        [Palette customAccentColor] ?: NativeAccentColor(1);
+    [self.builderButton
+        setTitleColor:[Palette currentTextColor]
+             forState:UIControlStateNormal];
 
     [self.presetButtons enumerateKeysAndObjectsUsingBlock:^(
                             __unused NSString* identifier,
@@ -331,6 +366,18 @@ static UIColor* NativeAccentColor(NSUInteger option) {
         button.layer.borderColor =
             [Palette currentSeparatorColor].CGColor;
     }];
+}
+
+- (void)openThemeBuilder {
+    NSDictionary* active = [BHTThemePresets
+        presetForIdentifier:[BHTThemePresets activePresetIdentifier]];
+    BHTThemeBuilderViewController* builder =
+        [[BHTThemeBuilderViewController alloc]
+            initWithTheme:
+                [BHTThemePresets
+                    newUserThemeDraftBasedOnPreset:active]];
+    [self.navigationController pushViewController:builder
+                                         animated:YES];
 }
 
 - (void)presetTapped:(UIButton*)button {
