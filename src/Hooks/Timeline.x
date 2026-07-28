@@ -4,6 +4,130 @@
 //
 
 #import "HookHelpers.h"
+#import "Timeline/BHTForYouKeywordFilter.h"
+
+// MARK: - For You timeline identity
+
+// X exposes both For You and Following through TIMELINE_HOME.  Never infer the
+// selected feed from that display location, localized tab titles, or whichever
+// tab happens to be visible.  Instead, carry the primary Home model's identity
+// through its deserialized URT timeline and only filter the controller that
+// owns that exact object.  Every unknown runtime shape deliberately fails open.
+static char kBHTForYouTimelineRoleKey;
+static char kBHTForYouKeywordDecisionKey;
+
+typedef NS_ENUM(NSInteger, BHTHomeTimelineRole) {
+    BHTHomeTimelineRoleNonForYou = 0,
+    BHTHomeTimelineRolePrimaryForYou = 1,
+    BHTHomeTimelineRoleAmbiguous = 2,
+};
+
+static void BHTMergeHomeTimelineRole(id timeline,
+                                     BHTHomeTimelineRole incomingRole) {
+    if (!timeline) return;
+    @synchronized(timeline) {
+        NSNumber* existing =
+            objc_getAssociatedObject(timeline,
+                                     &kBHTForYouTimelineRoleKey);
+        BHTHomeTimelineRole mergedRole = incomingRole;
+        if (existing &&
+            existing.integerValue != (NSInteger)incomingRole) {
+            // A model/stream observed in both roles is not safe to filter.
+            // Preserve that ambiguity permanently rather than letting the
+            // last factory call win.
+            mergedRole = BHTHomeTimelineRoleAmbiguous;
+        }
+        objc_setAssociatedObject(timeline, &kBHTForYouTimelineRoleKey,
+                                 @(mergedRole),
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+static NSNumber* BHTHomeTimelineRoleForTimeline(id timeline) {
+    return timeline
+               ? objc_getAssociatedObject(timeline,
+                                          &kBHTForYouTimelineRoleKey)
+               : nil;
+}
+
+// T1TimelineFactory names each model before it is handed to the segmented Home
+// controller.  Marking both the getters and the final root-factory arguments
+// covers cached and cold construction without guessing from view state.
+%group BHTForYouTimelineProvenance
+
+%hook T1TimelineFactory
+
+- (id)homeTimelineForAccount:(id)account {
+    id timeline = %orig;
+    BHTMergeHomeTimelineRole(timeline,
+                             BHTHomeTimelineRolePrimaryForYou);
+    return timeline;
+}
+
+- (id)homeCountryFilteredTimelineForAccount:(id)account {
+    id timeline = %orig;
+    BHTMergeHomeTimelineRole(timeline,
+                             BHTHomeTimelineRoleNonForYou);
+    return timeline;
+}
+
+- (id)homeTopicFilteredTimelineForAccount:(id)account {
+    id timeline = %orig;
+    BHTMergeHomeTimelineRole(timeline,
+                             BHTHomeTimelineRoleNonForYou);
+    return timeline;
+}
+
+- (id)homeLatestTimelineForAccount:(id)account {
+    id timeline = %orig;
+    BHTMergeHomeTimelineRole(timeline,
+                             BHTHomeTimelineRoleNonForYou);
+    return timeline;
+}
+
+- (id)homeRankedFollowingTimelineForAccount:(id)account {
+    id timeline = %orig;
+    BHTMergeHomeTimelineRole(timeline,
+                             BHTHomeTimelineRoleNonForYou);
+    return timeline;
+}
+
+- (id)rootViewControllerForHomeTimeline:(id)homeTimeline
+            homeCountryFilteredTimeline:(id)homeCountryFilteredTimeline
+                     homeLatestTimeline:(id)homeLatestTimeline
+            homeRankedFollowingTimeline:(id)homeRankedFollowingTimeline
+                                account:(id)account {
+    BHTMergeHomeTimelineRole(homeTimeline,
+                             BHTHomeTimelineRolePrimaryForYou);
+    BHTMergeHomeTimelineRole(homeCountryFilteredTimeline,
+                             BHTHomeTimelineRoleNonForYou);
+    BHTMergeHomeTimelineRole(homeLatestTimeline,
+                             BHTHomeTimelineRoleNonForYou);
+    BHTMergeHomeTimelineRole(homeRankedFollowingTimeline,
+                             BHTHomeTimelineRoleNonForYou);
+    return %orig;
+}
+
+%end
+
+// TFNTwitterHomeTimeline converts the model above into the immutable URT
+// timeline stored by T1URTViewController.  Propagate the explicit role across
+// that boundary; a missing role stays missing rather than becoming For You.
+%hook TFNTwitterHomeTimeline
+
+- (id)deserializeStream {
+    id timeline = %orig;
+    NSNumber* role = BHTHomeTimelineRoleForTimeline(self);
+    if (timeline && role) {
+        BHTMergeHomeTimelineRole(
+            timeline, (BHTHomeTimelineRole)role.integerValue);
+    }
+    return timeline;
+}
+
+%end
+
+%end
 
 // MARK: - Hide custom timelines
 
@@ -244,8 +368,37 @@ static NSString* ItemScribeComponent(id viewModel) {
     return [component isKindOfClass:[NSString class]] ? component : nil;
 }
 
-static id ItemObjectValue(id viewModel, SEL selector, const char* ivarName) {
-    if ([viewModel respondsToSelector:selector]) {
+static const char* SkipObjCTypeQualifiers(const char* type) {
+    if (!type) return NULL;
+    while (*type == 'r' || *type == 'n' || *type == 'N' ||
+           *type == 'o' || *type == 'O' || *type == 'R' ||
+           *type == 'V') {
+        type++;
+    }
+    return type;
+}
+
+static BOOL MethodReturnsObject(id object, SEL selector) {
+    if (!object || !selector ||
+        ![object respondsToSelector:selector]) {
+        return NO;
+    }
+    Method method =
+        class_getInstanceMethod([object class], selector);
+    if (!method) return NO;
+    char returnType[32] = {0};
+    method_getReturnType(method, returnType, sizeof(returnType));
+    const char* unqualified =
+        SkipObjCTypeQualifiers(returnType);
+    return unqualified && unqualified[0] == '@';
+}
+
+static id ItemObjectValueAllowingUntypedIvar(
+    id viewModel, SEL selector, const char* ivarName,
+    BOOL allowUntypedIvar) {
+    if (!viewModel) return nil;
+
+    if (MethodReturnsObject(viewModel, selector)) {
         return ((id (*)(id, SEL))objc_msgSend)(viewModel, selector);
     }
 
@@ -255,7 +408,295 @@ static id ItemObjectValue(id viewModel, SEL selector, const char* ivarName) {
         NSString* underscored = [@"_" stringByAppendingString:name];
         ivar = class_getInstanceVariable([viewModel class], underscored.UTF8String);
     }
-    return ivar ? object_getIvar(viewModel, ivar) : nil;
+    if (!ivar) return nil;
+
+    const char* type =
+        SkipObjCTypeQualifiers(ivar_getTypeEncoding(ivar));
+    BOOL objectIvar = type && type[0] == '@';
+    BOOL untypedIvar =
+        !type || type[0] == '\0' || type[0] == '?';
+    if (!objectIvar &&
+        !(allowUntypedIvar && untypedIvar)) {
+        return nil;
+    }
+    return object_getIvar(viewModel, ivar);
+}
+
+static id ItemObjectValue(id viewModel, SEL selector,
+                          const char* ivarName) {
+    return ItemObjectValueAllowingUntypedIvar(
+        viewModel, selector, ivarName, NO);
+}
+
+static NSString* ItemStringValue(id object, SEL selector,
+                                 const char* ivarName) {
+    id value = ItemObjectValue(object, selector, ivarName);
+    return [value isKindOfClass:NSString.class] ? value : nil;
+}
+
+static NSString* ItemReadableTextValue(id object, SEL selector,
+                                       const char* ivarName) {
+    id value = ItemObjectValue(object, selector, ivarName);
+    if ([value isKindOfClass:NSString.class]) return value;
+    if ([value isKindOfClass:NSAttributedString.class]) {
+        return [(NSAttributedString*)value string];
+    }
+
+    // X may expose display text through a small model rather than a raw
+    // NSString. Follow only its public-facing string/text accessors and stop
+    // after one level so timeline filtering remains bounded.
+    for (NSString* nestedSelectorName in @[@"string", @"text",
+                                            @"displayText"]) {
+        SEL nestedSelector = NSSelectorFromString(nestedSelectorName);
+        id nested =
+            ItemObjectValue(value, nestedSelector,
+                            nestedSelectorName.UTF8String);
+        if ([nested isKindOfClass:NSString.class]) return nested;
+        if ([nested isKindOfClass:NSAttributedString.class]) {
+            return [(NSAttributedString*)nested string];
+        }
+    }
+    return nil;
+}
+
+static Class BHTStatusItemViewModelClass(void) {
+    static Class cls;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cls = NSClassFromString(
+            @"T1URTTimelineStatusItemViewModel");
+    });
+    return cls;
+}
+
+static Class BHTTwitterStatusClass(void) {
+    static Class cls;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cls = NSClassFromString(@"TFNTwitterStatus");
+    });
+    return cls;
+}
+
+static BOOL IsPrimaryForYouTimelineController(
+    TFNItemsDataViewController* dataViewController) {
+    if (!dataViewController) return NO;
+
+    Class urtControllerClass = NSClassFromString(@"T1URTViewController");
+    if (!urtControllerClass ||
+        ![dataViewController isKindOfClass:urtControllerClass]) {
+        return NO;
+    }
+
+    NSString* location =
+        ItemStringValue(dataViewController, @selector(adDisplayLocation),
+                        "adDisplayLocation");
+    if (![location isEqualToString:@"TIMELINE_HOME"]) {
+        return NO;
+    }
+
+    id urtTimeline =
+        ItemObjectValue(dataViewController,
+                        NSSelectorFromString(@"urtTimeline"), "urtTimeline");
+    NSNumber* role = BHTHomeTimelineRoleForTimeline(urtTimeline);
+    // Re-evaluate the current object on every section update. Never carry a
+    // positive controller decision across an unknown or explicitly non-For You
+    // timeline, since X is free to reuse controllers between feeds.
+    return role.integerValue ==
+           BHTHomeTimelineRolePrimaryForYou;
+}
+
+static id StatusFromTimelineItem(id item) {
+    id viewModel = unwrapDataViewItem(item);
+    Class statusItemClass = BHTStatusItemViewModelClass();
+    Class statusClass = BHTTwitterStatusClass();
+    if (!statusItemClass || !statusClass ||
+        ![viewModel isKindOfClass:statusItemClass]) {
+        return nil;
+    }
+
+    // Prefer X 12.9's compatibility accessor because its Objective-C return
+    // signature can be verified before messaging it.
+    id tweet =
+        ItemObjectValue(viewModel, NSSelectorFromString(@"tweet"), "tweet");
+    if ([tweet isKindOfClass:statusClass]) return tweet;
+
+    // Some builds store the same object only in a Swift-backed `status` ivar
+    // without a useful type encoding. Keep this narrow, final fallback after
+    // the verified accessor and validate the resolved class immediately.
+    id status = ItemObjectValueAllowingUntypedIvar(
+        viewModel, NSSelectorFromString(@"status"), "status", YES);
+    return [status isKindOfClass:statusClass] ? status : nil;
+}
+
+static id RepresentedStatus(id status) {
+    if (!status) return nil;
+    Class statusClass = BHTTwitterStatusClass();
+    if (!statusClass) return nil;
+
+    id represented =
+        ItemObjectValue(status, NSSelectorFromString(@"representedStatus"),
+                        "representedStatus");
+    if ([represented isKindOfClass:statusClass]) {
+        return represented;
+    }
+
+    id retweeted =
+        ItemObjectValue(status, NSSelectorFromString(@"retweetedStatus"),
+                        "retweetedStatus");
+    return [retweeted isKindOfClass:statusClass] ? retweeted : status;
+}
+
+static void AddUsernameCandidates(NSMutableArray<NSString*>* candidates,
+                                  id status) {
+    if (!status) return;
+    NSArray<NSString*>* values = @[
+        ItemStringValue(status, NSSelectorFromString(@"fromUserName"),
+                        "fromUserName") ?: @"",
+        ItemStringValue(status, NSSelectorFromString(@"fromUserFullName"),
+                        "fromUserFullName") ?: @"",
+    ];
+    for (NSString* value in values) {
+        if (value.length > 0 && ![candidates containsObject:value]) {
+            [candidates addObject:value];
+        }
+    }
+}
+
+static NSString* ReadableTextFromDisplayModel(id model) {
+    if (!model) return nil;
+    struct {
+        const char* selector;
+        const char* ivar;
+    } candidates[] = {
+        {"attributedString", "attributedString"},
+        {"string", "string"},
+        {"text", "text"},
+        {"displayText", "displayText"},
+    };
+    for (NSUInteger index = 0;
+         index < sizeof(candidates) / sizeof(candidates[0]); index++) {
+        NSString* value = ItemReadableTextValue(
+            model,
+            NSSelectorFromString(
+                [NSString stringWithUTF8String:
+                              candidates[index].selector]),
+            candidates[index].ivar);
+        if (value.length > 0) return value;
+    }
+    return nil;
+}
+
+static NSString* VisiblePostText(id status) {
+    if (!status) return nil;
+
+    // Note Tweets can expose a shortened legacy `text`; prefer the dedicated
+    // full-note model before consulting those compatibility accessors.
+    id fullNoteModel = ItemObjectValue(
+        status,
+        NSSelectorFromString(
+            @"_tfn_fullNoteTweetDisplayTextModel"),
+        "_fullNoteTweetDisplayTextModel");
+    NSString* modelText =
+        ReadableTextFromDisplayModel(fullNoteModel);
+    if (modelText.length > 0) return modelText;
+
+    id displayTextModel =
+        ItemObjectValue(status,
+                        NSSelectorFromString(@"displayTextModel"),
+                        "_displayTextModel");
+    modelText = ReadableTextFromDisplayModel(displayTextModel);
+    if (modelText.length > 0) return modelText;
+
+    struct {
+        const char* selector;
+        const char* ivar;
+    } candidates[] = {
+        {"fullText", "fullText"},
+        {"text", "text"},
+        {"displayText", "displayText"},
+        {"originalText", "originalText"},
+    };
+
+    for (NSUInteger index = 0;
+         index < sizeof(candidates) / sizeof(candidates[0]); index++) {
+        NSString* value =
+            ItemReadableTextValue(
+                status,
+                NSSelectorFromString(
+                    [NSString stringWithUTF8String:
+                                  candidates[index].selector]),
+                candidates[index].ivar);
+        if (value.length > 0) return value;
+    }
+    return nil;
+}
+
+static BOOL ComputeShouldHideForYouKeywordItem(
+    id item, BOOL hasUsernameFilters, BOOL hasPostTextFilters) {
+    id outerStatus = StatusFromTimelineItem(item);
+    if (!outerStatus) return NO;
+
+    id representedStatus = RepresentedStatus(outerStatus);
+    if (!representedStatus) return NO;
+
+    if (hasUsernameFilters) {
+        NSMutableArray<NSString*>* candidates =
+            [NSMutableArray arrayWithCapacity:4];
+        AddUsernameCandidates(candidates, representedStatus);
+        if (outerStatus != representedStatus) {
+            // Include the reposting account as well as the visible post author.
+            AddUsernameCandidates(candidates, outerStatus);
+        }
+        BOOL matchesUsername = [BHTForYouKeywordFilter
+            matchesAnyUsernameCandidate:candidates];
+        if (matchesUsername) {
+            return YES;
+        }
+    }
+
+    if (hasPostTextFilters) {
+        NSString* postText = VisiblePostText(representedStatus);
+        if ([BHTForYouKeywordFilter matchesPostText:postText]) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+static BOOL ShouldHideForYouKeywordItem(
+    id item, NSUInteger generation, BOOL hasUsernameFilters,
+    BOOL hasPostTextFilters) {
+    id cacheOwner = unwrapDataViewItem(item);
+    Class statusItemClass = BHTStatusItemViewModelClass();
+    if (!statusItemClass ||
+        ![cacheOwner isKindOfClass:statusItemClass]) {
+        return NO;
+    }
+
+    // URT item view models are immutable after delivery and can be considered
+    // repeatedly while X rebuilds sections. Keep exactly one packed decision
+    // per item; a filter edit increments the generation and invalidates it.
+    // This function is called only after the strict For You controller gate,
+    // so a cached decision is never consulted from Following.
+    NSNumber* cached =
+        objc_getAssociatedObject(cacheOwner,
+                                 &kBHTForYouKeywordDecisionKey);
+    if (cached) {
+        NSUInteger packed = cached.unsignedIntegerValue;
+        if ((packed >> 1) == generation) {
+            return (packed & 1u) != 0;
+        }
+    }
+
+    BOOL hidden = ComputeShouldHideForYouKeywordItem(
+        cacheOwner, hasUsernameFilters, hasPostTextFilters);
+    objc_setAssociatedObject(
+        cacheOwner, &kBHTForYouKeywordDecisionKey,
+        @((generation << 1) | (hidden ? 1u : 0u)),
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return hidden;
 }
 
 static BOOL ItemHasTopicBanner(id viewModel) {
@@ -281,7 +722,11 @@ static BOOL StringIsTopicSuggestion(NSString* value) {
 static BOOL ShouldHideTimelineItem(id item, BOOL hideWhoToFollow, BOOL hidePrompts,
                                    BOOL hideDiscoverMore, BOOL hideTopics,
                                    BOOL hideTopicsToFollow, BOOL inConversation,
-                                   BOOL inProfile) {
+                                   BOOL inProfile,
+                                   BOOL filterForYouKeywords,
+                                   NSUInteger keywordFilterGeneration,
+                                   BOOL hasUsernameFilters,
+                                   BOOL hasPostTextFilters) {
     id viewModel = unwrapDataViewItem(item);
     NSString* className = NSStringFromClass([viewModel classForCoder]);
     NSString* component = ItemScribeComponent(viewModel);
@@ -324,6 +769,13 @@ static BOOL ShouldHideTimelineItem(id item, BOOL hideWhoToFollow, BOOL hidePromp
         return YES;
     }
 
+    if (filterForYouKeywords &&
+        ShouldHideForYouKeywordItem(
+            viewModel, keywordFilterGeneration, hasUsernameFilters,
+            hasPostTextFilters)) {
+        return YES;
+    }
+
     return NO;
 }
 
@@ -337,9 +789,19 @@ static NSArray* FilteredTimelineSections(TFNItemsDataViewController* dataViewCon
     BOOL inConversation =
         IsInHierarchyOfClass(dataViewController, @"T1ConversationContainerViewController");
     BOOL inProfile = IsInHierarchyOfClass(dataViewController, @"T1ProfileViewController");
+    BOOL hasUsernameFilters = NO;
+    BOOL hasPostTextFilters = NO;
+    NSUInteger keywordFilterGeneration =
+        [BHTForYouKeywordFilter
+            filterGenerationWithUsernameFilters:&hasUsernameFilters
+                                 postTextFilters:&hasPostTextFilters];
+    BOOL filterForYouKeywords =
+        (hasUsernameFilters || hasPostTextFilters) &&
+        IsPrimaryForYouTimelineController(dataViewController);
 
     if (!hideWhoToFollow && !hidePrompts && !hideTopics &&
-        !hideTopicsToFollow && !(hideDiscoverMore && inConversation)) {
+        !hideTopicsToFollow && !(hideDiscoverMore && inConversation) &&
+        !filterForYouKeywords) {
         return sections;
     }
 
@@ -361,7 +823,10 @@ static NSArray* FilteredTimelineSections(TFNItemsDataViewController* dataViewCon
             if (ShouldHideTimelineItem(items[i], hideWhoToFollow, hidePrompts,
                                        hideDiscoverMore, hideTopics,
                                        hideTopicsToFollow, inConversation,
-                                       inProfile)) {
+                                       inProfile, filterForYouKeywords,
+                                       keywordFilterGeneration,
+                                       hasUsernameFilters,
+                                       hasPostTextFilters)) {
                 [removed addIndex:i];
             }
         }
@@ -401,6 +866,33 @@ static NSArray* FilteredTimelineSections(TFNItemsDataViewController* dataViewCon
 
 %ctor {
     %init;
+
+    Class timelineFactoryClass = NSClassFromString(@"T1TimelineFactory");
+    Class homeTimelineClass = NSClassFromString(@"TFNTwitterHomeTimeline");
+    NSArray<NSString*>* requiredFactorySelectors = @[
+        @"homeTimelineForAccount:",
+        @"homeCountryFilteredTimelineForAccount:",
+        @"homeTopicFilteredTimelineForAccount:",
+        @"homeLatestTimelineForAccount:",
+        @"homeRankedFollowingTimelineForAccount:",
+        @"rootViewControllerForHomeTimeline:homeCountryFilteredTimeline:homeLatestTimeline:homeRankedFollowingTimeline:account:",
+    ];
+    BOOL canTrackForYouProvenance =
+        timelineFactoryClass && homeTimelineClass &&
+        [homeTimelineClass
+            instancesRespondToSelector:@selector(deserializeStream)];
+    for (NSString* selectorName in requiredFactorySelectors) {
+        if (![timelineFactoryClass
+                instancesRespondToSelector:NSSelectorFromString(
+                                               selectorName)]) {
+            canTrackForYouProvenance = NO;
+            break;
+        }
+    }
+    if (canTrackForYouProvenance) {
+        %init(BHTForYouTimelineProvenance);
+    }
+
     Class compatibilityClass = NSClassFromString(@"HomeTimelineContainerViewController");
     Class swiftClass = NSClassFromString(
         @"TwitterHomeFeatureImplementation.HomeTimelineContainerViewController");

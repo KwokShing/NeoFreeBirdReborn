@@ -852,9 +852,16 @@ def main() -> None:
         '@"route": @"likesNavigation"',
         '@"route": @"sidebarNavigation"',
         '@"route": @"mediaActionEditor"',
+        '@"route": @"forYouKeywordFilters"',
         '@"identifier": @"waterfall"',
         "[BHTThemePresets allThemes]",
         "willPresentSearchController:",
+        "didDismissSearchController:",
+        "pendingSettingsSearchResult",
+        "settingsSearchRowsVisible",
+        "settingsSearchDismissalPending",
+        "scheduleSettingsSearchDismissalFallback",
+        "searchController.isActive || query.length > 0",
         "settingsSearchTargetIdentifier",
         "BHTThemeDidChangeNotification",
         "currentSurfaceColor",
@@ -878,6 +885,8 @@ def main() -> None:
             "[self updateVisibleToggles];",
             "didSelectRowAtIndexPath:match",
             "self.navigationController.topViewController != self",
+            "spotlightSettingsSearchTargetCell:",
+            "viewDidLayoutSubviews",
         ),
         "exact settings-search row routing",
     )
@@ -969,6 +978,10 @@ def main() -> None:
         "BHTUserThemeIdentifierExists",
         "[(NSArray*)value count] > 128",
         "[(NSString*)item length] > 128",
+        "BHTKeywordArrayPreferenceKeys",
+        "BHTIsValidKeywordArray",
+        "bht_for_you_username_filter_keywords",
+        "bht_for_you_post_text_filter_keywords",
     ):
         if required not in settings_source:
             raise AssertionError(
@@ -1068,6 +1081,9 @@ def main() -> None:
         "THEME_BUILDER_LOW_CONTRAST_WARNING",
         "EXPORT_PREFERENCE_PROFILE_TITLE",
         "IMPORT_PREFERENCE_PROFILE_TITLE",
+        "FOR_YOU_KEYWORD_FILTERS_TITLE",
+        "FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE",
+        "FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE",
     ):
         if required_key not in localized_keys:
             raise AssertionError(
@@ -1133,6 +1149,91 @@ def main() -> None:
         raise AssertionError(
             "Likes waterfall capture must filter both section update paths"
         )
+
+    for_you_filter_source = (
+        ROOT / "src" / "Timeline" / "BHTForYouKeywordFilter.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        for_you_filter_source,
+        (
+            "bht_for_you_username_filter_keywords",
+            "bht_for_you_post_text_filter_keywords",
+            "BHTForYouKeywordMaximumCount = 64",
+            "NSDiacriticInsensitiveSearch",
+            "NSWidthInsensitiveSearch",
+            "matchesAnyUsernameCandidate:",
+            "matchesPostText:",
+            "filterGenerationWithUsernameFilters:",
+            "BHTSettingsProfileDidApplyNotification",
+        ),
+        "cached For You keyword filter store",
+    )
+
+    for_you_editor_source = (
+        ROOT
+        / "src"
+        / "Settings"
+        / "Pages"
+        / "BHTForYouKeywordFiltersViewController.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        for_you_editor_source,
+        (
+            "for_you_filters.usernames",
+            "for_you_filters.post_text",
+            "BHTForYouFiltersSectionUsernames",
+            "BHTForYouFiltersSectionPostText",
+            "addKeyword:",
+            "replaceKeywordAtIndex:",
+            "removeKeywordAtIndex:",
+            "revealSettingsSearchTargetIfNeeded",
+            "applyingLocalKeywordMutation",
+            "UIAccessibilityTraitHeader",
+            "UIAccessibilityIsReduceMotionEnabled()",
+        ),
+        "For You keyword filter editor",
+    )
+
+    timeline_source = (
+        ROOT / "src" / "Hooks" / "Timeline.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        timeline_source,
+        (
+            "%group BHTForYouTimelineProvenance",
+            "homeTimelineForAccount:",
+            "homeRankedFollowingTimelineForAccount:",
+            "rootViewControllerForHomeTimeline:",
+            "BHTMergeHomeTimelineRole",
+            "BHTHomeTimelineRolePrimaryForYou",
+            "BHTHomeTimelineRoleNonForYou",
+            "BHTHomeTimelineRoleAmbiguous",
+            "TFNTwitterHomeTimeline",
+            "deserializeStream",
+            "T1URTViewController",
+            '@"TIMELINE_HOME"',
+            '@"urtTimeline"',
+            "StatusFromTimelineItem",
+            "representedStatus",
+            'NSSelectorFromString(@"tweet")',
+            "_tfn_fullNoteTweetDisplayTextModel",
+            "fromUserFullName",
+            "kBHTForYouKeywordDecisionKey",
+            "filterGenerationWithUsernameFilters:",
+            "ItemObjectValueAllowingUntypedIvar",
+            "IsPrimaryForYouTimelineController",
+        ),
+        "strict For You-only runtime filtering",
+    )
+    for forbidden in (
+        "lastSelectedTimelineTabIdentifier",
+        "kBHTForYouControllerKey",
+    ):
+        if forbidden in timeline_source:
+            raise AssertionError(
+                "For You filter must fail open instead of caching or "
+                f"guessing selected-feed state: {forbidden}"
+            )
 
     media_editor_source = (
         ROOT

@@ -532,6 +532,7 @@
 "SETTINGS_SECTION_MOTION_SOUND" = "Motion and sound";
 "SETTINGS_SECTION_FONTS" = "Fonts";
 "SETTINGS_SECTION_ADS_OFFERS" = "Ads and offers";
+"SETTINGS_SECTION_FOR_YOU_FILTERS" = "For You";
 "SETTINGS_SECTION_TIMELINE_CLEANUP" = "Timeline cleanup";
 "SETTINGS_SECTION_TIMELINE_BEHAVIOR" = "Timeline behavior";
 "SETTINGS_SECTION_DOWNLOADS_ACTIONS" = "Downloads and actions";
@@ -545,3 +546,28 @@
 "SETTINGS_SECTION_PROFILE_APPEARANCE" = "Profile appearance";
 "SETTINGS_SECTION_LINKS_SHARING" = "Links and sharing";
 "SETTINGS_SECTION_BROWSER" = "Browser";
+
+/* For You keyword filters */
+"FOR_YOU_KEYWORD_FILTERS_TITLE" = "For You keyword filters";
+"FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE" = "Usernames & display names";
+"FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER" = "Hides a For You post when the visible author or reposting account's username or display name contains a match. Changes apply the next time For You refreshes. Following is never filtered.";
+"FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE" = "Post text";
+"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER" = "Hides a For You post when its primary visible text contains one of these words or phrases. Changes apply the next time For You refreshes. Following is never filtered.";
+"FOR_YOU_FILTERS_ADD_KEYWORD" = "Add keyword...";
+"FOR_YOU_FILTERS_TAP_TO_EDIT" = "Tap to edit";
+"FOR_YOU_FILTERS_EDIT_KEYWORD_TITLE" = "Edit keyword";
+"FOR_YOU_FILTERS_ADD_KEYWORD_TITLE" = "Add keyword";
+"FOR_YOU_FILTERS_USERNAME_EDITOR_DETAIL" = "Matches literal text in usernames and display names. An optional leading @ is ignored.";
+"FOR_YOU_FILTERS_POST_TEXT_EDITOR_DETAIL" = "Matches literal text in the primary visible post.";
+"FOR_YOU_FILTERS_KEYWORD_PLACEHOLDER" = "Word or phrase";
+"FOR_YOU_FILTERS_SAVE" = "Save";
+"FOR_YOU_FILTERS_CANCEL" = "Cancel";
+"FOR_YOU_FILTERS_ERROR_TITLE" = "Could not save keyword";
+"FOR_YOU_FILTERS_GENERIC_ERROR" = "Check the keyword and try again.";
+"FOR_YOU_FILTERS_INVALID_LIST_ERROR" = "The keyword list is not in a supported format.";
+"FOR_YOU_FILTERS_TOO_MANY_ERROR_FORMAT" = "Each filter can contain up to %lu keywords.";
+"FOR_YOU_FILTERS_TEXT_ONLY_ERROR" = "Keywords must be text.";
+"FOR_YOU_FILTERS_INVALID_KEYWORD_ERROR" = "Enter a keyword without line breaks or control characters.";
+"FOR_YOU_FILTERS_TOO_LONG_ERROR_FORMAT" = "Keywords can contain up to %lu characters.";
+"FOR_YOU_FILTERS_DUPLICATE_ERROR" = "That keyword is already in this filter.";
+"FOR_YOU_FILTERS_MISSING_ERROR" = "That keyword is no longer in the filter.";

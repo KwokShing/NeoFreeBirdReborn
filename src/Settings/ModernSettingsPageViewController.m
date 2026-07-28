@@ -16,6 +16,8 @@
 static char kBHTSettingsPreferenceKeyAssociation;
 static char kBHTFontPickerTypeAssociation;
 
+extern UIColor* CurrentAccentColor(void);
+
 NSString* BHTSettingsKeyForSwitch(UISwitch* settingsSwitch) {
     return objc_getAssociatedObject(
         settingsSwitch, &kBHTSettingsPreferenceKeyAssociation);
@@ -35,6 +37,12 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
 @interface ModernSettingsPageViewController ()
 @property (nonatomic, copy) NSString* registryPageKey;
 @property (nonatomic, copy) NSArray<NSDictionary*>* visibleSections;
+@property (nonatomic, assign) BOOL settingsSearchRevealScheduled;
+@property (nonatomic, assign) NSUInteger settingsSearchRevealAttempts;
+@property (nonatomic, assign) BOOL settingsSearchPageDidAppear;
+- (void)scheduleSettingsSearchTargetRevealIfNeeded;
+- (void)revealSettingsSearchTargetIfNeeded;
+- (void)spotlightSettingsSearchTargetCell:(UITableViewCell*)cell;
 @end
 
 @implementation ModernSettingsPageViewController
@@ -67,7 +75,21 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [self revealSettingsSearchTargetIfNeeded];
+    self.settingsSearchPageDidAppear = YES;
+    [self scheduleSettingsSearchTargetRevealIfNeeded];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    self.settingsSearchPageDidAppear = NO;
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    // UIKit may report viewDidAppear before a grouped table has realized the
+    // destination row. Scheduling from layout makes the reveal deterministic
+    // without repeatedly running it after the target succeeds.
+    [self scheduleSettingsSearchTargetRevealIfNeeded];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -188,9 +210,80 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
     self.visibleSections = [immutableSections copy];
 }
 
+- (void)scheduleSettingsSearchTargetRevealIfNeeded {
+    if (self.settingsSearchTargetIdentifier.length == 0 ||
+        self.settingsSearchRevealScheduled ||
+        !self.settingsSearchPageDidAppear || !self.tableView.window) {
+        return;
+    }
+    self.settingsSearchRevealScheduled = YES;
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.settingsSearchRevealScheduled = NO;
+        [strongSelf revealSettingsSearchTargetIfNeeded];
+    });
+}
+
+- (void)spotlightSettingsSearchTargetCell:(UITableViewCell*)cell {
+    if (!cell.window) return;
+
+    UIColor* accent = CurrentAccentColor() ?: UIColor.systemBlueColor;
+    UIView* spotlight =
+        [[UIView alloc] initWithFrame:CGRectInset(cell.bounds, 3, 2)];
+    spotlight.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    spotlight.userInteractionEnabled = NO;
+    spotlight.backgroundColor = [accent colorWithAlphaComponent:0.14];
+    spotlight.layer.cornerRadius = 12;
+    spotlight.layer.borderWidth = 2;
+    spotlight.layer.borderColor = accent.CGColor;
+    spotlight.alpha = 0;
+    [cell addSubview:spotlight];
+
+    UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification,
+                                    cell);
+    if (UIAccessibilityIsReduceMotionEnabled()) {
+        spotlight.alpha = 1;
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW,
+                          (int64_t)(0.9 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                [spotlight removeFromSuperview];
+            });
+        return;
+    }
+    [UIView animateKeyframesWithDuration:1.15
+                                  delay:0
+                                options:
+                                    UIViewKeyframeAnimationOptionAllowUserInteraction
+                             animations:^{
+        [UIView addKeyframeWithRelativeStartTime:0
+                                relativeDuration:0.2
+                                      animations:^{
+            spotlight.alpha = 1;
+        }];
+        [UIView addKeyframeWithRelativeStartTime:0.58
+                                relativeDuration:0.42
+                                      animations:^{
+            spotlight.alpha = 0;
+        }];
+    }
+                             completion:^(__unused BOOL finished) {
+        [spotlight removeFromSuperview];
+    }];
+}
+
 - (void)revealSettingsSearchTargetIfNeeded {
     NSString* target = self.settingsSearchTargetIdentifier;
     if (target.length == 0 || !self.tableView.window) return;
+
+    // Recompute conditional rows with the still-pending target, then force a
+    // layout pass before asking UIKit for the concrete destination cell.
+    [self updateVisibleToggles];
+    [self.tableView reloadData];
+    [self.tableView layoutIfNeeded];
 
     NSDictionary* targetEntry = nil;
     for (NSDictionary* entry in self.toggles) {
@@ -216,22 +309,45 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
         }
         if (match) break;
     }
-    BOOL shouldOpen = self.settingsSearchShouldOpenTarget;
-    self.settingsSearchTargetIdentifier = nil;
-    self.settingsSearchShouldOpenTarget = NO;
-    if (!match) return;
+    if (!match) {
+        // An invalid/stale identifier cannot become valid through another
+        // layout pass, so discard it instead of retrying forever.
+        self.settingsSearchTargetIdentifier = nil;
+        self.settingsSearchShouldOpenTarget = NO;
+        self.settingsSearchRevealAttempts = 0;
+        return;
+    }
 
     [self.tableView scrollToRowAtIndexPath:match
                          atScrollPosition:UITableViewScrollPositionMiddle
-                                 animated:YES];
-    [self.tableView selectRowAtIndexPath:match
-                                animated:YES
-                          scrollPosition:UITableViewScrollPositionNone];
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.65 * NSEC_PER_SEC)),
-        dispatch_get_main_queue(), ^{
-            [self.tableView deselectRowAtIndexPath:match animated:YES];
-        });
+                                 animated:NO];
+    [self.tableView layoutIfNeeded];
+    UITableViewCell* targetCell =
+        [self.tableView cellForRowAtIndexPath:match];
+    if (!targetCell) {
+        self.settingsSearchRevealAttempts += 1;
+        if (self.settingsSearchRevealAttempts < 3) {
+            __weak typeof(self) weakSelf = self;
+            dispatch_after(
+                dispatch_time(DISPATCH_TIME_NOW,
+                              (int64_t)(0.05 * NSEC_PER_SEC)),
+                dispatch_get_main_queue(), ^{
+                    [weakSelf
+                        scheduleSettingsSearchTargetRevealIfNeeded];
+                });
+        } else {
+            self.settingsSearchTargetIdentifier = nil;
+            self.settingsSearchShouldOpenTarget = NO;
+            self.settingsSearchRevealAttempts = 0;
+        }
+        return;
+    }
+
+    BOOL shouldOpen = self.settingsSearchShouldOpenTarget;
+    self.settingsSearchTargetIdentifier = nil;
+    self.settingsSearchShouldOpenTarget = NO;
+    self.settingsSearchRevealAttempts = 0;
+    [self spotlightSettingsSearchTargetCell:targetCell];
 
     NSString* actionName = targetEntry[@"action"];
     if (shouldOpen && actionName.length > 0) {

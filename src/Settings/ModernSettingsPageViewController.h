@@ -21,8 +21,9 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker);
 @property (nonatomic, strong) UITableView* tableView;
 @property (nonatomic, strong) NSArray<NSDictionary*>* toggles;
 @property (nonatomic, strong) NSArray<NSDictionary*>* visibleToggles;
-// Set before presentation by global settings search. The page scrolls to and
-// briefly highlights the matching key or title key once its table is visible.
+// Set before presentation by global settings search. After its table finishes
+// layout, the page scrolls to and visibly spotlights the matching key or title
+// key. The target remains pending until the destination cell is realized.
 @property (nonatomic, copy, nullable) NSString* settingsSearchTargetIdentifier;
 // Search results that represent a button can request the destination action
 // after the page scrolls to that row. Toggle results remain highlighted in
