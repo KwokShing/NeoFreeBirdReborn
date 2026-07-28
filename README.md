@@ -46,7 +46,10 @@ X 12.9.
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 23 adds six built-in palettes and a native visual theme builder with
+Beta 24 fixes the beta 23 startup stack overflow by resolving the theme accent
+from the provider's already-known Light/Dark appearance instead of recursively
+asking X for its current palette during hook installation. Beta 23 adds six
+built-in palettes and a native visual theme builder with
 separate light/dark colors, live previews, exact hex entry, native color
 pickers, contrast warnings, a persistent custom-theme library, and versioned
 profile export/import. Beta 22 preserves X's own bottom-tab background and transparency while

@@ -670,6 +670,7 @@ def main() -> None:
         "BHTCurrentThemeConfigurationToken",
         "BHTColorFromRoleState",
         "BHTPaletteThemeConfigurationIsComplete",
+        "customAccentColorForDarkAppearance:",
         "BHTCurrentThemeConfigurationGeneration",
         "BHTAdvanceThemeConfigurationGeneration",
         "BHTSeenThemePalettes",
@@ -719,6 +720,21 @@ def main() -> None:
             raise AssertionError(
                 f"Missing guarded app-wide accent invariant: {required}"
             )
+    palette_install = source_section(
+        theme_accent_source,
+        "static BOOL BHTInstallThemeHookForPalette(",
+        "static id BHTThemeProviderFromUIColorSelector",
+        "theme-provider installation",
+    )
+    if (
+        "customAccentColorForDarkAppearance:" not in palette_install
+        or "[Palette customAccentColor]" in palette_install
+        or "currentPaletteUsesDarkAppearance" in palette_install
+    ):
+        raise AssertionError(
+            "Theme-provider installation must resolve its accent from the "
+            "known appearance without recursively reading currentColorPalette"
+        )
     for contrast_sensitive in (
         '@"capsuleTabsOnMediaSelectedBackgroundColor"',
         '@"capsuleTabsOnMediaTextColor"',
@@ -750,6 +766,7 @@ def main() -> None:
         "BHTCustomAccentCacheIsValid",
         "BHTAppThemeColorCacheIsValid",
         "customThemeColorsForDarkAppearance",
+        "customAccentColorForDarkAppearance",
         "currentSurfaceColor",
         "currentTextColor",
         "currentSeparatorColor",
