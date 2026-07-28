@@ -363,18 +363,36 @@ def main() -> None:
     for required in (
         "BHTApplyCurrentThemeToTabBarController",
         "BHTApplyThemeToNativeTabBar",
-        '@"tabBarBackgroundView"',
-        '@"tabBarDivider"',
         '@"nativeTabBar"',
         '@"_t1_configureNativeTabBar"',
         "BHTShouldThemeTabItems",
         "BHTTabChromeThemeGeneration",
-        "BHTChromeBackgroundStillMatches",
         "BHTThemedTabBarAppearance",
+        "BHTNativeTabBarStillMatches",
     ):
         if required not in theme_source:
             raise AssertionError(
                 f"Missing live tab-bar theme invariant: {required}"
+            )
+    tab_chrome_source = theme_source.split(
+        "// MARK: - Theme tab items without defeating X's native collapse",
+        1,
+    )[1].split(
+        "// MARK: - Tab bar icon and label theming",
+        1,
+    )[0]
+    for forbidden in (
+        '@"tabBarBackgroundView"',
+        '@"tabBarDivider"',
+        "controller.view",
+        "tabBar.backgroundColor",
+        "tabBar.barTintColor",
+        "configureWithOpaqueBackground",
+    ):
+        if forbidden in tab_chrome_source:
+            raise AssertionError(
+                "Tab-bar theming must preserve X's native collapse "
+                f"background ownership: {forbidden}"
             )
 
     likes_hook_source = (

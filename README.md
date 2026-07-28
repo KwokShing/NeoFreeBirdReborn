@@ -42,7 +42,10 @@ X 12.9.
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 21 keeps the Likes Posts/Media selector at a native minimum height after
+Beta 22 preserves X's own bottom-tab background and transparency while
+theming its icons and labels, so the bar collapses completely with the controls
+instead of leaving an opaque themed strip over the timeline. Beta 21 keeps the
+Likes Posts/Media selector at a native minimum height after
 theme repainting, instead of letting one-pixel custom artwork collapse its
 navigation-title layout. Its compatibility report now records the selector and
 navigation-bar geometry. Beta 20 covers X 12.9's direct XDS and Swift-package

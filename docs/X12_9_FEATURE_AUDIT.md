@@ -204,8 +204,11 @@ used by both Objective-C and Swift Following, Tweet Details, and reused
 timeline cells, and restores the Likes Posts/Media selector after native
 navigation rebuilds. Beta 21 removes the one-pixel segmented-control artwork
 that could collapse that selector on iPhone, preserves native sizing with a
-minimum intrinsic height, and exports its live geometry for diagnosis. Full
-themes hook only
+minimum intrinsic height, and exports its live geometry for diagnosis. Beta 22
+stops painting X's independently mounted tab-bar host and divider, and retains
+the native tab-bar appearance's background material while theming only its
+items. This keeps the selected palette without leaving an opaque strip when X
+collapses the lower navigation controls during scrolling. Full themes hook only
 validated zero-argument color getters on X's concrete provider instances plus
 the exact neutral XColorEngine named assets, cache provider colors away from
 scrolling paths, and fall through to preserved native implementations when
