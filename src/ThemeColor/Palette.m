@@ -281,6 +281,11 @@ static BOOL BHTPaletteBoolGetterIsCompatible(id object, SEL selector) {
                         [self invalidateCustomAccentColorCache];
                     }];
     });
+    // Full themes may use a different accessible accent in light and dark
+    // appearances. Resolve that live role before the legacy standalone accent.
+    UIColor* themedAccent =
+        [self customThemeColorForRole:BHTThemeColorAccentKey];
+    if (themedAccent) return themedAccent;
     @synchronized(self) {
         if (!BHTCustomAccentCacheIsValid) {
             NSString* stored = [NSUserDefaults.standardUserDefaults

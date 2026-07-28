@@ -373,12 +373,18 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(themeDidChange:)
-               name:BHTSettingsProfileDidApplyNotification
+                name:BHTSettingsProfileDidApplyNotification
+              object:nil];
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(themeLibraryDidChange:)
+               name:BHTThemeLibraryDidChangeNotification
              object:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self buildSettingsSearchIndex];
     [self themeDidChange:nil];
 }
 
@@ -398,6 +404,10 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         [Palette currentBackgroundColor];
     [self setupFooterLabel];
     [self.tableView reloadData];
+}
+
+- (void)themeLibraryDidChange:(NSNotification*)notification {
+    [self buildSettingsSearchIndex];
 }
 
 - (void)setupNavigationBar {
@@ -506,11 +516,11 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     NSString* presetsCategory = presetsPage[@"title"] ?: @"";
     NSString* themeSection =
         [bundle localizedStringForKey:@"THEME_PRESETS_SECTION_TITLE"];
-    for (NSDictionary* preset in [BHTThemePresets availablePresets]) {
+    for (NSDictionary* preset in [BHTThemePresets allThemes]) {
         NSString* title =
-            [bundle localizedStringForKey:preset[@"titleKey"]];
+            [BHTThemePresets displayNameForPreset:preset];
         NSString* detail =
-            [bundle localizedStringForKey:preset[@"detailKey"]];
+            [BHTThemePresets displayDetailForPreset:preset];
         [index addObject:@{
             @"kind": @"page",
             @"pageKey": @"presets",

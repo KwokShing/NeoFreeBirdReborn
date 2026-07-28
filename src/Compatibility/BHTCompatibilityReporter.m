@@ -3,6 +3,7 @@
 #import "Likes/BHTLikesTab.h"
 #import "MediaActions/BHTMediaActionUtility.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
+#import "ThemeColor/BHTThemePresets.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -255,10 +256,15 @@ void BHTRecordThemeRuntimeObservation(
             ? [providerClasses sortedArrayUsingSelector:
                                   @selector(compare:)]
             : @[];
+    NSString* reportedPreset =
+        [BHTThemePresets isUserPresetIdentifier:presetIdentifier]
+            ? @"user_theme"
+            : (presetIdentifier.length > 0
+                   ? presetIdentifier
+                   : @"native");
     NSDictionary* observation = @{
-        @"activePreset": presetIdentifier.length > 0
-            ? presetIdentifier
-            : @"native",
+        // Custom names and persistent UUIDs are private user data.
+        @"activePreset": reportedPreset,
         @"activePaletteClass": paletteClass.length > 0
             ? paletteClass
             : @"unavailable",

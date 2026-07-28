@@ -4,6 +4,7 @@
 #import "Core/BHTManager.h"
 #import "Core/BHTSettings.h"
 #import "Headers/TWHeaders.h"
+#import "ThemeColor/BHTThemeBuilderViewController.h"
 #import "ThemeColor/BHTThemePresets.h"
 #import "ThemeColor/Palette.h"
 
@@ -13,6 +14,7 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
 @property (nonatomic, strong) TFNTwitterAccount* account;
 @property (nonatomic, strong) UITableView* tableView;
 @property (nonatomic, copy) NSArray<NSDictionary*>* themePresets;
+@property (nonatomic, copy) NSArray<NSDictionary*>* userThemes;
 - (void)applyCurrentTheme;
 @end
 
@@ -22,6 +24,7 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
     if ((self = [super init])) {
         _account = account;
         _themePresets = [BHTThemePresets availablePresets];
+        _userThemes = [BHTThemePresets userThemes];
     }
     return self;
 }
@@ -39,6 +42,14 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
     } else {
         self.title = title;
     }
+    self.navigationItem.rightBarButtonItem =
+        [[UIBarButtonItem alloc]
+            initWithBarButtonSystemItem:UIBarButtonSystemItemAdd
+                                 target:self
+                                 action:@selector(createTheme)];
+    self.navigationItem.rightBarButtonItem.accessibilityLabel =
+        [[BHTBundle sharedBundle]
+            localizedStringForKey:@"THEME_LIBRARY_CREATE"];
 
     self.tableView =
         [[UITableView alloc] initWithFrame:self.view.bounds
@@ -55,6 +66,8 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    self.themePresets = [BHTThemePresets availablePresets];
+    self.userThemes = [BHTThemePresets userThemes];
     [self applyCurrentTheme];
     [self.tableView reloadData];
 }
@@ -78,32 +91,48 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
-    return 2;
+    return 3;
 }
 
 - (NSInteger)tableView:(UITableView*)tableView
  numberOfRowsInSection:(NSInteger)section {
-    return section == 0 ? self.themePresets.count : 2;
+    if (section == 0) return self.themePresets.count;
+    if (section == 1) return self.userThemes.count + 1;
+    return 2;
 }
 
 - (NSString*)tableView:(UITableView*)tableView
     titleForHeaderInSection:(NSInteger)section {
-    NSString* key = section == 0 ? @"THEME_PRESETS_SECTION_TITLE"
-                                 : @"PREFERENCE_PROFILES_SECTION_TITLE";
+    NSString* key = nil;
+    if (section == 0) {
+        key = @"THEME_PRESETS_SECTION_TITLE";
+    } else if (section == 1) {
+        key = @"THEME_LIBRARY_MY_THEMES";
+    } else {
+        key = @"PREFERENCE_PROFILES_SECTION_TITLE";
+    }
     return [[BHTBundle sharedBundle] localizedStringForKey:key];
 }
 
 - (NSString*)tableView:(UITableView*)tableView
     titleForFooterInSection:(NSInteger)section {
-    if (section != 1) return nil;
-    return [[BHTBundle sharedBundle]
-        localizedStringForKey:@"PREFERENCE_PROFILES_FOOTER"];
+    NSString* key = nil;
+    if (section == 1) {
+        key = @"THEME_LIBRARY_MY_THEMES_FOOTER";
+    } else if (section == 2) {
+        key = @"PREFERENCE_PROFILES_FOOTER";
+    }
+    return key ? [[BHTBundle sharedBundle] localizedStringForKey:key]
+               : nil;
 }
 
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
+    BOOL createRow = indexPath.section == 1 && indexPath.row == 0;
     NSString* reuseIdentifier =
-        indexPath.section == 0 ? @"ThemePresetCell" : @"ProfileActionCell";
+        indexPath.section == 2
+            ? @"ProfileActionCell"
+            : (createRow ? @"CreateThemeCell" : @"ThemePresetCell");
     UITableViewCell* cell =
         [tableView dequeueReusableCellWithIdentifier:reuseIdentifier];
     if (!cell) {
@@ -118,31 +147,49 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
     cell.textLabel.textColor = [Palette currentTextColor];
     cell.detailTextLabel.textColor =
         [Palette currentSecondaryTextColor];
+    cell.textLabel.text = nil;
+    cell.detailTextLabel.text = nil;
+    cell.imageView.image = nil;
+    cell.imageView.tintColor = nil;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessibilityTraits = UIAccessibilityTraitButton;
 
-    if (indexPath.section == 0) {
-        NSDictionary* preset = self.themePresets[indexPath.row];
-        cell.textLabel.text = [[BHTBundle sharedBundle]
-            localizedStringForKey:preset[@"titleKey"]];
-        cell.detailTextLabel.text = [[BHTBundle sharedBundle]
-            localizedStringForKey:preset[@"detailKey"]];
+    if (indexPath.section == 0 ||
+        (indexPath.section == 1 && !createRow)) {
+        NSDictionary* preset =
+            indexPath.section == 0
+                ? self.themePresets[indexPath.row]
+                : self.userThemes[indexPath.row - 1];
+        cell.textLabel.text =
+            [BHTThemePresets displayNameForPreset:preset];
+        cell.detailTextLabel.text =
+            [BHTThemePresets displayDetailForPreset:preset];
         BOOL active =
             [preset[@"identifier"]
                 isEqualToString:[BHTThemePresets activePresetIdentifier]];
         cell.accessoryType =
             active ? UITableViewCellAccessoryCheckmark
                    : UITableViewCellAccessoryNone;
-        id hex = preset[@"accentHex"];
-        cell.imageView.image =
-            [UIImage systemImageNamed:@"circle.fill"];
-        cell.imageView.tintColor =
-            hex == NSNull.null
-                ? UIColor.systemBlueColor
-                : ([Palette colorFromHexString:hex] ?:
-                                                   UIColor.systemBlueColor);
+        cell.imageView.image = [self previewImageForPreset:preset];
         cell.accessibilityTraits =
             active ? UIAccessibilityTraitButton |
                          UIAccessibilityTraitSelected
                    : UIAccessibilityTraitButton;
+        cell.accessibilityHint = indexPath.section == 1
+                                     ? [[BHTBundle sharedBundle]
+                                           localizedStringForKey:
+                                               @"THEME_LIBRARY_CUSTOM_HINT"]
+                                     : nil;
+    } else if (createRow) {
+        cell.textLabel.text = [[BHTBundle sharedBundle]
+            localizedStringForKey:@"THEME_LIBRARY_CREATE"];
+        cell.detailTextLabel.text = [[BHTBundle sharedBundle]
+            localizedStringForKey:@"THEME_LIBRARY_CREATE_DETAIL"];
+        cell.imageView.image =
+            [UIImage systemImageNamed:@"plus.circle.fill"];
+        cell.imageView.tintColor =
+            [Palette customAccentColor] ?: UIColor.systemBlueColor;
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else {
         BOOL exporting = indexPath.row == 0;
         cell.textLabel.text =
@@ -166,6 +213,62 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
     return cell;
 }
 
+- (UIImage*)previewImageForPreset:(NSDictionary*)preset {
+    BOOL dark = [Palette currentPaletteUsesDarkAppearance];
+    NSDictionary* raw =
+        [preset[dark ? @"darkColors" : @"lightColors"]
+            isKindOfClass:NSDictionary.class]
+            ? preset[dark ? @"darkColors" : @"lightColors"]
+            : nil;
+    UIColor* background =
+        [Palette colorFromHexString:
+                     raw[BHTThemeColorBackgroundKey]] ?:
+        [Palette currentBackgroundColor];
+    UIColor* surface =
+        [Palette colorFromHexString:raw[BHTThemeColorSurfaceKey]] ?:
+        [Palette currentSurfaceColor];
+    UIColor* accent =
+        [BHTThemePresets previewAccentColorForPreset:preset
+                                     darkAppearance:dark];
+    UIColor* text =
+        [Palette colorFromHexString:raw[BHTThemeColorTextKey]] ?:
+        [Palette currentTextColor];
+    UIColor* separator =
+        [Palette colorFromHexString:
+                     raw[BHTThemeColorSeparatorKey]] ?:
+        [Palette currentSeparatorColor];
+
+    UIGraphicsImageRendererFormat* format =
+        [UIGraphicsImageRendererFormat preferredFormat];
+    format.opaque = NO;
+    UIGraphicsImageRenderer* renderer =
+        [[UIGraphicsImageRenderer alloc]
+            initWithSize:CGSizeMake(32, 32)
+                  format:format];
+    return [renderer imageWithActions:^(
+                         UIGraphicsImageRendererContext* context) {
+        CGContextRef graphics = context.CGContext;
+        CGRect bounds = CGRectMake(1, 1, 30, 30);
+        CGContextSaveGState(graphics);
+        CGContextAddEllipseInRect(graphics, bounds);
+        CGContextClip(graphics);
+        [background setFill];
+        UIRectFill(CGRectMake(1, 1, 15, 30));
+        [surface setFill];
+        UIRectFill(CGRectMake(16, 1, 15, 15));
+        [accent setFill];
+        UIRectFill(CGRectMake(16, 16, 15, 15));
+        [text setFill];
+        UIRectFill(CGRectMake(8, 11, 8, 10));
+        CGContextRestoreGState(graphics);
+        [separator setStroke];
+        UIBezierPath* outline =
+            [UIBezierPath bezierPathWithOvalInRect:bounds];
+        outline.lineWidth = 1;
+        [outline stroke];
+    }];
+}
+
 - (void)tableView:(UITableView*)tableView
     didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
@@ -178,11 +281,155 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
         }
         return;
     }
+    if (indexPath.section == 1) {
+        if (indexPath.row == 0) {
+            [self createTheme];
+            return;
+        }
+        NSDictionary* theme = self.userThemes[indexPath.row - 1];
+        if ([BHTThemePresets
+                applyPresetIdentifier:theme[@"identifier"]]) {
+            [self applyCurrentTheme];
+            [tableView reloadData];
+        }
+        return;
+    }
     if (indexPath.row == 0) {
         [self exportProfile];
     } else {
         [self importProfile];
     }
+}
+
+- (void)createTheme {
+    NSDictionary* active = [BHTThemePresets
+        presetForIdentifier:[BHTThemePresets activePresetIdentifier]];
+    BHTThemeBuilderViewController* builder =
+        [[BHTThemeBuilderViewController alloc]
+            initWithTheme:
+                [BHTThemePresets
+                    newUserThemeDraftBasedOnPreset:active]];
+    [self.navigationController pushViewController:builder
+                                         animated:YES];
+}
+
+- (void)editTheme:(NSDictionary*)theme {
+    BHTThemeBuilderViewController* builder =
+        [[BHTThemeBuilderViewController alloc] initWithTheme:theme];
+    [self.navigationController pushViewController:builder
+                                         animated:YES];
+}
+
+- (void)duplicateTheme:(NSDictionary*)theme {
+    [self editTheme:
+              [BHTThemePresets duplicateDraftForPreset:theme]];
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView*)tableView
+    leadingSwipeActionsConfigurationForRowAtIndexPath:
+        (NSIndexPath*)indexPath {
+    NSDictionary* theme = nil;
+    if (indexPath.section == 0) {
+        theme = self.themePresets[indexPath.row];
+    } else if (indexPath.section == 1 && indexPath.row > 0) {
+        theme = self.userThemes[indexPath.row - 1];
+    }
+    if (!theme) return nil;
+    UIContextualAction* duplicate =
+        [UIContextualAction
+            contextualActionWithStyle:UIContextualActionStyleNormal
+                                 title:[[BHTBundle sharedBundle]
+                                           localizedStringForKey:
+                                               @"THEME_LIBRARY_DUPLICATE"]
+                               handler:^(
+                                   __unused UIContextualAction* action,
+                                   __unused UIView* source,
+                                   void (^completion)(BOOL)) {
+        [self duplicateTheme:theme];
+        completion(YES);
+    }];
+    duplicate.image =
+        [UIImage systemImageNamed:@"plus.square.on.square"];
+    return [UISwipeActionsConfiguration
+        configurationWithActions:@[duplicate]];
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView*)tableView
+    trailingSwipeActionsConfigurationForRowAtIndexPath:
+        (NSIndexPath*)indexPath {
+    if (indexPath.section != 1 || indexPath.row == 0) return nil;
+    NSDictionary* theme = self.userThemes[indexPath.row - 1];
+    UIContextualAction* edit =
+        [UIContextualAction
+            contextualActionWithStyle:UIContextualActionStyleNormal
+                                 title:[[BHTBundle sharedBundle]
+                                           localizedStringForKey:
+                                               @"THEME_LIBRARY_EDIT"]
+                               handler:^(
+                                   __unused UIContextualAction* action,
+                                   __unused UIView* source,
+                                   void (^completion)(BOOL)) {
+        [self editTheme:theme];
+        completion(YES);
+    }];
+    edit.image = [UIImage systemImageNamed:@"pencil"];
+    UIContextualAction* delete =
+        [UIContextualAction
+            contextualActionWithStyle:UIContextualActionStyleDestructive
+                                 title:[[BHTBundle sharedBundle]
+                                           localizedStringForKey:
+                                               @"THEME_LIBRARY_DELETE"]
+                               handler:^(
+                                   __unused UIContextualAction* action,
+                                   __unused UIView* source,
+                                   void (^completion)(BOOL)) {
+        [self confirmDeleteTheme:theme];
+        completion(YES);
+    }];
+    delete.image = [UIImage systemImageNamed:@"trash"];
+    return [UISwipeActionsConfiguration
+        configurationWithActions:@[delete, edit]];
+}
+
+- (void)confirmDeleteTheme:(NSDictionary*)theme {
+    UIAlertController* alert = [UIAlertController
+        alertControllerWithTitle:[[BHTBundle sharedBundle]
+                                     localizedStringForKey:
+                                         @"THEME_LIBRARY_DELETE"]
+                         message:[NSString
+                                     stringWithFormat:
+                                         [[BHTBundle sharedBundle]
+                                             localizedStringForKey:
+                                                 @"THEME_LIBRARY_DELETE_CONFIRM"],
+                                         [BHTThemePresets
+                                             displayNameForPreset:theme]]
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:
+               [UIAlertAction
+                   actionWithTitle:[[BHTBundle sharedBundle]
+                                       localizedStringForKey:
+                                           @"THEME_BUILDER_CANCEL"]
+                             style:UIAlertActionStyleCancel
+                           handler:nil]];
+    [alert addAction:
+               [UIAlertAction
+                   actionWithTitle:[[BHTBundle sharedBundle]
+                                       localizedStringForKey:
+                                           @"THEME_LIBRARY_DELETE"]
+                             style:UIAlertActionStyleDestructive
+                           handler:^(__unused UIAlertAction* action) {
+        NSError* error = nil;
+        if (![BHTThemePresets
+                deleteUserThemeIdentifier:theme[@"identifier"]
+                                      error:&error]) {
+            [self showError:error];
+            return;
+        }
+        self.userThemes = [BHTThemePresets userThemes];
+        [self applyCurrentTheme];
+        [self.tableView reloadData];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)exportProfile {
@@ -251,6 +498,8 @@ static const NSUInteger kBHTMaximumProfileBytes = 512 * 1024;
     }
 
     [BHTThemePresets reapplyCurrentAccent];
+    self.themePresets = [BHTThemePresets availablePresets];
+    self.userThemes = [BHTThemePresets userThemes];
     [self applyCurrentTheme];
     [self.tableView reloadData];
     [self showAlertWithTitleKey:@"IMPORT_PREFERENCE_PROFILE_SUCCESS_TITLE"
