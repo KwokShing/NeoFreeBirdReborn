@@ -207,7 +207,8 @@ static void BHTPulseForYouFilterTarget(UIView* target) {
     titleForHeaderInSection:(NSInteger)section {
     if (section == BHTForYouFiltersSectionPostText) {
         return BHTForYouFiltersLocalized(
-            @"FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE", @"Post text");
+            @"FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE",
+            @"Post text & @mentions");
     }
     return BHTForYouFiltersLocalized(
         @"FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE",
@@ -219,9 +220,10 @@ static void BHTPulseForYouFilterTarget(UIView* target) {
     if (section == BHTForYouFiltersSectionPostText) {
         return BHTForYouFiltersLocalized(
             @"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER",
-            @"Hides a For You post when its primary visible text contains "
-             @"one of these words or phrases. Changes apply the next time "
-             @"For You refreshes. Following is never filtered.");
+            @"Hides a For You post when any version of its primary text, "
+             @"including leading @mentions, contains one of these words or "
+             @"phrases. Changes apply the next time For You refreshes. "
+             @"Following is never filtered.");
     }
     return BHTForYouFiltersLocalized(
         @"FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER",
@@ -424,7 +426,8 @@ static void BHTPulseForYouFilterTarget(UIView* target) {
                    @"An optional leading @ is ignored.")
             : BHTForYouFiltersLocalized(
                   @"FOR_YOU_FILTERS_POST_TEXT_EDITOR_DETAIL",
-                  @"Matches literal text in the primary visible post.");
+                  @"Matches literal text in the primary post, including "
+                   @"@mentions.");
 
     UIAlertController* alert =
         [UIAlertController alertControllerWithTitle:title

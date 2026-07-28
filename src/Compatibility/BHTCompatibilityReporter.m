@@ -7,6 +7,7 @@
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <stdatomic.h>
 
 @interface BHTRailBrandingObservationState : NSObject
 @property(nonatomic, weak) UIImageView* logoView;
@@ -30,6 +31,9 @@ static NSMutableDictionary<NSString*, NSMutableDictionary*>*
 static NSDictionary* BHTRailBrandingObservation;
 static NSDictionary* BHTThemeRuntimeObservation;
 static NSUInteger BHTNavigationReportGeneration;
+static atomic_ulong
+    BHTForYouFilterDiagnosticCounters[
+        BHTForYouFilterDiagnosticEventCount];
 
 static NSObject* BHTObservationLock(void) {
     static NSObject* lock;
@@ -47,6 +51,105 @@ static dispatch_queue_t BHTCompatibilityReportQueue(void) {
             DISPATCH_QUEUE_SERIAL);
     });
     return queue;
+}
+
+void BHTRecordForYouFilterDiagnostic(
+    BHTForYouFilterDiagnosticEvent event) {
+    if (event >= BHTForYouFilterDiagnosticEventCount) return;
+    atomic_fetch_add_explicit(
+        &BHTForYouFilterDiagnosticCounters[event], 1,
+        memory_order_relaxed);
+}
+
+static NSDictionary* BHTForYouControllerRuntimeShape(void) {
+    Class controllerClass = NSClassFromString(@"T1URTViewController");
+    if (!controllerClass) return @{@"classPresent": @NO};
+
+    NSMutableSet<NSString*>* methods = [NSMutableSet set];
+    NSMutableArray<NSDictionary*>* ivars = [NSMutableArray array];
+    for (Class current = controllerClass;
+         current && current != NSObject.class;
+         current = class_getSuperclass(current)) {
+        unsigned int methodCount = 0;
+        Method* methodList =
+            class_copyMethodList(current, &methodCount);
+        for (unsigned int index = 0; index < methodCount; index++) {
+            NSString* name =
+                NSStringFromSelector(
+                    method_getName(methodList[index]));
+            NSString* lower = name.lowercaseString;
+            if ([lower containsString:@"timeline"] ||
+                [lower containsString:@"urt"]) {
+                [methods addObject:name];
+            }
+        }
+        free(methodList);
+
+        unsigned int ivarCount = 0;
+        Ivar* ivarList = class_copyIvarList(current, &ivarCount);
+        for (unsigned int index = 0; index < ivarCount; index++) {
+            const char* rawName = ivar_getName(ivarList[index]);
+            NSString* name =
+                rawName
+                    ? [NSString stringWithUTF8String:rawName]
+                    : @"";
+            NSString* lower = name.lowercaseString;
+            if (!([lower containsString:@"timeline"] ||
+                  [lower containsString:@"urt"])) {
+                continue;
+            }
+            const char* rawType =
+                ivar_getTypeEncoding(ivarList[index]);
+            [ivars addObject:@{
+                @"declaringClass": NSStringFromClass(current),
+                @"name": name,
+                @"type":
+                    rawType
+                        ? [NSString stringWithUTF8String:rawType]
+                        : @""
+            }];
+        }
+        free(ivarList);
+    }
+
+    [ivars sortUsingComparator:^NSComparisonResult(
+               NSDictionary* first, NSDictionary* second) {
+        return [first[@"name"]
+            localizedCaseInsensitiveCompare:second[@"name"]];
+    }];
+    return @{
+        @"classPresent": @YES,
+        @"timelineMethods":
+            [[methods allObjects]
+                sortedArrayUsingSelector:
+                    @selector(localizedCaseInsensitiveCompare:)],
+        @"timelineIvars": [ivars copy],
+    };
+}
+
+static NSDictionary* BHTForYouFilterDiagnosticSnapshot(void) {
+    NSArray<NSString*>* names = @[
+        @"primaryControllerChecks",
+        @"nonForYouControllerChecks",
+        @"unknownControllerChecks",
+        @"missingStatusItems",
+        @"decisionCacheHits",
+        @"usernameMatches",
+        @"postTextMatches",
+        @"noMatches",
+    ];
+    NSMutableDictionary* snapshot =
+        [NSMutableDictionary dictionaryWithCapacity:names.count];
+    [names enumerateObjectsUsingBlock:^(
+               NSString* name, NSUInteger index, BOOL* stop) {
+        snapshot[name] =
+            @(atomic_load_explicit(
+                &BHTForYouFilterDiagnosticCounters[index],
+                memory_order_relaxed));
+    }];
+    snapshot[@"controllerRuntimeShape"] =
+        BHTForYouControllerRuntimeShape();
+    return [snapshot copy];
 }
 
 static NSArray<NSString*>* BHTNavigationEntryClassSnapshot(void) {
@@ -715,6 +818,7 @@ void BHTWriteCompatibilityReport(void) {
         },
         @"features": featureSummary,
         @"settings": BHTSettingsSnapshot(),
+        @"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot(),
         @"mediaActionMenus": BHTMediaActionSettingsSnapshot(),
         @"likesRuntime": BHTLikesDiagnosticsSnapshot(),
         @"sidebarNavigation": @{

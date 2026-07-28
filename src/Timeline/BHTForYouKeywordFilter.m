@@ -520,7 +520,13 @@ static BOOL BHTNormalizedArrayContainsValue(
 }
 
 + (BOOL)matchesPostText:(NSString*)postText {
-    if (postText.length == 0) return NO;
+    return [self
+        matchesAnyPostTextCandidate:postText.length > 0 ? @[postText] : @[]];
+}
+
++ (BOOL)matchesAnyPostTextCandidate:
+    (NSArray<NSString*>*)candidates {
+    if (candidates.count == 0) return NO;
     NSArray<NSString*>* needles = nil;
     @synchronized(self) {
         BHTLoadKeywordSnapshotsLocked();
@@ -528,12 +534,16 @@ static BOOL BHTNormalizedArrayContainsValue(
     }
     if (needles.count == 0) return NO;
 
-    NSString* normalized =
-        BHTCanonicalKeyword(postText,
-                            BHTForYouKeywordFilterKindPostText);
-    if (normalized.length == 0) return NO;
-    for (NSString* needle in needles) {
-        if ([normalized containsString:needle]) return YES;
+    for (id candidate in candidates) {
+        NSString* normalized =
+            BHTCanonicalKeyword(
+                candidate, BHTForYouKeywordFilterKindPostText);
+        if (normalized.length == 0) continue;
+        for (NSString* needle in needles) {
+            // Literal substring matching intentionally makes `grok` match
+            // both plain text and a mention such as `@grok`.
+            if ([normalized containsString:needle]) return YES;
+        }
     }
     return NO;
 }

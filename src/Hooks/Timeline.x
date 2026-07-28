@@ -4,6 +4,7 @@
 //
 
 #import "HookHelpers.h"
+#import "Compatibility/BHTCompatibilityReporter.h"
 #import "Timeline/BHTForYouKeywordFilter.h"
 
 // MARK: - For You timeline identity
@@ -21,6 +22,16 @@ typedef NS_ENUM(NSInteger, BHTHomeTimelineRole) {
     BHTHomeTimelineRolePrimaryForYou = 1,
     BHTHomeTimelineRoleAmbiguous = 2,
 };
+
+@interface BHTForYouKeywordDecisionCache : NSObject
+@property(nonatomic) NSUInteger generation;
+@property(nonatomic) BOOL hidden;
+@property(nonatomic, copy) NSArray<NSString*>* usernameCandidates;
+@property(nonatomic, copy) NSArray<NSString*>* postTextCandidates;
+@end
+
+@implementation BHTForYouKeywordDecisionCache
+@end
 
 static void BHTMergeHomeTimelineRole(id timeline,
                                      BHTHomeTimelineRole incomingRole) {
@@ -485,6 +496,8 @@ static BOOL IsPrimaryForYouTimelineController(
     Class urtControllerClass = NSClassFromString(@"T1URTViewController");
     if (!urtControllerClass ||
         ![dataViewController isKindOfClass:urtControllerClass]) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticControllerNonForYou);
         return NO;
     }
 
@@ -492,6 +505,8 @@ static BOOL IsPrimaryForYouTimelineController(
         ItemStringValue(dataViewController, @selector(adDisplayLocation),
                         "adDisplayLocation");
     if (![location isEqualToString:@"TIMELINE_HOME"]) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticControllerNonForYou);
         return NO;
     }
 
@@ -502,8 +517,17 @@ static BOOL IsPrimaryForYouTimelineController(
     // Re-evaluate the current object on every section update. Never carry a
     // positive controller decision across an unknown or explicitly non-For You
     // timeline, since X is free to reuse controllers between feeds.
-    return role.integerValue ==
-           BHTHomeTimelineRolePrimaryForYou;
+    if (!role) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticControllerUnknown);
+        return NO;
+    }
+    BOOL primary =
+        role.integerValue == BHTHomeTimelineRolePrimaryForYou;
+    BHTRecordForYouFilterDiagnostic(
+        primary ? BHTForYouFilterDiagnosticControllerPrimary
+                : BHTForYouFilterDiagnosticControllerNonForYou);
+    return primary;
 }
 
 static id StatusFromTimelineItem(id item) {
@@ -563,8 +587,28 @@ static void AddUsernameCandidates(NSMutableArray<NSString*>* candidates,
     }
 }
 
-static NSString* ReadableTextFromDisplayModel(id model) {
-    if (!model) return nil;
+static NSArray<NSString*>* UsernameCandidatesForStatuses(
+    id outerStatus, id representedStatus) {
+    NSMutableArray<NSString*>* candidates =
+        [NSMutableArray arrayWithCapacity:4];
+    AddUsernameCandidates(candidates, representedStatus);
+    if (outerStatus != representedStatus) {
+        // Include the reposting account as well as the visible post author.
+        AddUsernameCandidates(candidates, outerStatus);
+    }
+    return [candidates copy];
+}
+
+static void AddPostTextCandidate(
+    NSMutableArray<NSString*>* candidates, NSString* value) {
+    if (value.length > 0 && ![candidates containsObject:value]) {
+        [candidates addObject:value];
+    }
+}
+
+static void AddPostTextCandidatesFromDisplayModel(
+    NSMutableArray<NSString*>* textCandidates, id model) {
+    if (!model) return;
     struct {
         const char* selector;
         const char* ivar;
@@ -582,36 +626,35 @@ static NSString* ReadableTextFromDisplayModel(id model) {
                 [NSString stringWithUTF8String:
                               candidates[index].selector]),
             candidates[index].ivar);
-        if (value.length > 0) return value;
+        AddPostTextCandidate(textCandidates, value);
     }
-    return nil;
 }
 
-static NSString* VisiblePostText(id status) {
-    if (!status) return nil;
+static NSArray<NSString*>* PostTextCandidates(id status) {
+    if (!status) return @[];
+    NSMutableArray<NSString*>* candidates =
+        [NSMutableArray arrayWithCapacity:10];
 
-    // Note Tweets can expose a shortened legacy `text`; prefer the dedicated
-    // full-note model before consulting those compatibility accessors.
+    // Note Tweets can expose a shortened legacy `text`, while X's display
+    // model can omit leading reply mentions. Inspect every trusted primary
+    // representation instead of returning the first nonempty one.
     id fullNoteModel = ItemObjectValue(
         status,
         NSSelectorFromString(
             @"_tfn_fullNoteTweetDisplayTextModel"),
         "_fullNoteTweetDisplayTextModel");
-    NSString* modelText =
-        ReadableTextFromDisplayModel(fullNoteModel);
-    if (modelText.length > 0) return modelText;
+    AddPostTextCandidatesFromDisplayModel(candidates, fullNoteModel);
 
     id displayTextModel =
         ItemObjectValue(status,
                         NSSelectorFromString(@"displayTextModel"),
                         "_displayTextModel");
-    modelText = ReadableTextFromDisplayModel(displayTextModel);
-    if (modelText.length > 0) return modelText;
+    AddPostTextCandidatesFromDisplayModel(candidates, displayTextModel);
 
     struct {
         const char* selector;
         const char* ivar;
-    } candidates[] = {
+    } rawFields[] = {
         {"fullText", "fullText"},
         {"text", "text"},
         {"displayText", "displayText"},
@@ -619,49 +662,44 @@ static NSString* VisiblePostText(id status) {
     };
 
     for (NSUInteger index = 0;
-         index < sizeof(candidates) / sizeof(candidates[0]); index++) {
+         index < sizeof(rawFields) / sizeof(rawFields[0]); index++) {
         NSString* value =
             ItemReadableTextValue(
                 status,
                 NSSelectorFromString(
                     [NSString stringWithUTF8String:
-                                  candidates[index].selector]),
-                candidates[index].ivar);
-        if (value.length > 0) return value;
+                                  rawFields[index].selector]),
+                rawFields[index].ivar);
+        AddPostTextCandidate(candidates, value);
     }
-    return nil;
+    return [candidates copy];
 }
 
 static BOOL ComputeShouldHideForYouKeywordItem(
-    id item, BOOL hasUsernameFilters, BOOL hasPostTextFilters) {
-    id outerStatus = StatusFromTimelineItem(item);
-    if (!outerStatus) return NO;
-
-    id representedStatus = RepresentedStatus(outerStatus);
-    if (!representedStatus) return NO;
-
+    NSArray<NSString*>* usernameCandidates,
+    NSArray<NSString*>* postTextCandidates,
+    BOOL hasUsernameFilters, BOOL hasPostTextFilters) {
     if (hasUsernameFilters) {
-        NSMutableArray<NSString*>* candidates =
-            [NSMutableArray arrayWithCapacity:4];
-        AddUsernameCandidates(candidates, representedStatus);
-        if (outerStatus != representedStatus) {
-            // Include the reposting account as well as the visible post author.
-            AddUsernameCandidates(candidates, outerStatus);
-        }
         BOOL matchesUsername = [BHTForYouKeywordFilter
-            matchesAnyUsernameCandidate:candidates];
+            matchesAnyUsernameCandidate:usernameCandidates];
         if (matchesUsername) {
+            BHTRecordForYouFilterDiagnostic(
+                BHTForYouFilterDiagnosticUsernameMatch);
             return YES;
         }
     }
 
     if (hasPostTextFilters) {
-        NSString* postText = VisiblePostText(representedStatus);
-        if ([BHTForYouKeywordFilter matchesPostText:postText]) {
+        if ([BHTForYouKeywordFilter
+                matchesAnyPostTextCandidate:postTextCandidates]) {
+            BHTRecordForYouFilterDiagnostic(
+                BHTForYouFilterDiagnosticPostTextMatch);
             return YES;
         }
     }
 
+    BHTRecordForYouFilterDiagnostic(
+        BHTForYouFilterDiagnosticNoMatch);
     return NO;
 }
 
@@ -675,26 +713,61 @@ static BOOL ShouldHideForYouKeywordItem(
         return NO;
     }
 
-    // URT item view models are immutable after delivery and can be considered
-    // repeatedly while X rebuilds sections. Keep exactly one packed decision
-    // per item; a filter edit increments the generation and invalidates it.
-    // This function is called only after the strict For You controller gate,
-    // so a cached decision is never consulted from Following.
-    NSNumber* cached =
-        objc_getAssociatedObject(cacheOwner,
+    id outerStatus = StatusFromTimelineItem(cacheOwner);
+    if (!outerStatus) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticMissingStatus);
+        return NO;
+    }
+    id representedStatus = RepresentedStatus(outerStatus);
+    if (!representedStatus) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticMissingStatus);
+        return NO;
+    }
+
+    NSArray<NSString*>* usernameCandidates =
+        hasUsernameFilters
+            ? UsernameCandidatesForStatuses(
+                  outerStatus, representedStatus)
+            : @[];
+    NSArray<NSString*>* postTextCandidates =
+        hasPostTextFilters
+            ? PostTextCandidates(representedStatus)
+            : @[];
+
+    // X may hydrate or replace text after a section's first delivery. Cache
+    // both decisions together with the exact trusted inputs rather than
+    // treating the view model as permanently immutable. Repeated updates stay
+    // cheap, while newly available fullText/@mentions automatically invalidate
+    // an earlier NO. The strict controller gate keeps this cache out of
+    // Following, and a filter edit changes the generation.
+    BHTForYouKeywordDecisionCache* cached =
+        objc_getAssociatedObject(outerStatus,
                                  &kBHTForYouKeywordDecisionKey);
-    if (cached) {
-        NSUInteger packed = cached.unsignedIntegerValue;
-        if ((packed >> 1) == generation) {
-            return (packed & 1u) != 0;
-        }
+    if ([cached
+            isKindOfClass:BHTForYouKeywordDecisionCache.class] &&
+        cached.generation == generation &&
+        [cached.usernameCandidates
+            isEqualToArray:usernameCandidates] &&
+        [cached.postTextCandidates
+            isEqualToArray:postTextCandidates]) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticDecisionCacheHit);
+        return cached.hidden;
     }
 
     BOOL hidden = ComputeShouldHideForYouKeywordItem(
-        cacheOwner, hasUsernameFilters, hasPostTextFilters);
+        usernameCandidates, postTextCandidates, hasUsernameFilters,
+        hasPostTextFilters);
+    BHTForYouKeywordDecisionCache* updated =
+        [BHTForYouKeywordDecisionCache new];
+    updated.generation = generation;
+    updated.hidden = hidden;
+    updated.usernameCandidates = usernameCandidates;
+    updated.postTextCandidates = postTextCandidates;
     objc_setAssociatedObject(
-        cacheOwner, &kBHTForYouKeywordDecisionKey,
-        @((generation << 1) | (hidden ? 1u : 0u)),
+        outerStatus, &kBHTForYouKeywordDecisionKey, updated,
         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return hidden;
 }

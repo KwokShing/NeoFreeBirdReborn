@@ -50,8 +50,12 @@ FOUNDATION_EXPORT const NSUInteger BHTForYouKeywordMaximumLength;
     (nullable NSArray<NSString*>*)candidates;
 
 // Post-text matching is a literal substring match. The caller decides which
-// native text model represents the primary visible post.
+// native text models represent the primary visible post. The array form lets
+// callers include both X's display text and raw full text, since display text
+// may omit leading @mentions.
 + (BOOL)matchesPostText:(nullable NSString*)postText;
++ (BOOL)matchesAnyPostTextCandidate:
+    (nullable NSArray<NSString*>*)candidates;
 
 // Incremented whenever either cached keyword snapshot changes. Timeline item
 // decision caches can include this value in their own cache key.

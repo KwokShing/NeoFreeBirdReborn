@@ -551,14 +551,14 @@
 "FOR_YOU_KEYWORD_FILTERS_TITLE" = "For You keyword filters";
 "FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE" = "Usernames & display names";
 "FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER" = "Hides a For You post when the visible author or reposting account's username or display name contains a match. Changes apply the next time For You refreshes. Following is never filtered.";
-"FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE" = "Post text";
-"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER" = "Hides a For You post when its primary visible text contains one of these words or phrases. Changes apply the next time For You refreshes. Following is never filtered.";
+"FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE" = "Post text & @mentions";
+"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER" = "Hides a For You post when any version of its primary text, including leading @mentions, contains one of these words or phrases. Changes apply the next time For You refreshes. Following is never filtered.";
 "FOR_YOU_FILTERS_ADD_KEYWORD" = "Add keyword...";
 "FOR_YOU_FILTERS_TAP_TO_EDIT" = "Tap to edit";
 "FOR_YOU_FILTERS_EDIT_KEYWORD_TITLE" = "Edit keyword";
 "FOR_YOU_FILTERS_ADD_KEYWORD_TITLE" = "Add keyword";
 "FOR_YOU_FILTERS_USERNAME_EDITOR_DETAIL" = "Matches literal text in usernames and display names. An optional leading @ is ignored.";
-"FOR_YOU_FILTERS_POST_TEXT_EDITOR_DETAIL" = "Matches literal text in the primary visible post.";
+"FOR_YOU_FILTERS_POST_TEXT_EDITOR_DETAIL" = "Matches literal text in the primary post, including @mentions.";
 "FOR_YOU_FILTERS_KEYWORD_PLACEHOLDER" = "Word or phrase";
 "FOR_YOU_FILTERS_SAVE" = "Save";
 "FOR_YOU_FILTERS_CANCEL" = "Cancel";
