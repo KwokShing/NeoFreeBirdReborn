@@ -11,6 +11,7 @@
 #import "Core/BHTSettings.h"
 #import "Headers/TWHeaders.h"
 #import "Settings/ModernSettingsCells.h"
+#import "Settings/Pages/PresetSettingsViewController.h"
 
 @interface AppearanceSettingsViewController () <UIFontPickerViewControllerDelegate>
 @end
@@ -45,19 +46,10 @@
 #pragma mark - Sub-page Navigation
 
 - (void)showThemeViewController:(NSDictionary*)sender {
-    Class ColorThemeViewControllerClass = objc_getClass("ColorThemeViewController");
-    if (ColorThemeViewControllerClass) {
-        UIViewController* themeVC = [[ColorThemeViewControllerClass alloc] init];
-        if (self.account) {
-            [themeVC.navigationItem
-                setTitleView:
-                    [objc_getClass("TFNTitleView")
-                        titleViewWithTitle:[[BHTBundle sharedBundle]
-                                               localizedStringForKey:@"THEME_SETTINGS_NAVIGATION_TITLE"]
-                                  subtitle:self.account.displayUsername]];
-        }
-        [self.navigationController pushViewController:themeVC animated:YES];
-    }
+    PresetSettingsViewController* themes =
+        [[PresetSettingsViewController alloc]
+            initWithAccount:self.account];
+    [self.navigationController pushViewController:themes animated:YES];
 }
 
 - (void)showAppIconViewController:(NSDictionary*)sender {

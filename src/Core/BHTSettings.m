@@ -19,8 +19,8 @@ static NSString* const BHTSettingsProfileErrorDomain =
 static NSArray<NSString*>* BHTSettingsPageOrder(void) {
     return @[
         @"general", @"appearance", @"grok", @"timelines", @"tweets",
-        @"media_downloads", @"profiles", @"search", @"web", @"branding",
-        @"debug"
+        @"media_downloads", @"profiles", @"search", @"backup", @"web",
+        @"branding", @"debug"
     ];
 }
 
@@ -54,30 +54,36 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"titleKey": @"THEME_OPTION_TITLE",
                         @"action": @"showThemeViewController:",
                         @"type": @"button",
+                        @"searchPageKey": @"themes",
+                        @"searchTargetIdentifier": @"themes.current",
                         @"sectionKey": @"SETTINGS_SECTION_VISUALS"
                     },
                     @{
                         @"titleKey": @"APP_ICON_TITLE",
                         @"action": @"showAppIconViewController:",
                         @"type": @"button",
+                        @"searchAutoOpen": @YES,
                         @"sectionKey": @"SETTINGS_SECTION_VISUALS"
                     },
                     @{
                         @"titleKey": @"CUSTOM_TAB_BAR_OPTION_TITLE",
                         @"action": @"showCustomTabBarVC:",
                         @"type": @"button",
+                        @"searchAutoOpen": @YES,
                         @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"
                     },
                     @{
                         @"titleKey": @"LIKES_NAVIGATION_EDITOR_TITLE",
                         @"action": @"showLikesNavigationVC:",
                         @"type": @"button",
+                        @"searchAutoOpen": @YES,
                         @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"
                     },
                     @{
                         @"titleKey": @"SIDEBAR_NAVIGATION_EDITOR_TITLE",
                         @"action": @"showSidebarNavigationVC:",
                         @"type": @"button",
+                        @"searchAutoOpen": @YES,
                         @"sectionKey": @"SETTINGS_SECTION_NAVIGATION"
                     },
                     @{@"key": @"tab_bar_theming",
@@ -110,6 +116,7 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"key": @"regular_font_button",
                         @"titleKey": @"REGULAR_FONTS_PICKER_OPTION_TITLE",
                         @"action": @"showRegularFontPicker:",
+                        @"searchAutoOpen": @YES,
                         @"prefKeyForSubtitle": @"bhtwitter_font_1",
                         @"subtitleDefaultKey": @"FONT_SYSTEM_DEFAULT_SUBTITLE",
                         @"sectionKey": @"SETTINGS_SECTION_FONTS"
@@ -120,6 +127,7 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"key": @"bold_font_button",
                         @"titleKey": @"BOLD_FONTS_PICKER_OPTION_TITLE",
                         @"action": @"showBoldFontPicker:",
+                        @"searchAutoOpen": @YES,
                         @"prefKeyForSubtitle": @"bhtwitter_font_2",
                         @"subtitleDefaultKey": @"FONT_SYSTEM_DEFAULT_SUBTITLE",
                         @"sectionKey": @"SETTINGS_SECTION_FONTS"
@@ -201,6 +209,7 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"titleKey": @"MEDIA_ACTION_MENU_EDITOR_TITLE",
                         @"action": @"showMediaActionMenus:",
                         @"type": @"button",
+                        @"searchAutoOpen": @YES,
                         @"sectionKey": @"SETTINGS_SECTION_DOWNLOADS_ACTIONS"
                     },
                     @{
@@ -367,6 +376,7 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"default": @10,
                         @"titleKey": @"UNDO_TWEET_TITLE",
                         @"action": @"showUndoTimeoutPicker:",
+                        @"searchAutoOpen": @YES,
                         @"sectionKey": @"SETTINGS_SECTION_COMPOSING"
                     },
                     @{@"key": @"tweet_confirm",
@@ -446,6 +456,26 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                     }
                 ]
             },
+            @"backup": @{
+                @"titleKey": @"MODERN_SETTINGS_BACKUP_TITLE",
+                @"subtitleKey": @"MODERN_SETTINGS_BACKUP_SUBTITLE",
+                @"settings": @[
+                    @{
+                        @"titleKey": @"EXPORT_PREFERENCE_PROFILE_TITLE",
+                        @"action": @"exportPreferenceProfile:",
+                        @"type": @"button",
+                        @"sectionKey":
+                            @"PREFERENCE_PROFILES_SECTION_TITLE"
+                    },
+                    @{
+                        @"titleKey": @"IMPORT_PREFERENCE_PROFILE_TITLE",
+                        @"action": @"importPreferenceProfile:",
+                        @"type": @"button",
+                        @"sectionKey":
+                            @"PREFERENCE_PROFILES_SECTION_TITLE"
+                    }
+                ]
+            },
             @"branding": @{
                 @"titleKey": @"MODERN_SETTINGS_BRANDING_TITLE",
                 @"subtitleKey": @"MODERN_SETTINGS_BRANDING_SUBTITLE",
@@ -480,6 +510,7 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"type": @"compactButton",
                         @"key": @"sharing_domain",
                         @"action": @"showSharingDomainPrompt:",
+                        @"searchAutoOpen": @YES,
                         @"prefKeyForSubtitle": @"sharing_domain",
                         @"subtitleDefault": @"x.com",
                         @"sectionKey": @"SETTINGS_SECTION_LINKS_SHARING"

@@ -60,6 +60,11 @@ static NSString* const kBHTMediaActionGridFooterID =
     }
 }
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self revealSettingsSearchTargetIfNeeded];
+}
+
 - (void)viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
     [self.gridView.collectionViewLayout invalidateLayout];
@@ -255,6 +260,109 @@ static NSString* const kBHTMediaActionGridFooterID =
         ![self.selectedActions
             isEqualToArray:self.originalSelectedActions];
     self.navigationItem.rightBarButtonItem.enabled = changed;
+}
+
+#pragma mark - Settings search
+
+- (NSIndexPath*)indexPathForSettingsSearchTarget:(NSString*)target {
+    if (target.length == 0) return nil;
+    for (NSUInteger item = 0; item < self.allActions.count; item++) {
+        NSDictionary* metadata = [BHTMediaActionUtility
+            metadataForIdentifier:self.allActions[item]
+                             kind:self.kind];
+        if ([metadata[TabPageKey] isEqualToString:target]) {
+            return [NSIndexPath indexPathForItem:(NSInteger)item
+                                      inSection:0];
+        }
+    }
+    return nil;
+}
+
+- (void)highlightSettingsSearchTargetAtIndexPath:
+    (NSIndexPath*)indexPath {
+    if (!self.view.window ||
+        (self.navigationController &&
+         self.navigationController.topViewController != self)) {
+        return;
+    }
+    [self.gridView layoutIfNeeded];
+    UICollectionViewCell* cell =
+        [self.gridView cellForItemAtIndexPath:indexPath];
+    if (!cell) return;
+
+    UIColor* accent = CurrentAccentColor() ?: UIColor.systemBlueColor;
+    UIView* highlight =
+        [[UIView alloc] initWithFrame:CGRectInset(cell.bounds, 2, 2)];
+    highlight.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth |
+        UIViewAutoresizingFlexibleHeight;
+    highlight.userInteractionEnabled = NO;
+    highlight.backgroundColor =
+        [accent colorWithAlphaComponent:0.12];
+    highlight.layer.cornerRadius = 14;
+    highlight.layer.borderWidth = 3;
+    highlight.layer.borderColor = accent.CGColor;
+    highlight.alpha = 0;
+    [cell addSubview:highlight];
+
+    [UIView animateKeyframesWithDuration:0.85
+                                  delay:0
+                                options:
+                                    UIViewKeyframeAnimationOptionAllowUserInteraction
+                             animations:^{
+        [UIView addKeyframeWithRelativeStartTime:0
+                                relativeDuration:0.25
+                                      animations:^{
+            highlight.alpha = 1;
+        }];
+        [UIView addKeyframeWithRelativeStartTime:0.55
+                                relativeDuration:0.45
+                                      animations:^{
+            highlight.alpha = 0;
+        }];
+    }
+                             completion:^(__unused BOOL finished) {
+        [highlight removeFromSuperview];
+    }];
+}
+
+- (void)revealSettingsSearchTargetIfNeeded {
+    NSString* target = self.settingsSearchTargetIdentifier;
+    if (target.length == 0 || !self.gridView.window) return;
+
+    NSIndexPath* indexPath =
+        [self indexPathForSettingsSearchTarget:target];
+    self.settingsSearchTargetIdentifier = nil;
+    if (!indexPath) return;
+
+    [self.gridView
+        scrollToItemAtIndexPath:indexPath
+              atScrollPosition:
+                  UICollectionViewScrollPositionCenteredVertically
+                      animated:YES];
+    NSString* stableTarget = [target copy];
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW,
+                      (int64_t)(0.35 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            typeof(self) strongSelf = weakSelf;
+            if (!strongSelf ||
+                strongSelf.navigationController.topViewController !=
+                    strongSelf) {
+                return;
+            }
+            // The editor supports drag reordering, so resolve the stable
+            // action identifier again instead of highlighting a stale slot.
+            NSIndexPath* currentIndexPath =
+                [strongSelf
+                    indexPathForSettingsSearchTarget:stableTarget];
+            if (currentIndexPath) {
+                [strongSelf
+                    highlightSettingsSearchTargetAtIndexPath:
+                        currentIndexPath];
+            }
+        });
 }
 
 #pragma mark - Save and restore

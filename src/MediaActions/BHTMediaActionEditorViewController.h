@@ -10,6 +10,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithKind:(BHTMediaActionKind)kind
                       account:(nullable TFNTwitterAccount*)account;
 
+// Settings search supplies an action's stable TabPageKey. The matching grid
+// item is revealed and highlighted without changing visibility or order.
+@property(nonatomic, copy, nullable) NSString*
+    settingsSearchTargetIdentifier;
+
 @end
 
 NS_ASSUME_NONNULL_END

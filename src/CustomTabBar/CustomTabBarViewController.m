@@ -46,6 +46,33 @@ extern BOOL panelIsGenuinelyAvailable(long long panelID);
 static NSString* const kGridHeaderID = @"gridHeader";
 static NSString* const kGridFooterID = @"gridFooter";
 
+static void BHTPulseCustomTabBarSearchTarget(UIView* target) {
+    if (!target.window) return;
+    UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification,
+                                    target);
+    CGAffineTransform original = target.transform;
+    [UIView animateWithDuration:0.18
+                          delay:0
+                        options:UIViewAnimationOptionAllowUserInteraction |
+                                UIViewAnimationOptionBeginFromCurrentState |
+                                UIViewAnimationOptionCurveEaseInOut
+                     animations:^{
+                         target.transform =
+                             CGAffineTransformScale(original, 1.06, 1.06);
+                     }
+                     completion:^(__unused BOOL finished) {
+                         [UIView animateWithDuration:0.18
+                                               delay:0
+                                             options:
+                                                 UIViewAnimationOptionAllowUserInteraction |
+                                                 UIViewAnimationOptionCurveEaseInOut
+                                          animations:^{
+                                              target.transform = original;
+                                          }
+                                          completion:nil];
+                     }];
+}
+
 @interface CustomTabBarViewController () <UICollectionViewDataSource,
                                           UICollectionViewDelegateFlowLayout>
 @property (nonatomic, strong) UICollectionView* gridView;
@@ -84,6 +111,41 @@ static NSString* const kGridFooterID = @"gridFooter";
     for (UIWindow* window in [UIApplication sharedApplication].windows) {
         [self findAndHideFloatingActionButtonInView:window];
     }
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self revealSettingsSearchTargetIfNeeded];
+}
+
+- (void)revealSettingsSearchTargetIfNeeded {
+    NSString* target = self.settingsSearchTargetIdentifier;
+    if (target.length == 0 || !self.gridView.window) return;
+
+    NSUInteger index = [self.allPages indexOfObject:target];
+    self.settingsSearchTargetIdentifier = nil;
+    if (index == NSNotFound) return;
+
+    NSIndexPath* indexPath =
+        [NSIndexPath indexPathForItem:index inSection:0];
+    [self.gridView scrollToItemAtIndexPath:indexPath
+                          atScrollPosition:
+                              UICollectionViewScrollPositionCenteredVertically
+                                  animated:NO];
+    [self.gridView layoutIfNeeded];
+    UICollectionViewCell* cell =
+        [self.gridView cellForItemAtIndexPath:indexPath];
+    if (cell) {
+        BHTPulseCustomTabBarSearchTarget(cell);
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UICollectionViewCell* deferredCell =
+            [weakSelf.gridView cellForItemAtIndexPath:indexPath];
+        BHTPulseCustomTabBarSearchTarget(deferredCell);
+    });
 }
 
 - (void)viewWillLayoutSubviews {

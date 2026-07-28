@@ -3842,10 +3842,17 @@ void BHTInstallNativeLikesNavigationController(
     if ([navigation isKindOfClass:UINavigationController.class]) {
         UINavigationController* nativeNavigation =
             (UINavigationController*)navigation;
-        if (nativeNavigation.viewControllers.count != 1 ||
-            nativeNavigation.viewControllers.firstObject != likes) {
+        // Keep native destinations opened from X's side menu (Profile,
+        // History, Lists, and similar screens) on top of the retained Likes
+        // root. Replacing the entire stack whenever this navigation
+        // controller reappeared made every side-menu tap immediately fall
+        // back to Likes.
+        if (nativeNavigation.viewControllers.firstObject != likes) {
             [nativeNavigation setViewControllers:@[likes] animated:NO];
             BHTIncrementLikesDiagnostic(@"nativeNavigationInstalls");
+        } else if (nativeNavigation.viewControllers.count > 1) {
+            BHTIncrementLikesDiagnostic(
+                @"nativeChildNavigationPreservations");
         }
     } else if (likes.parentViewController != navigation) {
         [navigation addChildViewController:likes];
@@ -3862,7 +3869,13 @@ void BHTInstallNativeLikesNavigationController(
     T1TabView* tabView =
         objc_getAssociatedObject(navigation,
                                  &kBHTNativeLikesTabViewKey);
-    if (tabView.isSelected) {
+    BOOL likesIsVisible = YES;
+    if ([navigation isKindOfClass:UINavigationController.class]) {
+        likesIsVisible =
+            ((UINavigationController*)navigation).topViewController ==
+            likes;
+    }
+    if (tabView.isSelected && likesIsVisible) {
         [likes activateForFirstPresentation];
     }
 }
@@ -3882,7 +3895,15 @@ static void BHTActivateLikesTabViewNow(T1TabView* view) {
     BHTInstallNativeLikesNavigationController(navigation, NO);
     BHTLikesViewController* likes =
         BHTLikesControllerForNativeNavigation(navigation, NO);
-    [likes activateForFirstPresentation];
+    BOOL likesIsVisible = YES;
+    if ([navigation isKindOfClass:UINavigationController.class]) {
+        likesIsVisible =
+            ((UINavigationController*)navigation).topViewController ==
+            likes;
+    }
+    if (likesIsVisible) {
+        [likes activateForFirstPresentation];
+    }
 }
 
 void BHTActivateLikesTabView(UIView* view) {
