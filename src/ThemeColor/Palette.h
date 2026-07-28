@@ -30,6 +30,11 @@
 // NeoFreeBird's optional custom accent. A nil result means the native X color
 // picker remains authoritative.
 + (nullable UIColor*)customAccentColor;
+// Theme-provider installation already knows its appearance. This variant
+// avoids querying X's hooked currentColorPalette while that hook is being
+// installed.
++ (nullable UIColor*)customAccentColorForDarkAppearance:
+    (BOOL)darkAppearance;
 + (void)invalidateCustomAccentColorCache;
 + (nullable UIColor*)colorFromHexString:(nullable NSString*)hexString;
 + (nullable NSString*)normalizedHexString:(nullable NSString*)hexString;

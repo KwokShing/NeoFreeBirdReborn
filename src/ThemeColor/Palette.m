@@ -270,6 +270,26 @@ static BOOL BHTPaletteBoolGetterIsCompatible(id object, SEL selector) {
     return [UIColor colorWithRed:red green:green blue:blue alpha:alpha];
 }
 
++ (UIColor*)customAccentColorForDarkAppearance:(BOOL)darkAppearance {
+    // Provider installation supplies the appearance explicitly. Do not call
+    // currentPaletteUsesDarkAppearance here: it reads X's hooked
+    // currentColorPalette and would recursively reinstall the same provider.
+    UIColor* themedAccent =
+        [self
+            customThemeColorsForDarkAppearance:
+                darkAppearance][BHTThemeColorAccentKey];
+    if (themedAccent) return themedAccent;
+    @synchronized(self) {
+        if (!BHTCustomAccentCacheIsValid) {
+            NSString* stored = [NSUserDefaults.standardUserDefaults
+                stringForKey:@"bht_custom_accent_hex"];
+            BHTCachedCustomAccent = [self colorFromHexString:stored];
+            BHTCustomAccentCacheIsValid = YES;
+        }
+        return BHTCachedCustomAccent;
+    }
+}
+
 + (UIColor*)customAccentColor {
     static dispatch_once_t observerToken;
     dispatch_once(&observerToken, ^{
@@ -281,20 +301,9 @@ static BOOL BHTPaletteBoolGetterIsCompatible(id object, SEL selector) {
                         [self invalidateCustomAccentColorCache];
                     }];
     });
-    // Full themes may use a different accessible accent in light and dark
-    // appearances. Resolve that live role before the legacy standalone accent.
-    UIColor* themedAccent =
-        [self customThemeColorForRole:BHTThemeColorAccentKey];
-    if (themedAccent) return themedAccent;
-    @synchronized(self) {
-        if (!BHTCustomAccentCacheIsValid) {
-            NSString* stored = [NSUserDefaults.standardUserDefaults
-                stringForKey:@"bht_custom_accent_hex"];
-            BHTCachedCustomAccent = [self colorFromHexString:stored];
-            BHTCustomAccentCacheIsValid = YES;
-        }
-        return BHTCachedCustomAccent;
-    }
+    return [self
+        customAccentColorForDarkAppearance:
+            [self currentPaletteUsesDarkAppearance]];
 }
 
 + (void)invalidateCustomAccentColorCache {

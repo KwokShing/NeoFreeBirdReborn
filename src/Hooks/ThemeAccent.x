@@ -1223,7 +1223,12 @@ static BOOL BHTInstallThemeHookForPalette(id palette,
         Method method = class_getInstanceMethod(cls, selector);
         BHTThemeAccentState* accentState = nil;
         if (BHTPrimaryColorMethodIsCompatible(method)) {
-            UIColor* accent = [Palette customAccentColor];
+            // This runs inside currentColorPalette's hook. Reuse the known
+            // provider appearance instead of asking that hook for it again.
+            UIColor* accent =
+                [Palette
+                    customAccentColorForDarkAppearance:
+                        darkAppearance];
             id storedOption = [NSUserDefaults.standardUserDefaults
                 objectForKey:@"bh_color_theme_selectedColor"];
             NSInteger option =

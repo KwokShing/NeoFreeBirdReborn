@@ -208,7 +208,10 @@ minimum intrinsic height, and exports its live geometry for diagnosis. Beta 22
 stops painting X's independently mounted tab-bar host and divider, and retains
 the native tab-bar appearance's background material while theming only its
 items. This keeps the selected palette without leaving an opaque strip when X
-collapses the lower navigation controls during scrolling. Beta 23 expands the
+collapses the lower navigation controls during scrolling. Beta 24 prevents
+theme-provider installation from recursively querying X's hooked
+`currentColorPalette`, which removes the beta 23 launch-time stack overflow
+while retaining appearance-specific accents. Beta 23 expands the
 built-in library with six contrast-checked palettes and adds a native custom
 theme builder. Personal themes are stored as strictly validated opaque
 light/dark role maps, can be managed without editing JSON, use mode-specific
