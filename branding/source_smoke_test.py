@@ -242,6 +242,11 @@ def main() -> None:
         'BHTProbe(@"appearance", @"T1ColorSettings", @"_t1_applyTheme", YES)',
         '@"railBrandingRuntime": BHTRailBrandingObservationSnapshot()',
         '@"themeRuntime": BHTThemeRuntimeObservationSnapshot()',
+        '@"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot()',
+        "atomic_fetch_add_explicit(",
+        "BHTForYouControllerRuntimeShape",
+        '@"timelineMethods"',
+        '@"timelineIvars"',
         '@"configurationGeneration"',
         '@"seenPaletteCount"',
         '@"providerClasses"',
@@ -1163,10 +1168,27 @@ def main() -> None:
             "NSWidthInsensitiveSearch",
             "matchesAnyUsernameCandidate:",
             "matchesPostText:",
+            "matchesAnyPostTextCandidate:",
             "filterGenerationWithUsernameFilters:",
             "BHTSettingsProfileDidApplyNotification",
         ),
         "cached For You keyword filter store",
+    )
+    post_text_matcher = source_section(
+        for_you_filter_source,
+        "+ (BOOL)matchesAnyPostTextCandidate:",
+        "+ (NSUInteger)filterGeneration",
+        "post-text and @mention matcher",
+    )
+    require_source_tokens(
+        post_text_matcher,
+        (
+            "for (id candidate in candidates)",
+            "BHTCanonicalKeyword(",
+            "BHTForYouKeywordFilterKindPostText",
+            "[normalized containsString:needle]",
+        ),
+        "literal post-text and @mention matching",
     )
 
     for_you_editor_source = (
@@ -1219,6 +1241,8 @@ def main() -> None:
             "_tfn_fullNoteTweetDisplayTextModel",
             "fromUserFullName",
             "kBHTForYouKeywordDecisionKey",
+            "BHTRecordForYouFilterDiagnostic",
+            "matchesAnyPostTextCandidate:",
             "filterGenerationWithUsernameFilters:",
             "ItemObjectValueAllowingUntypedIvar",
             "IsPrimaryForYouTimelineController",
@@ -1234,6 +1258,70 @@ def main() -> None:
                 "For You filter must fail open instead of caching or "
                 f"guessing selected-feed state: {forbidden}"
             )
+
+    post_text_candidates = source_section(
+        timeline_source,
+        "static NSArray<NSString*>* PostTextCandidates",
+        "static BOOL ComputeShouldHideForYouKeywordItem",
+        "For You post-text candidate extraction",
+    )
+    require_source_tokens(
+        post_text_candidates,
+        (
+            "_tfn_fullNoteTweetDisplayTextModel",
+            '@"displayTextModel"',
+            '{"fullText", "fullText"}',
+            '{"text", "text"}',
+            '{"displayText", "displayText"}',
+            '{"originalText", "originalText"}',
+            "AddPostTextCandidate(candidates, value)",
+        ),
+        "complete post-text candidate extraction",
+    )
+    if "VisiblePostText" in timeline_source:
+        raise AssertionError(
+            "For You filtering must inspect every trusted text "
+            "representation instead of selecting one visible string"
+        )
+
+    keyword_decision_cache = source_section(
+        timeline_source,
+        "static BOOL ShouldHideForYouKeywordItem",
+        "static BOOL ItemHasTopicBanner",
+        "For You keyword decision cache",
+    )
+    require_source_tokens(
+        keyword_decision_cache,
+        (
+            "BHTForYouKeywordDecisionCache",
+            "objc_getAssociatedObject(outerStatus",
+            "cached.generation == generation",
+            "isEqualToArray:usernameCandidates",
+            "isEqualToArray:postTextCandidates",
+            "return cached.hidden",
+            "updated.hidden = hidden",
+        ),
+        "content-aware For You keyword decision caching",
+    )
+    if "(hidden ?" in keyword_decision_cache:
+        raise AssertionError(
+            "For You filtering must not use the stale packed decision cache"
+        )
+
+    keyword_filter_call = source_section(
+        timeline_source,
+        "static BOOL ShouldHideTimelineItem",
+        "static NSArray* FilteredTimelineSections",
+        "For You keyword filter call site",
+    )
+    if not re.search(
+        r"if\s*\(\s*filterForYouKeywords\s*&&\s*"
+        r"ShouldHideForYouKeywordItem\s*\(",
+        keyword_filter_call,
+    ):
+        raise AssertionError(
+            "Keyword decisions must remain behind the strict For You gate"
+        )
 
     media_editor_source = (
         ROOT

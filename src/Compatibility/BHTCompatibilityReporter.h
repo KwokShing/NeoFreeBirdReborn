@@ -3,8 +3,22 @@
 @class UIImageView;
 @class UIView;
 
+typedef NS_ENUM(NSUInteger, BHTForYouFilterDiagnosticEvent) {
+    BHTForYouFilterDiagnosticControllerPrimary = 0,
+    BHTForYouFilterDiagnosticControllerNonForYou,
+    BHTForYouFilterDiagnosticControllerUnknown,
+    BHTForYouFilterDiagnosticMissingStatus,
+    BHTForYouFilterDiagnosticDecisionCacheHit,
+    BHTForYouFilterDiagnosticUsernameMatch,
+    BHTForYouFilterDiagnosticPostTextMatch,
+    BHTForYouFilterDiagnosticNoMatch,
+    BHTForYouFilterDiagnosticEventCount,
+};
+
 NSURL* BHTCompatibilityReportURL(void);
 void BHTWriteCompatibilityReport(void);
+void BHTRecordForYouFilterDiagnostic(
+    BHTForYouFilterDiagnosticEvent event);
 void BHTRecordNavigationEntryClasses(NSArray* entries);
 void BHTRecordTimelineItemObservation(id item, NSString* location, BOOL hidden);
 void BHTRecordMediaActionObservation(NSString* stage,
