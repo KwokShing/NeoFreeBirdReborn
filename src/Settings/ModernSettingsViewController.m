@@ -19,6 +19,7 @@
 #import "Settings/ModernSettingsPageViewController.h"
 #import "Settings/Pages/AppearanceSettingsViewController.h"
 #import "Settings/Pages/BackupSettingsViewController.h"
+#import "Settings/Pages/BHTForYouKeywordFiltersViewController.h"
 #import "Settings/Pages/DebugSettingsViewController.h"
 #import "Settings/Pages/MediaDownloadsSettingsViewController.h"
 #import "Settings/Pages/ProfilesSettingsViewController.h"
@@ -54,11 +55,24 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 @property (nonatomic, strong) UISearchController* settingsSearchController;
 @property (nonatomic, copy) NSArray<NSDictionary*>* settingsSearchIndex;
 @property (nonatomic, copy) NSArray<NSDictionary*>* filteredSettingsResults;
+// Keep the selected result alive while UISearchController finishes its own
+// dismissal transition. Pushing during that transition is unreliable on the
+// native settings navigation controller used by newer X builds.
+@property (nonatomic, copy, nullable)
+    NSDictionary* pendingSettingsSearchResult;
+@property (nonatomic, assign) BOOL settingsSearchRowsVisible;
+@property (nonatomic, assign) BOOL settingsSearchDismissalPending;
+@property (nonatomic, assign) NSUInteger
+    settingsSearchDismissalFallbackAttempts;
 @property (nonatomic, strong) NSArray* developerCells;
 @property (nonatomic, strong) NSArray* coolKidsCells;
 @property (nonatomic, strong) NSArray* specialThanksCells;
 @property (nonatomic, strong) NSArray* officialPageCells;
 - (void)themeDidChange:(NSNotification*)notification;
+- (void)queueSettingsSearchResult:(NSDictionary*)result;
+- (void)scheduleSettingsSearchDismissalFallback;
+- (void)consumePendingSettingsSearchResultIfPossible;
+- (void)openSettingsSearchResult:(NSDictionary*)result;
 @end
 
 @implementation ModernSettingsViewController
@@ -531,6 +545,47 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         [index addObject:[result copy]];
     }
 
+    NSDictionary* timelinesPage = pagesByKey[@"timelines"];
+    NSString* forYouFiltersTitle =
+        [bundle localizedStringForKey:@"FOR_YOU_KEYWORD_FILTERS_TITLE"];
+    for (NSDictionary* filterSection in @[
+             @{
+                 @"identifier": BHTForYouFiltersUsernamesSearchTarget,
+                 @"titleKey": @"FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE",
+                 @"detailKey": @"FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER",
+                 @"synonyms":
+                     @"author account handle username display name user"
+             },
+             @{
+                 @"identifier": BHTForYouFiltersPostTextSearchTarget,
+                 @"titleKey": @"FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE",
+                 @"detailKey": @"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER",
+                 @"synonyms":
+                     @"post tweet text content word phrase keyword"
+             }
+         ]) {
+        NSString* title =
+            [bundle localizedStringForKey:filterSection[@"titleKey"]];
+        NSString* detail =
+            [bundle localizedStringForKey:filterSection[@"detailKey"]];
+        [index addObject:@{
+            @"kind": @"deepSetting",
+            @"route": @"forYouKeywordFilters",
+            @"pageKey": @"timelines",
+            @"identifier": filterSection[@"identifier"],
+            @"title": title,
+            @"subtitle":
+                [NSString stringWithFormat:@"%@ — %@", forYouFiltersTitle,
+                                           detail],
+            @"icon": timelinesPage[@"icon"] ?: @"timeline_stroke",
+            @"searchText":
+                [@[title, detail, forYouFiltersTitle,
+                   timelinesPage[@"title"] ?: @"",
+                   filterSection[@"synonyms"], @"for you filter"]
+                    componentsJoinedByString:@" "]
+        }];
+    }
+
     NSDictionary* appearancePage = pagesByKey[@"appearance"];
     NSString* themesCategory =
         [bundle localizedStringForKey:@"MODERN_SETTINGS_PRESETS_TITLE"];
@@ -778,8 +833,7 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 }
 
 - (BOOL)isSettingsSearchActive {
-    return self.settingsSearchController.isActive &&
-           self.settingsSearchController.searchBar.text.length > 0;
+    return self.settingsSearchRowsVisible;
 }
 
 - (void)updateSearchResultsForSearchController:
@@ -788,6 +842,16 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         [searchController.searchBar.text
             stringByTrimmingCharactersInSet:
                 NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    // Deactivating UISearchController flips isActive before its table/layout
+    // transition finishes. Keep serving the captured result rows until
+    // didDismissSearchController: atomically resets and reloads the table.
+    if (self.settingsSearchDismissalPending) return;
+    // Once search is presented, keep the result-table data source in place
+    // until didDismissSearchController:. This also prevents an empty query
+    // from exposing tappable normal rows underneath the active search UI.
+    if (searchController.isActive || query.length > 0) {
+        self.settingsSearchRowsVisible = YES;
+    }
     if (query.length == 0) {
         self.filteredSettingsResults = @[];
     } else {
@@ -845,12 +909,24 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     // Rebuild immediately before searching so renamed personal themes and
     // navigation entries discovered during this app session are searchable.
     [self buildSettingsSearchIndex];
-}
-
-- (void)didDismissSearchController:(UISearchController*)searchController {
+    self.settingsSearchRowsVisible = YES;
     self.filteredSettingsResults = @[];
     self.tableView.backgroundView = nil;
     [self.tableView reloadData];
+}
+
+- (void)didDismissSearchController:(UISearchController*)searchController {
+    self.settingsSearchDismissalPending = NO;
+    self.settingsSearchRowsVisible = NO;
+    self.settingsSearchDismissalFallbackAttempts = 0;
+    self.filteredSettingsResults = @[];
+    self.tableView.backgroundView = nil;
+    [self.tableView reloadData];
+    // UISearchController has now completed its presentation transition, so it
+    // is safe to push the exact destination on X's native settings stack.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self consumePendingSettingsSearchResultIfPossible];
+    });
 }
 
 - (void)setupTableView {
@@ -1133,9 +1209,19 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
+    // Capture the result before dismissing search. Search-controller state can
+    // change during the selection callback, while the result rows are still
+    // visible in this table.
     if ([self isSettingsSearchActive]) {
-        NSDictionary* result = self.filteredSettingsResults[indexPath.row];
-        [self openSettingsSearchResult:result];
+        if (indexPath.section == 0 && indexPath.row >= 0 &&
+            indexPath.row <
+                (NSInteger)self.filteredSettingsResults.count) {
+            NSDictionary* result =
+                self.filteredSettingsResults[indexPath.row];
+            [self queueSettingsSearchResult:result];
+        }
+        // Never reinterpret a stale search index path as a row from the
+        // underlying settings/developer sections during dismissal.
         return;
     }
 
@@ -1172,6 +1258,86 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 }
 
 #pragma mark - Navigation to Sub-pages
+
+- (void)queueSettingsSearchResult:(NSDictionary*)result {
+    if (!result || self.pendingSettingsSearchResult) return;
+    self.pendingSettingsSearchResult = [result copy];
+    self.settingsSearchDismissalPending = YES;
+    self.settingsSearchDismissalFallbackAttempts = 0;
+    [self.settingsSearchController.searchBar resignFirstResponder];
+
+    if (self.settingsSearchController.isActive) {
+        self.settingsSearchController.active = NO;
+
+        // didDismissSearchController: is the primary handoff. Some native
+        // settings hosts omit it, so retry a bounded fallback instead of
+        // abandoning the selected result after one timing check.
+        [self scheduleSettingsSearchDismissalFallback];
+        return;
+    }
+
+    self.settingsSearchDismissalPending = NO;
+    self.settingsSearchRowsVisible = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self consumePendingSettingsSearchResultIfPossible];
+    });
+}
+
+- (void)scheduleSettingsSearchDismissalFallback {
+    if (!self.pendingSettingsSearchResult) return;
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW,
+                      (int64_t)(0.2 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf || !strongSelf.pendingSettingsSearchResult) {
+                return;
+            }
+
+            strongSelf.settingsSearchDismissalFallbackAttempts += 1;
+            BOOL transitionActive =
+                strongSelf.settingsSearchController.isActive ||
+                strongSelf.settingsSearchController.transitionCoordinator !=
+                    nil ||
+                strongSelf.settingsSearchController.presentingViewController !=
+                    nil;
+            if (!transitionActive) {
+                strongSelf.settingsSearchDismissalPending = NO;
+                strongSelf.settingsSearchRowsVisible = NO;
+                strongSelf.filteredSettingsResults = @[];
+                [strongSelf.tableView reloadData];
+                [strongSelf
+                    consumePendingSettingsSearchResultIfPossible];
+                return;
+            }
+
+            if (strongSelf.settingsSearchDismissalFallbackAttempts < 12) {
+                [strongSelf scheduleSettingsSearchDismissalFallback];
+            } else {
+                // Do not push over a transition that never completed, but
+                // release the pending state so a later search remains usable.
+                strongSelf.pendingSettingsSearchResult = nil;
+                strongSelf.settingsSearchDismissalPending = NO;
+                strongSelf.settingsSearchRowsVisible = NO;
+                strongSelf.filteredSettingsResults = @[];
+                [strongSelf.tableView reloadData];
+            }
+        });
+}
+
+- (void)consumePendingSettingsSearchResultIfPossible {
+    NSDictionary* result = self.pendingSettingsSearchResult;
+    if (!result) return;
+    self.pendingSettingsSearchResult = nil;
+    self.settingsSearchDismissalPending = NO;
+    self.settingsSearchDismissalFallbackAttempts = 0;
+    if (self.navigationController &&
+        self.navigationController.topViewController != self) {
+        return;
+    }
+    [self openSettingsSearchResult:result];
+}
 
 - (UIViewController*)settingsControllerForPageKey:(NSString*)pageKey {
     if ([pageKey isEqualToString:@"appearance"]) {
@@ -1220,7 +1386,12 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 
 - (void)openSettingsSearchResult:(NSDictionary*)result {
     NSString* route = result[@"route"];
-    NSString* targetIdentifier = result[@"identifier"];
+    // Category results intentionally open at the top of their page. Only
+    // concrete setting/theme/deep results participate in exact-row reveal.
+    NSString* targetIdentifier =
+        [result[@"kind"] isEqualToString:@"page"]
+            ? nil
+            : result[@"identifier"];
     UIViewController* directController = nil;
     if ([route isEqualToString:@"mainNavigation"]) {
         CustomTabBarViewController* editor =
@@ -1260,9 +1431,14 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
                 targetIdentifier;
         }
         directController = editor;
+    } else if ([route isEqualToString:@"forYouKeywordFilters"]) {
+        BHTForYouKeywordFiltersViewController* editor =
+            [[BHTForYouKeywordFiltersViewController alloc]
+                initWithAccount:self.account];
+        editor.settingsSearchTargetIdentifier = targetIdentifier;
+        directController = editor;
     }
     if (directController) {
-        self.settingsSearchController.active = NO;
         [self.navigationController pushViewController:directController
                                              animated:YES];
         return;
@@ -1287,7 +1463,6 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         themes.settingsSearchTargetIdentifier = targetIdentifier;
         themes.settingsSearchShouldOpenTarget = shouldOpenTarget;
     }
-    self.settingsSearchController.active = NO;
     [self.navigationController pushViewController:controller animated:YES];
 }
 

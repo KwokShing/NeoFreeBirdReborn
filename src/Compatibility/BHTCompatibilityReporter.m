@@ -513,6 +513,21 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"home", @"TwitterHomeFeatureImplementation.HomeTimelineContainerViewController", @"pinnedTimelinesRepository:didChangeWithPinnedTimelineModels:", NO),
         BHTProbe(@"home", @"TwitterHomeFeatureImplementation.HomeTimelineContainerViewController", @"tfn_supportsTabBarCollapsing", NO),
         BHTProbe(@"home", @"T1TabBarViewController", @"tfn_prefersTabBarPinned", NO),
+        BHTProbe(@"forYouFilters", @"T1TimelineFactory", @"homeTimelineForAccount:", NO),
+        BHTProbe(@"forYouFilters", @"T1TimelineFactory", @"homeCountryFilteredTimelineForAccount:", NO),
+        BHTProbe(@"forYouFilters", @"T1TimelineFactory", @"homeTopicFilteredTimelineForAccount:", NO),
+        BHTProbe(@"forYouFilters", @"T1TimelineFactory", @"homeLatestTimelineForAccount:", NO),
+        BHTProbe(@"forYouFilters", @"T1TimelineFactory", @"homeRankedFollowingTimelineForAccount:", NO),
+        BHTProbe(@"forYouFilters", @"T1TimelineFactory", @"rootViewControllerForHomeTimeline:homeCountryFilteredTimeline:homeLatestTimeline:homeRankedFollowingTimeline:account:", NO),
+        BHTProbe(@"forYouFilters", @"TFNTwitterHomeTimeline", @"deserializeStream", NO),
+        BHTProbe(@"forYouFilters", @"T1URTViewController", @"adDisplayLocation", NO),
+        BHTProbe(@"forYouFilters", @"T1URTViewController", @"urtTimeline", NO),
+        BHTProbe(@"forYouFilters", @"T1URTTimelineStatusItemViewModel", @"tweet", NO),
+        BHTProbe(@"forYouFilters", @"TFNTwitterStatus", @"representedStatus", NO),
+        BHTProbe(@"forYouFilters", @"TFNTwitterStatus", @"retweetedStatus", NO),
+        BHTProbe(@"forYouFilters", @"TFNTwitterStatus", @"fullText", NO),
+        BHTProbe(@"forYouFilters", @"TFNTwitterStatus", @"fromUserName", NO),
+        BHTProbe(@"forYouFilters", @"TFNTwitterStatus", @"fromUserFullName", NO),
         BHTProbe(@"appearance", @"T1TabBarHostView", @"logoImageView", NO),
         BHTProbe(@"appearance", @"T1TabBarHostView", @"tabBarViewController", NO),
         BHTProbe(@"home", @"T1FleetLineHeaderController", @"_t1_shouldShowFleetLine", NO),
@@ -616,6 +631,20 @@ static NSDictionary* BHTSettingsSnapshot(void) {
     }
     snapshot[@"undo_tweet_timeout"] =
         @([BHTSettings integerForKey:@"undo_tweet_timeout"]);
+    id usernameKeywords =
+        [NSUserDefaults.standardUserDefaults
+            objectForKey:@"bht_for_you_username_filter_keywords"];
+    id postTextKeywords =
+        [NSUserDefaults.standardUserDefaults
+            objectForKey:@"bht_for_you_post_text_filter_keywords"];
+    snapshot[@"for_you_username_filter_count"] =
+        @([usernameKeywords isKindOfClass:NSArray.class]
+              ? [(NSArray*)usernameKeywords count]
+              : 0);
+    snapshot[@"for_you_post_text_filter_count"] =
+        @([postTextKeywords isKindOfClass:NSArray.class]
+              ? [(NSArray*)postTextKeywords count]
+              : 0);
     return [snapshot copy];
 }
 

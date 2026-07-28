@@ -7,6 +7,7 @@
 
 #import "Settings/Pages/TimelinesSettingsViewController.h"
 #import "Headers/TWHeaders.h"
+#import "Settings/Pages/BHTForYouKeywordFiltersViewController.h"
 
 extern void applyHideCustomTimelinesSetting(void);
 
@@ -22,6 +23,13 @@ extern void applyHideCustomTimelinesSetting(void);
     if ([key isEqualToString:@"hide_custom_timelines"]) {
         applyHideCustomTimelinesSetting();
     }
+}
+
+- (void)showForYouKeywordFilters:(__unused NSDictionary*)setting {
+    BHTForYouKeywordFiltersViewController* controller =
+        [[BHTForYouKeywordFiltersViewController alloc]
+            initWithAccount:self.account];
+    [self.navigationController pushViewController:controller animated:YES];
 }
 
 @end

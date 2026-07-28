@@ -33,6 +33,9 @@ X 12.9.
   the bird instead of the X glyph.
 - Updated profile, search, Grok, timeline, confirmation, appearance, branding,
   custom-font, and accessibility-related features.
+- Separate username/display-name and post-text keyword lists can hide matching
+  posts from For You only. Following is positively excluded rather than inferred
+  from X's shared Home timeline label.
 - Settings are grouped into named subsections for navigation, ads, media,
   privacy, profiles, tweets, and links. Global localized search now indexes
   every settings page plus theme, navigation, Likes-waterfall, sidebar, and
@@ -48,6 +51,12 @@ X 12.9.
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
+Beta 26 makes settings-search navigation wait for X's search dismissal and
+table layout before opening and visibly spotlighting the exact destination.
+It also adds two cached literal keyword filters for For You—one for usernames
+and display names, one for post text—with a native add/edit/delete screen,
+direct search destinations, preference-profile support, and strict
+model-provenance gating so Following and unknown timeline states fail open.
 Beta 25 consolidates the former overlapping theme screens into
 `Appearance > Themes`, with built-in themes, personal themes, the theme
 builder, and Accent Only in one library. Preference profiles now live under a

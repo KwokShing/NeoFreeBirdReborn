@@ -138,6 +138,13 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                 @"titleKey": @"MODERN_SETTINGS_TIMELINES_TITLE",
                 @"subtitleKey": @"MODERN_SETTINGS_TIMELINES_SUBTITLE",
                 @"settings": @[
+                    @{
+                        @"titleKey": @"FOR_YOU_KEYWORD_FILTERS_TITLE",
+                        @"action": @"showForYouKeywordFilters:",
+                        @"type": @"button",
+                        @"searchAutoOpen": @YES,
+                        @"sectionKey": @"SETTINGS_SECTION_FOR_YOU_FILTERS"
+                    },
                     @{@"key": @"hide_promoted",
                       @"default": @YES,
                       @"sectionKey": @"SETTINGS_SECTION_ADS_OFFERS"},
@@ -648,6 +655,53 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
     ]];
 }
 
+static NSSet<NSString*>* BHTKeywordArrayPreferenceKeys(void) {
+    return [NSSet setWithArray:@[
+        @"bht_for_you_username_filter_keywords",
+        @"bht_for_you_post_text_filter_keywords"
+    ]];
+}
+
+static BOOL BHTIsValidKeywordArray(id value, BOOL usernameKeywords) {
+    if (![value isKindOfClass:NSArray.class] ||
+        [(NSArray*)value count] > 64) {
+        return NO;
+    }
+
+    NSCharacterSet* whitespace =
+        NSCharacterSet.whitespaceAndNewlineCharacterSet;
+    NSCharacterSet* controls = NSCharacterSet.controlCharacterSet;
+    NSMutableSet<NSString*>* normalizedTerms = [NSMutableSet set];
+    for (id item in (NSArray*)value) {
+        if (![item isKindOfClass:NSString.class]) return NO;
+        NSString* term =
+            [(NSString*)item stringByTrimmingCharactersInSet:whitespace];
+        if (usernameKeywords && [term hasPrefix:@"@"]) {
+            term = [[term substringFromIndex:1]
+                stringByTrimmingCharactersInSet:whitespace];
+        }
+        if (term.length == 0 || term.length > 128 ||
+            [term rangeOfCharacterFromSet:controls].location != NSNotFound ||
+            [term rangeOfCharacterFromSet:
+                      NSCharacterSet.newlineCharacterSet].location !=
+                NSNotFound) {
+            return NO;
+        }
+        NSString* normalized =
+            [term stringByFoldingWithOptions:
+                      NSCaseInsensitiveSearch |
+                      NSDiacriticInsensitiveSearch |
+                      NSWidthInsensitiveSearch
+                                      locale:
+                                          [NSLocale
+                                              localeWithLocaleIdentifier:
+                                                  @"en_US_POSIX"]];
+        if ([normalizedTerms containsObject:normalized]) return NO;
+        [normalizedTerms addObject:normalized];
+    }
+    return YES;
+}
+
 @implementation BHTSettings
 
 #pragma mark - Migration
@@ -825,6 +879,7 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
         ]];
         [allowList unionSet:BHTStringPreferenceKeys()];
         [allowList unionSet:BHTStringArrayPreferenceKeys()];
+        [allowList unionSet:BHTKeywordArrayPreferenceKeys()];
         keys = [allowList copy];
     });
     return keys;
@@ -946,6 +1001,11 @@ static NSSet<NSString*>* BHTStringArrayPreferenceKeys(void) {
                 NSInteger boolValue = [value integerValue];
                 valid = boolValue == 0 || boolValue == 1;
             }
+        } else if ([BHTKeywordArrayPreferenceKeys() containsObject:key]) {
+            valid = BHTIsValidKeywordArray(
+                value,
+                [key isEqualToString:
+                         @"bht_for_you_username_filter_keywords"]);
         } else if ([BHTStringArrayPreferenceKeys() containsObject:key]) {
             valid = BHTIsStringArray(value);
         } else if ([BHTStringPreferenceKeys() containsObject:key]) {
