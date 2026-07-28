@@ -418,21 +418,28 @@ void BHTRefreshLikesActivityHistoryConfiguration(
 
 %end
 
-// Capture the native private Likes timeline after the ad/timeline filters have
-// done their work.  The native controller remains responsible for pagination.
+// Capture the exact filtered snapshot sent to the private Likes timeline.
+// Calling the shared filter here makes this independent of Logos hook order,
+// so promoted media can never enter the custom waterfall while ad hiding is
+// enabled. The native controller remains responsible for pagination.
 %hook TFNItemsDataViewController
 
 - (void)setSections:(NSArray*)sections restoreScrollPosition:(BOOL)restoreScrollPosition {
-    BOOL isLikes = BHTCaptureLikesSections((UIViewController*)self, sections);
-    %orig(sections, isLikes ? NO : restoreScrollPosition);
+    NSArray* filtered =
+        BHTFilteredTimelineSections(self, sections);
+    BOOL isLikes =
+        BHTCaptureLikesSections((UIViewController*)self, filtered);
+    %orig(filtered, isLikes ? NO : restoreScrollPosition);
 }
 
 - (void)updateSections:(NSArray*)sections
     reconfigureItemIdentifiers:(NSArray*)identifiers
               withRowAnimation:(long long)animation
                     completion:(id)completion {
-    BHTCaptureLikesSections((UIViewController*)self, sections);
-    %orig;
+    NSArray* filtered =
+        BHTFilteredTimelineSections(self, sections);
+    BHTCaptureLikesSections((UIViewController*)self, filtered);
+    %orig(filtered, identifiers, animation, completion);
 }
 
 %end

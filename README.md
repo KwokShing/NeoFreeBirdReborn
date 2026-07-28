@@ -34,7 +34,9 @@ X 12.9.
 - Updated profile, search, Grok, timeline, confirmation, appearance, branding,
   custom-font, and accessibility-related features.
 - Settings are grouped into named subsections for navigation, ads, media,
-  privacy, profiles, tweets, and links, with global localized search.
+  privacy, profiles, tweets, and links. Global localized search now indexes
+  every settings page plus theme, navigation, Likes-waterfall, sidebar, and
+  media-action editors, then opens or highlights the exact result.
 - Apollo-inspired and classic Twitter presets coordinate light/dark timeline,
   tweet, navigation, settings, surface, text, separator, and accent colors.
   Midnight OLED, Evergreen, Rose Quartz, Solarized Coast, Amethyst, and Cinder
@@ -46,7 +48,15 @@ X 12.9.
   data.
 - A runtime compatibility report that can be shared from the Debug settings.
 
-Beta 24 fixes the beta 23 startup stack overflow by resolving the theme accent
+Beta 25 consolidates the former overlapping theme screens into
+`Appearance > Themes`, with built-in themes, personal themes, the theme
+builder, and Accent Only in one library. Preference profiles now live under a
+clear `Backup & restore` page. Settings search reaches nested editors and the
+exact requested row, while the Likes-native navigation root now preserves
+Profile, History, Lists, and other destinations opened from X's side drawer.
+The Likes waterfall consumes the same ad-filtered section snapshot as its
+native timeline regardless of hook order. Beta 24 fixes the beta 23 startup
+stack overflow by resolving the theme accent
 from the provider's already-known Light/Dark appearance instead of recursively
 asking X for its current palette during hook installation. Beta 23 adds six
 built-in palettes and a native visual theme builder with
@@ -95,10 +105,11 @@ Every new X 12.9 behavior has a setting; custom navigation is controlled from
 its editor. Compatibility shims preserve native behavior when their option is
 off.
 
-Theme presets and portable profiles are under
-`Settings > NeoFreeBird > Presets`. Profile JSON is versioned and allow-listed:
-it includes NeoFreeBird preferences and layout order, but not X account data,
-credentials, cookies, or cached media.
+Built-in and personal themes are under
+`Settings > NeoFreeBird > Appearance > Themes`; portable profiles are under
+`Settings > NeoFreeBird > Backup & restore`. Profile JSON is versioned and
+allow-listed: it includes NeoFreeBird preferences, personal themes, and layout
+order, but not X account data, credentials, cookies, or cached media.
 
 The full per-feature review is in
 [`docs/X12_9_FEATURE_AUDIT.md`](docs/X12_9_FEATURE_AUDIT.md).

@@ -9,9 +9,16 @@
 #import "Core/BHTBundle.h"
 #import "Core/BHTManager.h"
 #import "Core/BHTSettings.h"
+#import "CustomTabBar/CustomTabBarUtility.h"
+#import "CustomTabBar/CustomTabBarViewController.h"
+#import "Likes/BHTLikesNavigationUtility.h"
+#import "Likes/BHTLikesNavigationViewController.h"
+#import "MediaActions/BHTMediaActionEditorViewController.h"
+#import "MediaActions/BHTMediaActionUtility.h"
 #import "Settings/ModernSettingsCells.h"
 #import "Settings/ModernSettingsPageViewController.h"
 #import "Settings/Pages/AppearanceSettingsViewController.h"
+#import "Settings/Pages/BackupSettingsViewController.h"
 #import "Settings/Pages/DebugSettingsViewController.h"
 #import "Settings/Pages/MediaDownloadsSettingsViewController.h"
 #import "Settings/Pages/ProfilesSettingsViewController.h"
@@ -19,6 +26,8 @@
 #import "Settings/Pages/TimelinesSettingsViewController.h"
 #import "Settings/Pages/TweetsSettingsViewController.h"
 #import "Settings/Pages/WebSettingsViewController.h"
+#import "Sidebar/BHTSidebarNavigationUtility.h"
+#import "Sidebar/BHTSidebarNavigationViewController.h"
 #import "ThemeColor/BHTThemePresets.h"
 #import "ThemeColor/Palette.h"
 
@@ -252,12 +261,12 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         },
         @{
             @"title": [[BHTBundle sharedBundle]
-                localizedStringForKey:@"MODERN_SETTINGS_PRESETS_TITLE"],
+                localizedStringForKey:@"MODERN_SETTINGS_BACKUP_TITLE"],
             @"subtitle": [[BHTBundle sharedBundle]
-                localizedStringForKey:@"MODERN_SETTINGS_PRESETS_SUBTITLE"],
+                localizedStringForKey:@"MODERN_SETTINGS_BACKUP_SUBTITLE"],
             @"icon": @"settings_stroke",
-            @"action": @"showPresetSettings",
-            @"pageKey": @"presets"
+            @"action": @"showBackupSettings",
+            @"pageKey": @"backup"
         },
         @{
             @"title": [[BHTBundle sharedBundle] localizedStringForKey:@"MODERN_SETTINGS_WEB_TITLE"],
@@ -463,8 +472,10 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     }
 
     for (NSDictionary* setting in [BHTSettings allSearchableSettings]) {
-        NSString* pageKey = setting[@"pageKey"];
-        NSDictionary* page = pagesByKey[pageKey];
+        NSString* sourcePageKey = setting[@"pageKey"];
+        NSString* pageKey =
+            setting[@"searchPageKey"] ?: sourcePageKey;
+        NSDictionary* page = pagesByKey[sourcePageKey];
         if (!page) continue;
 
         NSString* key = setting[@"key"];
@@ -496,24 +507,49 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
                 ? [NSString stringWithFormat:@"%@ — %@", categoryTitle,
                                              detail]
                 : categoryTitle;
-        NSString* identifier = key ?: setting[@"titleKey"];
+        NSString* identifier =
+            setting[@"searchTargetIdentifier"] ?:
+            (key ?: setting[@"titleKey"]);
         NSString* searchText =
             [@[title ?: @"", detail ?: @"", sectionTitle ?: @"",
                categoryTitle ?: @"", categorySubtitle ?: @"", key ?: @""]
                 componentsJoinedByString:@" "];
-        [index addObject:@{
+        NSMutableDictionary* result = [@{
             @"kind": @"setting",
             @"pageKey": pageKey,
+            @"sourcePageKey": sourcePageKey ?: pageKey,
             @"identifier": identifier ?: @"",
             @"title": title,
             @"subtitle": resultSubtitle,
             @"icon": page[@"icon"] ?: @"settings_stroke",
             @"searchText": searchText
-        }];
+        } mutableCopy];
+        if (setting[@"type"]) result[@"type"] = setting[@"type"];
+        if (setting[@"searchAutoOpen"]) {
+            result[@"autoOpen"] = setting[@"searchAutoOpen"];
+        }
+        [index addObject:[result copy]];
     }
 
-    NSDictionary* presetsPage = pagesByKey[@"presets"];
-    NSString* presetsCategory = presetsPage[@"title"] ?: @"";
+    NSDictionary* appearancePage = pagesByKey[@"appearance"];
+    NSString* themesCategory =
+        [bundle localizedStringForKey:@"MODERN_SETTINGS_PRESETS_TITLE"];
+    NSString* themesSubtitle =
+        [bundle localizedStringForKey:@"MODERN_SETTINGS_PRESETS_SUBTITLE"];
+    NSString* themesIcon =
+        appearancePage[@"icon"] ?: @"paintbrush_stroke";
+    [index addObject:@{
+        @"kind": @"page",
+        @"pageKey": @"themes",
+        @"identifier": @"themes.current",
+        @"title": themesCategory,
+        @"subtitle": themesSubtitle,
+        @"icon": themesIcon,
+        @"searchText":
+            [@[themesCategory, themesSubtitle,
+               @"theme themes appearance color palette"]
+                componentsJoinedByString:@" "]
+    }];
     NSString* themeSection =
         [bundle localizedStringForKey:@"THEME_PRESETS_SECTION_TITLE"];
     for (NSDictionary* preset in [BHTThemePresets allThemes]) {
@@ -522,48 +558,220 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         NSString* detail =
             [BHTThemePresets displayDetailForPreset:preset];
         [index addObject:@{
-            @"kind": @"page",
-            @"pageKey": @"presets",
+            @"kind": @"theme",
+            @"pageKey": @"themes",
             @"identifier": preset[@"identifier"],
             @"title": title,
             @"subtitle":
-                [NSString stringWithFormat:@"%@ — %@", presetsCategory,
+                [NSString stringWithFormat:@"%@ — %@", themesCategory,
                                            detail],
-            @"icon": presetsPage[@"icon"] ?: @"settings_stroke",
+            @"icon": themesIcon,
             @"searchText":
-                [@[title, detail, themeSection, presetsCategory]
+                [@[title, detail, themeSection, themesCategory]
                     componentsJoinedByString:@" "]
         }];
     }
-    NSString* profileSection =
-        [bundle localizedStringForKey:@"PREFERENCE_PROFILES_SECTION_TITLE"];
-    for (NSDictionary* profileAction in @[
+    for (NSDictionary* themeAction in @[
              @{
-                 @"titleKey": @"EXPORT_PREFERENCE_PROFILE_TITLE",
-                 @"detailKey": @"EXPORT_PREFERENCE_PROFILE_DETAIL"
+                 @"identifier": @"themes.create",
+                 @"titleKey": @"THEME_LIBRARY_CREATE",
+                 @"detailKey": @"THEME_LIBRARY_CREATE_DETAIL",
+                 @"autoOpen": @YES
              },
              @{
-                 @"titleKey": @"IMPORT_PREFERENCE_PROFILE_TITLE",
-                 @"detailKey": @"IMPORT_PREFERENCE_PROFILE_DETAIL"
+                 @"identifier": @"themes.accent_only",
+                 @"titleKey": @"THEME_ACCENT_ONLY_TITLE",
+                 @"detailKey": @"THEME_ACCENT_ONLY_DETAIL",
+                 @"autoOpen": @YES
              }
          ]) {
         NSString* title =
-            [bundle localizedStringForKey:profileAction[@"titleKey"]];
+            [bundle localizedStringForKey:themeAction[@"titleKey"]];
         NSString* detail =
-            [bundle localizedStringForKey:profileAction[@"detailKey"]];
+            [bundle localizedStringForKey:themeAction[@"detailKey"]];
         [index addObject:@{
-            @"kind": @"page",
-            @"pageKey": @"presets",
-            @"identifier": profileAction[@"titleKey"],
+            @"kind": @"theme",
+            @"pageKey": @"themes",
+            @"identifier": themeAction[@"identifier"],
             @"title": title,
             @"subtitle":
-                [NSString stringWithFormat:@"%@ — %@", presetsCategory,
+                [NSString stringWithFormat:@"%@ — %@", themesCategory,
                                            detail],
-            @"icon": presetsPage[@"icon"] ?: @"settings_stroke",
+            @"icon": themesIcon,
+            @"autoOpen": themeAction[@"autoOpen"],
             @"searchText":
-                [@[title, detail, profileSection, presetsCategory]
+                [@[title, detail, themeSection, themesCategory,
+                   @"accent only color colours palette builder"]
                     componentsJoinedByString:@" "]
         }];
+    }
+
+    NSString* navigationCategory =
+        [bundle localizedStringForKey:@"MODERN_SETTINGS_APPEARANCE_TITLE"];
+    NSString* mainNavigationTitle =
+        [bundle localizedStringForKey:@"CUSTOM_TAB_BAR_OPTION_TITLE"];
+    for (NSDictionary* entry in [CustomTabBarUtility availableTabs]) {
+        NSString* identifier = entry[TabPageKey];
+        NSString* title = entry[TabTitleKey];
+        if (identifier.length == 0 || title.length == 0) continue;
+        [index addObject:@{
+            @"kind": @"deepSetting",
+            @"route": @"mainNavigation",
+            @"pageKey": @"appearance",
+            @"identifier": identifier,
+            @"title": title,
+            @"subtitle":
+                [NSString stringWithFormat:@"%@ — %@", navigationCategory,
+                                           mainNavigationTitle],
+            @"icon": appearancePage[@"icon"] ?: @"paintbrush_stroke",
+            @"searchText":
+                [@[title, identifier, mainNavigationTitle,
+                   navigationCategory,
+                   @"tab tabs bottom navigation home explore likes"]
+                    componentsJoinedByString:@" "]
+        }];
+    }
+
+    NSString* likesNavigationTitle =
+        [bundle localizedStringForKey:@"LIKES_NAVIGATION_EDITOR_TITLE"];
+    for (NSDictionary* entry in
+         [BHTLikesNavigationUtility availableTabs]) {
+        NSString* identifier = entry[TabPageKey];
+        NSString* title = entry[TabTitleKey];
+        if (identifier.length == 0 || title.length == 0) continue;
+        [index addObject:@{
+            @"kind": @"deepSetting",
+            @"route": @"likesNavigation",
+            @"pageKey": @"appearance",
+            @"identifier": identifier,
+            @"title": title,
+            @"subtitle":
+                [NSString stringWithFormat:@"%@ — %@", navigationCategory,
+                                           likesNavigationTitle],
+            @"icon": appearancePage[@"icon"] ?: @"paintbrush_stroke",
+            @"searchText":
+                [@[title, identifier, likesNavigationTitle,
+                   navigationCategory,
+                   @"likes bookmarks videos articles posts tab"]
+                    componentsJoinedByString:@" "]
+        }];
+    }
+    NSString* waterfallTitle =
+        [bundle localizedStringForKey:@"LIKES_MEDIA_WATERFALL_TITLE"];
+    NSString* waterfallDetail =
+        [bundle localizedStringForKey:@"LIKES_MEDIA_WATERFALL_DETAIL"];
+    [index addObject:@{
+        @"kind": @"deepSetting",
+        @"route": @"likesNavigation",
+        @"pageKey": @"appearance",
+        @"identifier": @"waterfall",
+        @"title": waterfallTitle,
+        @"subtitle":
+            [NSString stringWithFormat:@"%@ — %@", likesNavigationTitle,
+                                       waterfallDetail],
+        @"icon": appearancePage[@"icon"] ?: @"paintbrush_stroke",
+        @"searchText":
+            [@[waterfallTitle, waterfallDetail, likesNavigationTitle,
+               @"likes media gallery grid selector"]
+                componentsJoinedByString:@" "]
+    }];
+
+    NSString* sidebarTitle =
+        [bundle localizedStringForKey:@"SIDEBAR_NAVIGATION_EDITOR_TITLE"];
+    for (NSDictionary* entry in
+         [BHTSidebarNavigationUtility availableItems]) {
+        NSString* identifier = entry[TabPageKey];
+        NSString* title = entry[TabTitleKey];
+        if (identifier.length == 0 || title.length == 0) continue;
+        [index addObject:@{
+            @"kind": @"deepSetting",
+            @"route": @"sidebarNavigation",
+            @"pageKey": @"appearance",
+            @"identifier": identifier,
+            @"title": title,
+            @"subtitle":
+                [NSString stringWithFormat:@"%@ — %@", navigationCategory,
+                                           sidebarTitle],
+            @"icon": appearancePage[@"icon"] ?: @"paintbrush_stroke",
+            @"searchText":
+                [@[title, identifier, sidebarTitle, navigationCategory,
+                   @"sidebar side menu drawer ipad profile history lists"]
+                    componentsJoinedByString:@" "]
+        }];
+    }
+
+    NSDictionary* mediaPage = pagesByKey[@"media_downloads"];
+    NSString* mediaMenusTitle =
+        [bundle localizedStringForKey:@"MEDIA_ACTION_MENU_EDITOR_TITLE"];
+    for (NSDictionary* mediaKind in @[
+             @{
+                 @"kind": @(BHTMediaActionKindPhoto),
+                 @"titleKey": @"MEDIA_ACTION_PHOTOS_TITLE",
+                 @"detailKey": @"MEDIA_ACTION_PHOTOS_DETAIL",
+                 @"identifier": @"photo"
+             },
+             @{
+                 @"kind": @(BHTMediaActionKindVideo),
+                 @"titleKey": @"MEDIA_ACTION_VIDEOS_TITLE",
+                 @"detailKey": @"MEDIA_ACTION_VIDEOS_DETAIL",
+                 @"identifier": @"video"
+             },
+             @{
+                 @"kind": @(BHTMediaActionKindGIF),
+                 @"titleKey": @"MEDIA_ACTION_GIFS_TITLE",
+                 @"detailKey": @"MEDIA_ACTION_GIFS_DETAIL",
+                 @"identifier": @"gif"
+             }
+         ]) {
+        NSString* mediaTitle =
+            [bundle localizedStringForKey:mediaKind[@"titleKey"]];
+        NSString* mediaDetail =
+            [bundle localizedStringForKey:mediaKind[@"detailKey"]];
+        [index addObject:@{
+            @"kind": @"deepSetting",
+            @"route": @"mediaActionEditor",
+            @"pageKey": @"media_downloads",
+            @"mediaKind": mediaKind[@"kind"],
+            @"identifier": mediaKind[@"identifier"],
+            @"title": mediaTitle,
+            @"subtitle":
+                [NSString stringWithFormat:@"%@ — %@", mediaMenusTitle,
+                                           mediaDetail],
+            @"icon": mediaPage[@"icon"] ?: @"media_tab_stroke",
+            @"searchText":
+                [@[mediaTitle, mediaDetail, mediaMenusTitle,
+                   mediaKind[@"identifier"], @"actions download share copy"]
+                    componentsJoinedByString:@" "]
+        }];
+
+        for (NSDictionary* action in
+             [BHTMediaActionUtility
+                 availableActionsForKind:
+                     [mediaKind[@"kind"] integerValue]]) {
+            NSString* actionIdentifier = action[TabPageKey];
+            NSString* actionTitle = action[TabTitleKey];
+            if (actionIdentifier.length == 0 ||
+                actionTitle.length == 0) {
+                continue;
+            }
+            [index addObject:@{
+                @"kind": @"deepSetting",
+                @"route": @"mediaActionEditor",
+                @"pageKey": @"media_downloads",
+                @"mediaKind": mediaKind[@"kind"],
+                @"identifier": actionIdentifier,
+                @"title": actionTitle,
+                @"subtitle":
+                    [NSString stringWithFormat:@"%@ — %@", mediaMenusTitle,
+                                               mediaTitle],
+                @"icon": mediaPage[@"icon"] ?: @"media_tab_stroke",
+                @"searchText":
+                    [@[actionTitle, actionIdentifier, mediaTitle,
+                       mediaDetail, mediaMenusTitle,
+                       @"media menu action download share copy"]
+                        componentsJoinedByString:@" "]
+            }];
+        }
     }
     self.settingsSearchIndex = [index copy];
     self.filteredSettingsResults = @[];
@@ -594,6 +802,26 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
                 [matches addObject:result];
             }
         }
+        [matches sortUsingComparator:^NSComparisonResult(
+                     NSDictionary* left, NSDictionary* right) {
+            NSString* leftTitle =
+                [left[@"title"] lowercaseString] ?: @"";
+            NSString* rightTitle =
+                [right[@"title"] lowercaseString] ?: @"";
+            NSString* normalizedQuery = query.lowercaseString;
+            NSInteger (^rank)(NSDictionary*, NSString*) =
+                ^NSInteger(NSDictionary* result, NSString* title) {
+                    if ([title isEqualToString:normalizedQuery]) return 0;
+                    if ([title hasPrefix:normalizedQuery]) return 1;
+                    return [result[@"kind"] isEqualToString:@"page"] ? 3
+                                                                    : 2;
+                };
+            NSInteger leftRank = rank(left, leftTitle);
+            NSInteger rightRank = rank(right, rightTitle);
+            if (leftRank < rightRank) return NSOrderedAscending;
+            if (leftRank > rightRank) return NSOrderedDescending;
+            return [leftTitle localizedCaseInsensitiveCompare:rightTitle];
+        }];
         self.filteredSettingsResults = [matches copy];
     }
     [self.tableView reloadData];
@@ -610,6 +838,13 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     } else {
         self.tableView.backgroundView = nil;
     }
+}
+
+- (void)willPresentSearchController:
+    (UISearchController*)searchController {
+    // Rebuild immediately before searching so renamed personal themes and
+    // navigation entries discovered during this app session are searchable.
+    [self buildSettingsSearchIndex];
 }
 
 - (void)didDismissSearchController:(UISearchController*)searchController {
@@ -966,8 +1201,13 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
         return [[DebugSettingsViewController alloc]
             initWithAccount:self.account];
     }
-    if ([pageKey isEqualToString:@"presets"]) {
+    if ([pageKey isEqualToString:@"presets"] ||
+        [pageKey isEqualToString:@"themes"]) {
         return [[PresetSettingsViewController alloc]
+            initWithAccount:self.account];
+    }
+    if ([pageKey isEqualToString:@"backup"]) {
+        return [[BackupSettingsViewController alloc]
             initWithAccount:self.account];
     }
     if ([[BHTSettings allPageKeys] containsObject:pageKey]) {
@@ -979,16 +1219,73 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
 }
 
 - (void)openSettingsSearchResult:(NSDictionary*)result {
+    NSString* route = result[@"route"];
+    NSString* targetIdentifier = result[@"identifier"];
+    UIViewController* directController = nil;
+    if ([route isEqualToString:@"mainNavigation"]) {
+        CustomTabBarViewController* editor =
+            [CustomTabBarViewController new];
+        editor.settingsSearchTargetIdentifier = targetIdentifier;
+        editor.title = [[BHTBundle sharedBundle]
+            localizedStringForKey:
+                @"CUSTOM_TAB_BAR_SETTINGS_NAVIGATION_TITLE"];
+        directController = editor;
+    } else if ([route isEqualToString:@"likesNavigation"]) {
+        BHTLikesNavigationViewController* editor =
+            [BHTLikesNavigationViewController new];
+        editor.settingsSearchTargetIdentifier = targetIdentifier;
+        editor.title = [[BHTBundle sharedBundle]
+            localizedStringForKey:
+                @"LIKES_NAVIGATION_SETTINGS_TITLE"];
+        directController = editor;
+    } else if ([route isEqualToString:@"sidebarNavigation"]) {
+        BHTSidebarNavigationViewController* editor =
+            [BHTSidebarNavigationViewController new];
+        editor.settingsSearchTargetIdentifier = targetIdentifier;
+        editor.title = [[BHTBundle sharedBundle]
+            localizedStringForKey:
+                @"SIDEBAR_NAVIGATION_SETTINGS_TITLE"];
+        directController = editor;
+    } else if ([route isEqualToString:@"mediaActionEditor"]) {
+        BHTMediaActionEditorViewController* editor =
+            [[BHTMediaActionEditorViewController alloc]
+                initWithKind:[result[@"mediaKind"] integerValue]
+                     account:self.account];
+        // A media-kind result opens the editor itself. An action result uses
+        // a stable action ID and is focused after the grid appears.
+        if (![targetIdentifier isEqualToString:@"photo"] &&
+            ![targetIdentifier isEqualToString:@"video"] &&
+            ![targetIdentifier isEqualToString:@"gif"]) {
+            editor.settingsSearchTargetIdentifier =
+                targetIdentifier;
+        }
+        directController = editor;
+    }
+    if (directController) {
+        self.settingsSearchController.active = NO;
+        [self.navigationController pushViewController:directController
+                                             animated:YES];
+        return;
+    }
+
     NSString* pageKey = result[@"pageKey"];
     UIViewController* controller =
         [self settingsControllerForPageKey:pageKey];
     if (!controller) return;
 
-    if ([result[@"kind"] isEqualToString:@"setting"] &&
-        [controller
+    BOOL shouldOpenTarget = [result[@"autoOpen"] boolValue];
+    if ([controller
             isKindOfClass:ModernSettingsPageViewController.class]) {
-        ((ModernSettingsPageViewController*)controller)
-            .settingsSearchTargetIdentifier = result[@"identifier"];
+        ModernSettingsPageViewController* page =
+            (ModernSettingsPageViewController*)controller;
+        page.settingsSearchTargetIdentifier = targetIdentifier;
+        page.settingsSearchShouldOpenTarget = shouldOpenTarget;
+    } else if ([controller
+                   isKindOfClass:PresetSettingsViewController.class]) {
+        PresetSettingsViewController* themes =
+            (PresetSettingsViewController*)controller;
+        themes.settingsSearchTargetIdentifier = targetIdentifier;
+        themes.settingsSearchShouldOpenTarget = shouldOpenTarget;
     }
     self.settingsSearchController.active = NO;
     [self.navigationController pushViewController:controller animated:YES];
@@ -1056,8 +1353,15 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
     [self.navigationController pushViewController:vc animated:YES];
 }
 
+- (void)showBackupSettings {
+    UIViewController* vc = [self settingsControllerForPageKey:@"backup"];
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
 - (void)showPresetSettings {
-    UIViewController* vc = [self settingsControllerForPageKey:@"presets"];
+    // Compatibility alias for saved/deep links from the former top-level
+    // "Themes & profiles" destination.
+    UIViewController* vc = [self settingsControllerForPageKey:@"themes"];
     [self.navigationController pushViewController:vc animated:YES];
 }
 

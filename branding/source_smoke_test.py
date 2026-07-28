@@ -847,6 +847,15 @@ def main() -> None:
         'setting[@"sectionKey"]',
         'page[@"subtitle"]',
         "showPresetSettings",
+        "showBackupSettings",
+        '@"route": @"mainNavigation"',
+        '@"route": @"likesNavigation"',
+        '@"route": @"sidebarNavigation"',
+        '@"route": @"mediaActionEditor"',
+        '@"identifier": @"waterfall"',
+        "[BHTThemePresets allThemes]",
+        "willPresentSearchController:",
+        "settingsSearchTargetIdentifier",
         "BHTThemeDidChangeNotification",
         "currentSurfaceColor",
     ):
@@ -854,6 +863,95 @@ def main() -> None:
             raise AssertionError(
                 f"Missing settings search/profile UI invariant: {required}"
             )
+
+    settings_page_source = (
+        ROOT
+        / "src"
+        / "Settings"
+        / "ModernSettingsPageViewController.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        settings_page_source,
+        (
+            "settingsSearchTargetIdentifier",
+            "settingsSearchShouldOpenTarget",
+            "[self updateVisibleToggles];",
+            "didSelectRowAtIndexPath:match",
+            "self.navigationController.topViewController != self",
+        ),
+        "exact settings-search row routing",
+    )
+
+    preset_settings_source = (
+        ROOT
+        / "src"
+        / "Settings"
+        / "Pages"
+        / "PresetSettingsViewController.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        preset_settings_source,
+        (
+            "BHTThemesSectionCurrent",
+            "BHTThemesSectionBuiltIn",
+            "BHTThemesSectionMyThemes",
+            "BHTThemesSectionAdvanced",
+            "themes.create",
+            "themes.accent_only",
+            "navigationController.topViewController !=",
+        ),
+        "unified Themes library",
+    )
+    for forbidden in (
+        "UIDocumentPickerViewController",
+        "exportPreferenceProfile:",
+        "importPreferenceProfile:",
+    ):
+        if forbidden in preset_settings_source:
+            raise AssertionError(
+                "Theme/profile settings became redundant again: "
+                f"{forbidden}"
+            )
+
+    accent_only_source = (
+        ROOT / "src" / "ThemeColor" / "ColorThemeViewController.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        accent_only_source,
+        (
+            "theme-accent-only-swatches",
+            "clearPresetSelection",
+            "reapplyCurrentAccent",
+        ),
+        "Accent Only picker",
+    )
+    for forbidden in (
+        "[BHTThemePresets availablePresets]",
+        "BHTThemeBuilderViewController",
+    ):
+        if forbidden in accent_only_source:
+            raise AssertionError(
+                "Accent Only must not duplicate the full Themes library: "
+                f"{forbidden}"
+            )
+
+    backup_settings_source = (
+        ROOT
+        / "src"
+        / "Settings"
+        / "Pages"
+        / "BackupSettingsViewController.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        backup_settings_source,
+        (
+            'return @"backup";',
+            "preferenceProfileJSONDataWithError:",
+            "applyPreferenceProfile:",
+            "kBHTMaximumPreferenceProfileBytes",
+        ),
+        "Backup & restore page",
+    )
 
     for required in (
         "NeoFreeBird Preference Profile",
@@ -989,6 +1087,69 @@ def main() -> None:
     likes_source = (
         ROOT / "src" / "Likes" / "BHTLikesTab.m"
     ).read_text(encoding="utf-8")
+    likes_navigation_install = source_section(
+        likes_source,
+        "void BHTInstallNativeLikesNavigationController(",
+        "static void BHTActivateLikesTabViewNow(",
+        "native Likes navigation installation",
+    )
+    require_source_tokens(
+        likes_navigation_install,
+        (
+            "nativeNavigation.viewControllers.firstObject != likes",
+            "nativeNavigation.viewControllers.count > 1",
+            '@"nativeChildNavigationPreservations"',
+            ").topViewController ==",
+        ),
+        "retained Likes child-navigation stack",
+    )
+    if "nativeNavigation.viewControllers.count != 1" in (
+        likes_navigation_install
+    ):
+        raise AssertionError(
+            "Likes navigation must not discard native drawer destinations"
+        )
+
+    ads_source = (
+        ROOT / "src" / "Hooks" / "Ads.x"
+    ).read_text(encoding="utf-8")
+    likes_hook_source = (
+        ROOT / "src" / "Hooks" / "Likes.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        ads_source,
+        (
+            "NSArray* BHTFilteredTimelineSections(",
+            "ShouldHideAndRecord(items[i], location)",
+        ),
+        "shared filtered timeline snapshot",
+    )
+    if (
+        likes_hook_source.count(
+            "BHTFilteredTimelineSections(self, sections)"
+        )
+        < 2
+    ):
+        raise AssertionError(
+            "Likes waterfall capture must filter both section update paths"
+        )
+
+    media_editor_source = (
+        ROOT
+        / "src"
+        / "MediaActions"
+        / "BHTMediaActionEditorViewController.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        media_editor_source,
+        (
+            "NSString* stableTarget = [target copy];",
+            "indexPathForSettingsSearchTarget:stableTarget",
+            "navigationController.topViewController !=",
+        ),
+        "stable media-action search reveal",
+    )
+
     likes_theme_diagnostic = source_section(
         likes_source,
         "NSString* activeTheme =",

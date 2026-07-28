@@ -57,6 +57,10 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    // A global-search target may be a conditional child (for example a font
+    // picker while custom fonts are off). Include that one row for navigation
+    // without changing its parent preference.
+    [self updateVisibleToggles];
     [self setupNav];
     [self setupTable];
 }
@@ -70,6 +74,10 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
     [super viewWillAppear:animated];
     self.view.backgroundColor = [Palette currentBackgroundColor];
     self.tableView.backgroundColor = [Palette currentBackgroundColor];
+    // Search may temporarily reveal a child whose parent toggle is off.
+    // Rebuild on every return so that exception lasts only long enough to
+    // reach the requested setting.
+    [self updateVisibleToggles];
     [self.tableView reloadData];
 }
 
@@ -135,7 +143,15 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
         NSString* parentKey = toggleData[@"parentKey"];
         if (parentKey) {
             BOOL parentEnabled = [BHTSettings boolForKey:parentKey];
-            if (parentEnabled) {
+            BOOL isSearchTarget =
+                self.settingsSearchTargetIdentifier.length > 0 &&
+                ([toggleData[@"key"]
+                    isEqualToString:
+                        self.settingsSearchTargetIdentifier] ||
+                 [toggleData[@"titleKey"]
+                    isEqualToString:
+                        self.settingsSearchTargetIdentifier]);
+            if (parentEnabled || isSearchTarget) {
                 [visible addObject:toggleData];
             }
         } else {
@@ -176,14 +192,11 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
     NSString* target = self.settingsSearchTargetIdentifier;
     if (target.length == 0 || !self.tableView.window) return;
 
+    NSDictionary* targetEntry = nil;
     for (NSDictionary* entry in self.toggles) {
         if ([entry[@"key"] isEqualToString:target] ||
             [entry[@"titleKey"] isEqualToString:target]) {
-            NSString* parentKey = entry[@"parentKey"];
-            if (parentKey.length > 0 &&
-                ![BHTSettings boolForKey:parentKey]) {
-                target = parentKey;
-            }
+            targetEntry = entry;
             break;
         }
     }
@@ -203,7 +216,9 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
         }
         if (match) break;
     }
+    BOOL shouldOpen = self.settingsSearchShouldOpenTarget;
     self.settingsSearchTargetIdentifier = nil;
+    self.settingsSearchShouldOpenTarget = NO;
     if (!match) return;
 
     [self.tableView scrollToRowAtIndexPath:match
@@ -217,6 +232,25 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
         dispatch_get_main_queue(), ^{
             [self.tableView deselectRowAtIndexPath:match animated:YES];
         });
+
+    NSString* actionName = targetEntry[@"action"];
+    if (shouldOpen && actionName.length > 0) {
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW,
+                          (int64_t)(0.3 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                // Only auto-open while this remains the visible page. A
+                // fast back gesture must not trigger a delayed picker.
+                if (self.navigationController.topViewController != self) {
+                    return;
+                }
+                // Route through the page's normal row-selection path. This
+                // preserves subclass behavior such as Web settings attaching
+                // the index path needed to refresh its saved subtitle.
+                [self tableView:self.tableView
+                    didSelectRowAtIndexPath:match];
+            });
+    }
 }
 
 #pragma mark - UITableViewDataSource

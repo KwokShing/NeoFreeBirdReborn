@@ -23,6 +23,33 @@ extern UIColor* CurrentAccentColor(void);
 static NSString* const kBHTLikesGridHeaderID = @"likesGridHeader";
 static NSString* const kBHTLikesGridFooterID = @"likesGridFooter";
 
+static void BHTPulseLikesSearchTarget(UIView* target) {
+    if (!target.window) return;
+    UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification,
+                                    target);
+    CGAffineTransform original = target.transform;
+    [UIView animateWithDuration:0.18
+                          delay:0
+                        options:UIViewAnimationOptionAllowUserInteraction |
+                                UIViewAnimationOptionBeginFromCurrentState |
+                                UIViewAnimationOptionCurveEaseInOut
+                     animations:^{
+                         target.transform =
+                             CGAffineTransformScale(original, 1.06, 1.06);
+                     }
+                     completion:^(__unused BOOL finished) {
+                         [UIView animateWithDuration:0.18
+                                               delay:0
+                                             options:
+                                                 UIViewAnimationOptionAllowUserInteraction |
+                                                 UIViewAnimationOptionCurveEaseInOut
+                                          animations:^{
+                                              target.transform = original;
+                                          }
+                                          completion:nil];
+                     }];
+}
+
 @interface BHTLikesNavigationViewController ()
     <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout>
 @property(nonatomic, strong) UICollectionView* gridView;
@@ -34,6 +61,7 @@ static NSString* const kBHTLikesGridFooterID = @"likesGridFooter";
 @property(nonatomic) BOOL waterfallEnabled;
 @property(nonatomic) BOOL originalWaterfallEnabled;
 @property(nonatomic) BOOL hasChanges;
+@property(nonatomic, weak) UISwitch* waterfallSearchTargetView;
 @end
 
 @implementation BHTLikesNavigationViewController
@@ -52,6 +80,60 @@ static NSString* const kBHTLikesGridFooterID = @"likesGridFooter";
     for (UIWindow* window in UIApplication.sharedApplication.windows) {
         [self findAndHideFloatingActionButtonInView:window];
     }
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self revealSettingsSearchTargetIfNeeded];
+}
+
+- (void)revealSettingsSearchTargetIfNeeded {
+    NSString* target = self.settingsSearchTargetIdentifier;
+    if (target.length == 0 || !self.gridView.window) return;
+    self.settingsSearchTargetIdentifier = nil;
+
+    if ([target isEqualToString:@"waterfall"]) {
+        CGPoint top =
+            CGPointMake(self.gridView.contentOffset.x,
+                        -self.gridView.adjustedContentInset.top);
+        [self.gridView setContentOffset:top animated:NO];
+        [self.gridView layoutIfNeeded];
+        UISwitch* waterfallTarget = self.waterfallSearchTargetView;
+        if (waterfallTarget) {
+            BHTPulseLikesSearchTarget(waterfallTarget);
+            return;
+        }
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BHTPulseLikesSearchTarget(
+                weakSelf.waterfallSearchTargetView);
+        });
+        return;
+    }
+
+    NSUInteger index = [self.allPages indexOfObject:target];
+    if (index == NSNotFound) return;
+
+    NSIndexPath* indexPath =
+        [NSIndexPath indexPathForItem:index inSection:0];
+    [self.gridView scrollToItemAtIndexPath:indexPath
+                          atScrollPosition:
+                              UICollectionViewScrollPositionCenteredVertically
+                                  animated:NO];
+    [self.gridView layoutIfNeeded];
+    UICollectionViewCell* cell =
+        [self.gridView cellForItemAtIndexPath:indexPath];
+    if (cell) {
+        BHTPulseLikesSearchTarget(cell);
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UICollectionViewCell* deferredCell =
+            [weakSelf.gridView cellForItemAtIndexPath:indexPath];
+        BHTPulseLikesSearchTarget(deferredCell);
+    });
 }
 
 - (void)viewWillLayoutSubviews {
@@ -393,10 +475,12 @@ static NSString* const kBHTLikesGridFooterID = @"likesGridFooter";
         toggle.translatesAutoresizingMaskIntoConstraints = NO;
         toggle.on = self.waterfallEnabled;
         toggle.onTintColor = CurrentAccentColor();
+        toggle.accessibilityLabel = waterfall.text;
         [toggle addTarget:self
                    action:@selector(waterfallChanged:)
          forControlEvents:UIControlEventValueChanged];
         [header addSubview:toggle];
+        self.waterfallSearchTargetView = toggle;
 
         [NSLayoutConstraint activateConstraints:@[
             [detail.topAnchor constraintEqualToAnchor:header.topAnchor

@@ -36,6 +36,12 @@ BOOL IsModuleHeaderItem(id item);
 BOOL IsModuleFooterItem(id item);
 void MarkEmptiedModuleChrome(NSArray* items, NSMutableIndexSet* removed);
 
+// Shared ad/timeline section filter (Ads.x). Likes uses the same filtered
+// snapshot for its native timeline and waterfall extraction so hook ordering
+// can never expose promoted media in the custom gallery.
+NSArray* BHTFilteredTimelineSections(
+    TFNItemsDataViewController* dataViewController, NSArray* sections);
+
 // Live square-avatar restyling (Avatars.x)
 void applySquareAvatarsSetting(void);
 

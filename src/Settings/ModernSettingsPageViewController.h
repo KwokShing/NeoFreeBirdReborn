@@ -24,6 +24,10 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker);
 // Set before presentation by global settings search. The page scrolls to and
 // briefly highlights the matching key or title key once its table is visible.
 @property (nonatomic, copy, nullable) NSString* settingsSearchTargetIdentifier;
+// Search results that represent a button can request the destination action
+// after the page scrolls to that row. Toggle results remain highlighted in
+// place so a search never changes a preference by itself.
+@property (nonatomic, assign) BOOL settingsSearchShouldOpenTarget;
 
 - (instancetype)initWithAccount:(TFNTwitterAccount*)account;
 

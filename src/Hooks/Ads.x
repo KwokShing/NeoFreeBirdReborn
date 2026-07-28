@@ -371,8 +371,8 @@ static BOOL ShouldHideAndRecord(id item, NSString* location) {
     return hidden;
 }
 
-static NSArray* FilteredSections(TFNItemsDataViewController* dataViewController,
-                                 NSArray* sections) {
+NSArray* BHTFilteredTimelineSections(
+    TFNItemsDataViewController* dataViewController, NSArray* sections) {
     if (!([BHTSettings boolForKey:@"hide_promoted"] ||
           [BHTSettings boolForKey:@"hide_premium_offer"] ||
           [BHTSettings boolForKey:@"hide_trend_videos"])) {
@@ -436,15 +436,16 @@ static id BHTItemAtIndexPath(TFNItemsDataViewController* controller,
 
 - (void)setSections:(NSArray*)sections
     restoreScrollPosition:(BOOL)restoreScrollPosition {
-    %orig(FilteredSections(self, sections), restoreScrollPosition);
+    %orig(BHTFilteredTimelineSections(self, sections),
+          restoreScrollPosition);
 }
 
 - (void)updateSections:(NSArray*)sections
     reconfigureItemIdentifiers:(NSArray*)identifiers
               withRowAnimation:(long long)animation
                     completion:(id)completion {
-    %orig(FilteredSections(self, sections), identifiers, animation,
-              completion);
+    %orig(BHTFilteredTimelineSections(self, sections), identifiers,
+          animation, completion);
 }
 
 // Some X 12.9 timelines keep their section model opaque and only expose the

@@ -35,8 +35,11 @@
 "MODERN_SETTINGS_SEARCH_TITLE" = "Search and discover";
 "MODERN_SETTINGS_SEARCH_SUBTITLE" = "Change what you see in the Search tab.";
 
-"MODERN_SETTINGS_PRESETS_TITLE" = "Themes & profiles";
-"MODERN_SETTINGS_PRESETS_SUBTITLE" = "Choose or build themes, then export or import your NeoFreeBird setup.";
+"MODERN_SETTINGS_PRESETS_TITLE" = "Themes";
+"MODERN_SETTINGS_PRESETS_SUBTITLE" = "Choose a built-in theme or create your own coordinated app palette.";
+
+"MODERN_SETTINGS_BACKUP_TITLE" = "Backup & restore";
+"MODERN_SETTINGS_BACKUP_SUBTITLE" = "Export or import your complete NeoFreeBird setup.";
 
 "SETTINGS_SEARCH_PLACEHOLDER" = "Search NeoFreeBird settings";
 "SETTINGS_SEARCH_NO_RESULTS" = "No matching settings";
@@ -209,7 +212,7 @@
 "HIDE_PREMIUM_OFFER_TITLE" = "No Twitter Blue prompts";
 "HIDE_PREMIUM_OFFER_DETAIL" = "Remove the 'Get Verified' and 'Upgrade' buttons.";
 
-"THEME_OPTION_TITLE" = "Change theme";
+"THEME_OPTION_TITLE" = "Themes";
 
 "APP_ICON_TITLE" = "Change app icon";
 
@@ -273,8 +276,14 @@
 "COPY_PROFILE_INFO_MENU_OPTION_5" = "Copy location";
 
 /*Theme*/
-"THEME_SETTINGS_NAVIGATION_TITLE" = "Theme";
-"THEME_SETTINGS_NAVIGATION_DETAIL" = "Choose a coordinated app palette for backgrounds, tweets, settings, text, and accents—or select a standalone accent color. This can only be seen by you.";
+"THEME_SETTINGS_NAVIGATION_TITLE" = "Accent only";
+"THEME_SETTINGS_NAVIGATION_DETAIL" = "Use X’s native backgrounds and surfaces with one accent color. Choosing a color here turns off the current full-app theme.";
+"THEME_LIBRARY_CURRENT" = "Current theme";
+"THEME_LIBRARY_ADVANCED" = "Advanced";
+"THEME_CURRENT_ACCENT_ONLY_DETAIL" = "X’s native surfaces with your selected accent color.";
+"THEME_ACCENT_ONLY_TITLE" = "Accent only";
+"THEME_ACCENT_ONLY_DETAIL" = "Keep X’s native backgrounds and change only buttons, links, and highlights.";
+"THEME_ACCENT_ONLY_FOOTER" = "For a coordinated background, surface, text, and accent palette, select or create a full theme above.";
 "THEME_PRESETS_SECTION_TITLE" = "Theme presets";
 "THEME_PRESET_APOLLO_TITLE" = "Apollo-inspired blue";
 "THEME_PRESET_APOLLO_DETAIL" = "A calm blue with coordinated light and dark backgrounds, surfaces, and text inspired by Apollo’s Default (blue).";
