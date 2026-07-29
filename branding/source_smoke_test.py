@@ -1245,6 +1245,7 @@ def main() -> None:
             "matchesAnyPostTextCandidate:",
             "filterGenerationWithUsernameFilters:",
             "ItemObjectValueAllowingUntypedIvar",
+            "NearestURTTimelineController",
             "IsPrimaryForYouTimelineController",
         ),
         "strict For You-only runtime filtering",
@@ -1322,6 +1323,88 @@ def main() -> None:
         raise AssertionError(
             "Keyword decisions must remain behind the strict For You gate"
         )
+
+    for_you_controller_gate = source_section(
+        timeline_source,
+        "static BOOL IsPrimaryForYouTimelineController",
+        "static id StatusFromTimelineItem",
+        "For You controller ownership gate",
+    )
+    require_source_tokens(
+        for_you_controller_gate,
+        (
+            "NearestURTTimelineController(",
+            "ItemObjectValue(",
+            'NSSelectorFromString(@"urtTimeline")',
+            'BHTUntypedIvarPointer(urtController, "urtTimeline")',
+            "BHTHomeTimelineRoleForTrustedPointer(rawTimeline)",
+            "BHTHomeTimelineRoleForTimeline(urtTimeline)",
+            "BHTHomeTimelineRolePrimaryForYou",
+        ),
+        "inner-controller For You ownership resolution",
+    )
+    require_source_tokens(
+        timeline_source,
+        (
+            "BHTHomeTimelineRegistryEntry",
+            "@property(nonatomic, weak) id timeline",
+            "BHTRegisterHomeTimelineRole(timeline, mergedRole)",
+            "(__bridge const void*)timeline == candidate",
+        ),
+        "trusted raw-pointer timeline registry",
+    )
+
+    app_lifecycle_source = (
+        ROOT / "src" / "Hooks" / "AppLifecycle.x"
+    ).read_text(encoding="utf-8")
+    padlock_success_gate = source_section(
+        app_lifecycle_source,
+        "BOOL currentSuccess =",
+        "if (!lockEnabled)",
+        "padlock authentication success gate",
+    )
+    require_source_tokens(
+        padlock_success_gate,
+        (
+            "authenticated &&",
+            "authenticationGeneration ==",
+            "padlockAuthenticationGeneration",
+            "lockEnabled",
+        ),
+        "current-session padlock success validation",
+    )
+    if "UIApplicationStateActive" in padlock_success_gate:
+        raise AssertionError(
+            "Face ID success must not be rejected while iOS briefly marks "
+            "the app inactive"
+        )
+
+    padlock_resign_active = source_section(
+        app_lifecycle_source,
+        "- (void)applicationWillResignActive:",
+        "- (void)applicationDidEnterBackground:",
+        "padlock inactive transition",
+    )
+    if "setAuthenticated(NO)" in padlock_resign_active:
+        raise AssertionError(
+            "Temporary system authentication UI must not invalidate the "
+            "padlock session"
+        )
+    padlock_background = source_section(
+        app_lifecycle_source,
+        "- (void)applicationDidEnterBackground:",
+        "%end",
+        "padlock background invalidation",
+    )
+    require_source_tokens(
+        padlock_background,
+        (
+            "padlockAuthenticationGeneration++",
+            "setAuthenticated(NO)",
+            "showPadlockOverlay()",
+        ),
+        "real-background padlock invalidation",
+    )
 
     media_editor_source = (
         ROOT

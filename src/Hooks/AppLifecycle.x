@@ -214,21 +214,39 @@ static void presentAuthIfNeeded(void) {
         padlockAuthenticationGeneration;
     activePadlockController = auth;
     auth.completion = ^(BOOL authenticated) {
+        BOOL lockEnabled =
+            [BHTSettings boolForKey:@"padlock"];
         BOOL currentSuccess =
             authenticated &&
             authenticationGeneration ==
                 padlockAuthenticationGeneration &&
-            UIApplication.sharedApplication.applicationState ==
-                UIApplicationStateActive &&
-            [BHTSettings boolForKey:@"padlock"];
-        setAuthenticated(currentSuccess);
-        if (currentSuccess) {
+            lockEnabled;
+
+        if (!lockEnabled) {
+            // A setting/profile change can disable the lock while the system
+            // authentication sheet is open. Never leave its privacy overlay
+            // stranded after the feature has been turned off.
+            setAuthenticated(NO);
             removePadlockOverlay();
+        } else if (currentSuccess) {
+            // Face ID temporarily makes the app inactive. Accept the result
+            // for the current foreground generation, then keep the privacy
+            // cover until applicationDidBecomeActive if necessary.
+            setAuthenticated(YES);
+            if (UIApplication.sharedApplication.applicationState ==
+                UIApplicationStateActive) {
+                removePadlockOverlay();
+            } else {
+                showPadlockOverlay();
+            }
         } else if (authenticated &&
                    UIApplication.sharedApplication.applicationState ==
                        UIApplicationStateActive) {
+            setAuthenticated(NO);
             showPadlockOverlay();
             retryPadlockPresentation();
+        } else {
+            setAuthenticated(NO);
         }
         activePadlockController = nil;
     };
@@ -290,10 +308,10 @@ static void presentAuthIfNeeded(void) {
     %orig;
 
     if ([BHTSettings boolForKey:@"padlock"]) {
-        // Cover the UI (and the app-switcher snapshot) and mark unauthenticated so
-        // the next activation prompts again; the overlay persists into background.
+        // Face ID and other system authentication sheets temporarily make the
+        // app inactive. Cover the UI for privacy here, but invalidate the
+        // authenticated session only after a real background transition.
         showPadlockOverlay();
-        setAuthenticated(NO);
     }
 
     if ([BHTSettings boolForKey:@"flex_twitter"]) {
