@@ -6,6 +6,9 @@
 #import "HookHelpers.h"
 #import "Compatibility/BHTCompatibilityReporter.h"
 #import "Timeline/BHTForYouKeywordFilter.h"
+#import <stddef.h>
+#import <stdint.h>
+#import <string.h>
 
 // MARK: - For You timeline identity
 
@@ -23,6 +26,14 @@ typedef NS_ENUM(NSInteger, BHTHomeTimelineRole) {
     BHTHomeTimelineRoleAmbiguous = 2,
 };
 
+@interface BHTHomeTimelineRegistryEntry : NSObject
+@property(nonatomic, weak) id timeline;
+@property(nonatomic) BHTHomeTimelineRole role;
+@end
+
+@implementation BHTHomeTimelineRegistryEntry
+@end
+
 @interface BHTForYouKeywordDecisionCache : NSObject
 @property(nonatomic) NSUInteger generation;
 @property(nonatomic) BOOL hidden;
@@ -32,6 +43,70 @@ typedef NS_ENUM(NSInteger, BHTHomeTimelineRole) {
 
 @implementation BHTForYouKeywordDecisionCache
 @end
+
+static NSMutableArray<BHTHomeTimelineRegistryEntry*>*
+    BHTHomeTimelineRegistry;
+
+static NSObject* BHTHomeTimelineRegistryLock(void) {
+    static NSObject* lock;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ lock = [NSObject new]; });
+    return lock;
+}
+
+static void BHTRegisterHomeTimelineRole(
+    id timeline, BHTHomeTimelineRole role) {
+    if (!timeline) return;
+    @synchronized(BHTHomeTimelineRegistryLock()) {
+        if (!BHTHomeTimelineRegistry) {
+            BHTHomeTimelineRegistry = [NSMutableArray array];
+        }
+        for (NSInteger index =
+                 (NSInteger)BHTHomeTimelineRegistry.count - 1;
+             index >= 0; index--) {
+            BHTHomeTimelineRegistryEntry* entry =
+                BHTHomeTimelineRegistry[(NSUInteger)index];
+            id registeredTimeline = entry.timeline;
+            if (!registeredTimeline) {
+                [BHTHomeTimelineRegistry
+                    removeObjectAtIndex:(NSUInteger)index];
+                continue;
+            }
+            if (registeredTimeline == timeline) {
+                entry.role = role;
+                return;
+            }
+        }
+        BHTHomeTimelineRegistryEntry* entry =
+            [BHTHomeTimelineRegistryEntry new];
+        entry.timeline = timeline;
+        entry.role = role;
+        [BHTHomeTimelineRegistry addObject:entry];
+    }
+}
+
+static NSNumber* BHTHomeTimelineRoleForTrustedPointer(
+    const void* candidate) {
+    if (!candidate) return nil;
+    @synchronized(BHTHomeTimelineRegistryLock()) {
+        for (NSInteger index =
+                 (NSInteger)BHTHomeTimelineRegistry.count - 1;
+             index >= 0; index--) {
+            BHTHomeTimelineRegistryEntry* entry =
+                BHTHomeTimelineRegistry[(NSUInteger)index];
+            id timeline = entry.timeline;
+            if (!timeline) {
+                [BHTHomeTimelineRegistry
+                    removeObjectAtIndex:(NSUInteger)index];
+                continue;
+            }
+            if ((__bridge const void*)timeline == candidate) {
+                return @(entry.role);
+            }
+        }
+    }
+    return nil;
+}
 
 static void BHTMergeHomeTimelineRole(id timeline,
                                      BHTHomeTimelineRole incomingRole) {
@@ -51,6 +126,7 @@ static void BHTMergeHomeTimelineRole(id timeline,
         objc_setAssociatedObject(timeline, &kBHTForYouTimelineRoleKey,
                                  @(mergedRole),
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        BHTRegisterHomeTimelineRole(timeline, mergedRole);
     }
 }
 
@@ -439,6 +515,43 @@ static id ItemObjectValue(id viewModel, SEL selector,
         viewModel, selector, ivarName, NO);
 }
 
+static void* BHTUntypedIvarPointer(
+    id object, const char* ivarName) {
+    if (!object || !ivarName) return NULL;
+    Ivar ivar = class_getInstanceVariable([object class], ivarName);
+    if (!ivar && ivarName[0] != '_') {
+        NSString* name =
+            [NSString stringWithUTF8String:ivarName];
+        NSString* underscored =
+            [@"_" stringByAppendingString:name];
+        ivar = class_getInstanceVariable(
+            [object class], underscored.UTF8String);
+    }
+    if (!ivar) return NULL;
+
+    const char* type =
+        SkipObjCTypeQualifiers(ivar_getTypeEncoding(ivar));
+    if (type && type[0] != '\0' && type[0] != '?') {
+        return NULL;
+    }
+
+    ptrdiff_t offset = ivar_getOffset(ivar);
+    Class runtimeClass = object_getClass(object);
+    if (offset < 0 || !runtimeClass) return NULL;
+    size_t unsignedOffset = (size_t)offset;
+    size_t instanceSize = class_getInstanceSize(runtimeClass);
+    if (unsignedOffset > instanceSize ||
+        sizeof(void*) > instanceSize - unsignedOffset) {
+        return NULL;
+    }
+
+    uintptr_t base = (uintptr_t)(__bridge void*)object;
+    void* value = NULL;
+    memcpy(&value, (const void*)(base + unsignedOffset),
+           sizeof(value));
+    return value;
+}
+
 static NSString* ItemStringValue(id object, SEL selector,
                                  const char* ivarName) {
     id value = ItemObjectValue(object, selector, ivarName);
@@ -489,31 +602,91 @@ static Class BHTTwitterStatusClass(void) {
     return cls;
 }
 
+static UIViewController* NearestURTTimelineController(
+    TFNItemsDataViewController* dataViewController, Class targetClass) {
+    UIViewController* current = dataViewController;
+    for (NSUInteger depth = 0;
+         current && depth < 16; depth++) {
+        if ([current isKindOfClass:targetClass]) return current;
+
+        UIViewController* next = current.parentViewController;
+        if (!next || next == current) {
+            next = current.navigationController;
+        }
+        if (!next || next == current) break;
+        current = next;
+    }
+
+    // X 12.9 delivers sections through an inner items controller. Its UIKit
+    // containment metadata can be temporarily incomplete during setup, while
+    // the loaded view's responder chain still reaches the owning URT
+    // controller. Keep this bounded and accept only the exact runtime class.
+    if (dataViewController.isViewLoaded) {
+        UIResponder* responder =
+            dataViewController.view.nextResponder;
+        for (NSUInteger depth = 0;
+             responder && depth < 32; depth++) {
+            if ([responder isKindOfClass:targetClass] &&
+                [responder isKindOfClass:UIViewController.class]) {
+                return (UIViewController*)responder;
+            }
+            UIResponder* next = responder.nextResponder;
+            if (!next || next == responder) break;
+            responder = next;
+        }
+    }
+    return nil;
+}
+
 static BOOL IsPrimaryForYouTimelineController(
     TFNItemsDataViewController* dataViewController) {
     if (!dataViewController) return NO;
 
     Class urtControllerClass = NSClassFromString(@"T1URTViewController");
-    if (!urtControllerClass ||
-        ![dataViewController isKindOfClass:urtControllerClass]) {
+    if (!urtControllerClass) {
         BHTRecordForYouFilterDiagnostic(
-            BHTForYouFilterDiagnosticControllerNonForYou);
+            BHTForYouFilterDiagnosticControllerOwnerMissing);
+        return NO;
+    }
+
+    UIViewController* urtController =
+        NearestURTTimelineController(
+            dataViewController, urtControllerClass);
+    if (!urtController) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticControllerOwnerMissing);
         return NO;
     }
 
     NSString* location =
-        ItemStringValue(dataViewController, @selector(adDisplayLocation),
+        ItemStringValue(urtController, @selector(adDisplayLocation),
                         "adDisplayLocation");
     if (![location isEqualToString:@"TIMELINE_HOME"]) {
         BHTRecordForYouFilterDiagnostic(
-            BHTForYouFilterDiagnosticControllerNonForYou);
+            BHTForYouFilterDiagnosticControllerNonHome);
         return NO;
     }
 
+    // X 12.9 exposes `urtTimeline` as a Swift-backed ivar with an empty
+    // Objective-C type encoding and no accessor. A typed future accessor/ivar
+    // remains preferred. For this exact runtime shape, compare the raw pointer
+    // with the weak registry of objects returned by X's verified deserializer
+    // before making any Objective-C call on it.
     id urtTimeline =
-        ItemObjectValue(dataViewController,
-                        NSSelectorFromString(@"urtTimeline"), "urtTimeline");
+        ItemObjectValue(
+            urtController, NSSelectorFromString(@"urtTimeline"),
+            "urtTimeline");
     NSNumber* role = BHTHomeTimelineRoleForTimeline(urtTimeline);
+    if (!urtTimeline) {
+        void* rawTimeline =
+            BHTUntypedIvarPointer(urtController, "urtTimeline");
+        role =
+            BHTHomeTimelineRoleForTrustedPointer(rawTimeline);
+    }
+    BHTRecordForYouFilterDiagnostic(
+        role
+            ? BHTForYouFilterDiagnosticTimelineObjectResolved
+            : BHTForYouFilterDiagnosticTimelineObjectMissing);
     // Re-evaluate the current object on every section update. Never carry a
     // positive controller decision across an unknown or explicitly non-For You
     // timeline, since X is free to reuse controllers between feeds.
