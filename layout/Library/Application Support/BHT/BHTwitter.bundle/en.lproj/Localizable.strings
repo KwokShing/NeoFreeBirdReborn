@@ -169,6 +169,7 @@
 "WEB_REPLY_SIGN_IN_TITLE" = "Web Reply Sign-In";
 "WEB_REPLY_SIGN_IN_PROMPT" = "x.com • Sign in once, verify the account, then close";
 "WEB_REPLY_SIGN_IN_LOAD_FAILED" = "The X sign-in page could not be loaded.";
+"WEB_REPLY_LOADING" = "Loading X…";
 "WEB_REPLY_TITLE" = "Reply";
 "WEB_REPLY_ACCOUNT_PROMPT" = "x.com • Check the signed-in account";
 "WEB_REPLY_BACK" = "Back";

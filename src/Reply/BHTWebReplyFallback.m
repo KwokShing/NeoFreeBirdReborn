@@ -34,6 +34,16 @@ typedef NS_ENUM(NSUInteger, BHTWebReplyDiagnosticEvent) {
     BHTWebReplyDiagnosticNavigationCancellationIgnored,
     BHTWebReplyDiagnosticPolicyInterruptionIgnored,
     BHTWebReplyDiagnosticAppHandoffIgnored,
+    BHTWebReplyDiagnosticAutomaticPopupIgnored,
+    BHTWebReplyDiagnosticBlankPopupIgnored,
+    BHTWebReplyDiagnosticBlankMainFramePrevented,
+    BHTWebReplyDiagnosticBlankMainFrameFinished,
+    BHTWebReplyDiagnosticUserPopupRerouted,
+    BHTWebReplyDiagnosticMainFrameHTTPClientError,
+    BHTWebReplyDiagnosticMainFrameHTTPServerError,
+    BHTWebReplyDiagnosticMainFrameEmptyResponse,
+    BHTWebReplyDiagnosticMainFrameUnsupportedMIMEType,
+    BHTWebReplyDiagnosticLoadWatchdogExpired,
     BHTWebReplyDiagnosticNavigationBlocked,
     BHTWebReplyDiagnosticNavigationBlockedUserInitiated,
     BHTWebReplyDiagnosticNavigationBlockedAutomatic,
@@ -71,6 +81,16 @@ static NSString* const BHTWebReplyDiagnosticNames[] = {
     @"navigationCancellationIgnored",
     @"policyInterruptionIgnored",
     @"appHandoffIgnored",
+    @"automaticPopupIgnored",
+    @"blankPopupIgnored",
+    @"blankMainFramePrevented",
+    @"blankMainFrameFinished",
+    @"userPopupRerouted",
+    @"mainFrameHTTPClientError",
+    @"mainFrameHTTPServerError",
+    @"mainFrameEmptyResponse",
+    @"mainFrameUnsupportedMIMEType",
+    @"loadWatchdogExpired",
     @"navigationBlocked",
     @"navigationBlockedUserInitiated",
     @"navigationBlockedAutomatic",
@@ -281,7 +301,16 @@ static NSURL* BHTWebReplyURL(long long identifier) {
 }
 
 static NSURL* BHTWebReplySignInURL(void) {
-    NSURL* URL = [NSURL URLWithString:@"https://x.com/home"];
+    NSURLComponents* components =
+        [NSURLComponents
+            componentsWithString:
+                @"https://x.com/i/flow/login"];
+    components.queryItems = @[
+        [NSURLQueryItem
+            queryItemWithName:@"redirect_after_login"
+                        value:@"/home"]
+    ];
+    NSURL* URL = components.URL;
     return [URL.scheme isEqualToString:@"https"] &&
                    [URL.host isEqualToString:@"x.com"]
                ? URL
@@ -302,11 +331,17 @@ static BOOL BHTHostIsExactOrSubdomain(
                                     normalizedDomain]];
 }
 
+static BOOL BHTWebReplyURLIsAboutBlank(NSURL* URL) {
+    return [URL.scheme.lowercaseString
+               isEqualToString:@"about"] &&
+           [URL.absoluteString.lowercaseString
+               isEqualToString:@"about:blank"];
+}
+
 static BOOL BHTWebReplyAllowsTopLevelURL(NSURL* URL) {
     if (!URL) return NO;
     if ([URL.scheme.lowercaseString isEqualToString:@"about"]) {
-        return [URL.absoluteString.lowercaseString
-            isEqualToString:@"about:blank"];
+        return NO;
     }
     if (![URL.scheme.lowercaseString
             isEqualToString:@"https"]) {
@@ -425,16 +460,21 @@ static void BHTRecordWebReplyNavigationFailure(
 @property(nonatomic, copy) NSString* loadFailureKey;
 @property(nonatomic, strong) WKWebView* webView;
 @property(nonatomic, strong) UIProgressView* progressView;
+@property(nonatomic, strong) UIView* loadingView;
 @property(nonatomic, strong) UIView* errorView;
 @property(nonatomic, strong) UIBarButtonItem* backItem;
 @property(nonatomic, strong) UIBarButtonItem* forwardItem;
 @property(nonatomic) BOOL observingProgress;
 @property(nonatomic) BOOL didRecordClose;
 @property(nonatomic) BOOL blockedAlertVisible;
+@property(nonatomic) NSUInteger loadAttemptGeneration;
+@property(nonatomic) BOOL loadAttemptComplete;
 - (instancetype)initWithURL:(NSURL*)URL
                     titleKey:(NSString*)titleKey
                    promptKey:(NSString*)promptKey
              loadFailureKey:(NSString*)loadFailureKey;
+- (void)loadRequestWithWatchdog:(NSURLRequest*)request;
+- (void)scheduleUserPopupRequest:(NSURLRequest*)request;
 @end
 
 @implementation BHTWebReplyViewController
@@ -477,6 +517,10 @@ static void BHTRecordWebReplyNavigationFailure(
         configuration.defaultWebpagePreferences
             .preferredContentMode = WKContentModeMobile;
     }
+    if (@available(iOS 14.0, *)) {
+        configuration.defaultWebpagePreferences
+            .allowsContentJavaScript = YES;
+    }
 
     self.webView = [[WKWebView alloc]
         initWithFrame:CGRectZero
@@ -497,6 +541,10 @@ static void BHTRecordWebReplyNavigationFailure(
         [Palette customAccentColor] ?:
         UIColor.systemBlueColor;
     [self.view addSubview:self.progressView];
+
+    self.loadingView = [self buildLoadingView];
+    self.loadingView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.loadingView];
 
     self.errorView = [self buildErrorView];
     self.errorView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -519,6 +567,14 @@ static void BHTRecordWebReplyNavigationFailure(
             constraintEqualToAnchor:self.view.trailingAnchor],
         [self.webView.bottomAnchor
             constraintEqualToAnchor:self.view.bottomAnchor],
+        [self.loadingView.topAnchor
+            constraintEqualToAnchor:self.webView.topAnchor],
+        [self.loadingView.leadingAnchor
+            constraintEqualToAnchor:self.webView.leadingAnchor],
+        [self.loadingView.trailingAnchor
+            constraintEqualToAnchor:self.webView.trailingAnchor],
+        [self.loadingView.bottomAnchor
+            constraintEqualToAnchor:self.webView.bottomAnchor],
         [self.errorView.topAnchor
             constraintEqualToAnchor:self.webView.topAnchor],
         [self.errorView.leadingAnchor
@@ -574,6 +630,56 @@ static void BHTRecordWebReplyNavigationFailure(
                           BHTWebReplyProgressObservationContext];
     self.observingProgress = YES;
     [self retryLoad];
+}
+
+- (UIView*)buildLoadingView {
+    UIView* container = [UIView new];
+    container.backgroundColor =
+        [Palette currentBackgroundColor];
+
+    UIActivityIndicatorView* indicator =
+        [[UIActivityIndicatorView alloc]
+            initWithActivityIndicatorStyle:
+                UIActivityIndicatorViewStyleMedium];
+    indicator.color =
+        [Palette customAccentColor] ?:
+        UIColor.systemBlueColor;
+    [indicator startAnimating];
+
+    UILabel* label = [UILabel new];
+    label.text =
+        BHTWebReplyLocalized(@"WEB_REPLY_LOADING");
+    label.textColor =
+        [Palette currentSecondaryTextColor];
+    label.font =
+        [UIFont preferredFontForTextStyle:
+                    UIFontTextStyleBody];
+    label.adjustsFontForContentSizeCategory = YES;
+    label.textAlignment = NSTextAlignmentCenter;
+    label.numberOfLines = 0;
+
+    UIStackView* stack = [[UIStackView alloc]
+        initWithArrangedSubviews:@[indicator, label]];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.alignment = UIStackViewAlignmentCenter;
+    stack.spacing = 14.0;
+    [container addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor
+            constraintGreaterThanOrEqualToAnchor:
+                container.leadingAnchor
+                                     constant:28.0],
+        [stack.trailingAnchor
+            constraintLessThanOrEqualToAnchor:
+                container.trailingAnchor
+                                  constant:-28.0],
+        [stack.centerXAnchor
+            constraintEqualToAnchor:container.centerXAnchor],
+        [stack.centerYAnchor
+            constraintEqualToAnchor:container.centerYAnchor],
+    ]];
+    return container;
 }
 
 - (UIView*)buildErrorView {
@@ -725,6 +831,8 @@ static void BHTRecordWebReplyNavigationFailure(
 - (void)recordCloseIfNeeded {
     if (self.didRecordClose) return;
     self.didRecordClose = YES;
+    self.loadAttemptComplete = YES;
+    self.loadAttemptGeneration++;
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticClosed);
     if (BHTActiveWebReplyNavigationController ==
@@ -748,9 +856,67 @@ static void BHTRecordWebReplyNavigationFailure(
 
 - (void)retryLoad {
     self.errorView.hidden = YES;
+    self.loadingView.hidden = NO;
     self.progressView.hidden = NO;
-    [self.webView loadRequest:
+    [self loadRequestWithWatchdog:
         [NSURLRequest requestWithURL:self.initialURL]];
+}
+
+- (void)loadRequestWithWatchdog:
+    (NSURLRequest*)request {
+    if (!request.URL) {
+        [self showLoadFailure];
+        return;
+    }
+    NSUInteger generation =
+        ++self.loadAttemptGeneration;
+    self.loadAttemptComplete = NO;
+    self.errorView.hidden = YES;
+    self.loadingView.hidden = NO;
+    self.progressView.hidden = NO;
+    [self.webView loadRequest:request];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(
+        dispatch_time(
+            DISPATCH_TIME_NOW,
+            (int64_t)(20.0 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf =
+                weakSelf;
+            if (!strongSelf ||
+                strongSelf.loadAttemptGeneration !=
+                    generation ||
+                strongSelf.loadAttemptComplete ||
+                !strongSelf.viewIfLoaded.window) {
+                return;
+            }
+            strongSelf.loadAttemptComplete = YES;
+            BHTRecordWebReplyDiagnostic(
+                BHTWebReplyDiagnosticLoadWatchdogExpired);
+            [strongSelf.webView stopLoading];
+            [strongSelf showLoadFailure];
+        });
+}
+
+- (void)scheduleUserPopupRequest:
+    (NSURLRequest*)request {
+    NSURLRequest* requestCopy = [request copy];
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) strongSelf =
+            weakSelf;
+        if (!strongSelf ||
+            !strongSelf.viewIfLoaded.window ||
+            !BHTWebReplyAllowsTopLevelURL(
+                requestCopy.URL)) {
+            return;
+        }
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticUserPopupRerouted);
+        [strongSelf
+            loadRequestWithWatchdog:requestCopy];
+    });
 }
 
 - (void)updateNavigationControls {
@@ -759,6 +925,8 @@ static void BHTRecordWebReplyNavigationFailure(
 }
 
 - (void)showLoadFailure {
+    self.loadAttemptComplete = YES;
+    self.loadingView.hidden = YES;
     self.progressView.hidden = YES;
     self.errorView.hidden = NO;
     [self updateNavigationControls];
@@ -797,16 +965,31 @@ static void BHTRecordWebReplyNavigationFailure(
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticNavigationStarted);
     self.errorView.hidden = YES;
+    self.loadingView.hidden = NO;
     self.progressView.hidden = NO;
     [self updateNavigationControls];
 }
 
-- (void)webView:(__unused WKWebView*)webView
+- (void)webView:(WKWebView*)webView
         didFinishNavigation:
             (__unused WKNavigation*)navigation {
+    if (self.loadAttemptComplete &&
+        !self.errorView.hidden) {
+        [self updateNavigationControls];
+        return;
+    }
+    if (BHTWebReplyURLIsAboutBlank(webView.URL)) {
+        self.loadAttemptComplete = YES;
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticBlankMainFrameFinished);
+        [self showLoadFailure];
+        return;
+    }
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticNavigationFinished);
+    self.loadAttemptComplete = YES;
     self.errorView.hidden = YES;
+    self.loadingView.hidden = YES;
     self.progressView.hidden = YES;
     [self updateNavigationControls];
 }
@@ -819,6 +1002,7 @@ static void BHTRecordWebReplyNavigationFailure(
     if (BHTWebReplyShouldIgnoreNavigationError(error)) {
         return;
     }
+    self.loadAttemptComplete = YES;
     BHTRecordWebReplyNavigationFailure(error, YES);
     [self showLoadFailure];
 }
@@ -830,30 +1014,101 @@ static void BHTRecordWebReplyNavigationFailure(
     if (BHTWebReplyShouldIgnoreNavigationError(error)) {
         return;
     }
+    self.loadAttemptComplete = YES;
     BHTRecordWebReplyNavigationFailure(error, NO);
     [self showLoadFailure];
 }
 
 - (void)webViewWebContentProcessDidTerminate:
     (__unused WKWebView*)webView {
+    self.loadAttemptComplete = YES;
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticWebProcessTerminated);
     [self showLoadFailure];
 }
 
-- (void)webView:(WKWebView*)webView
+- (void)webView:(__unused WKWebView*)webView
+        decidePolicyForNavigationResponse:
+            (WKNavigationResponse*)navigationResponse
+        decisionHandler:
+            (void (^)(WKNavigationResponsePolicy))
+                decisionHandler {
+    if (![navigationResponse isForMainFrame]) {
+        decisionHandler(
+            WKNavigationResponsePolicyAllow);
+        return;
+    }
+
+    BHTWebReplyDiagnosticEvent responseFailure =
+        BHTWebReplyDiagnosticEventCount;
+    if (!navigationResponse.canShowMIMEType) {
+        responseFailure =
+            BHTWebReplyDiagnosticMainFrameUnsupportedMIMEType;
+    } else if ([navigationResponse.response
+                   isKindOfClass:
+                       [NSHTTPURLResponse class]]) {
+        NSInteger statusCode =
+            ((NSHTTPURLResponse*)
+                 navigationResponse.response)
+                .statusCode;
+        if (statusCode == 204 || statusCode == 205) {
+            responseFailure =
+                BHTWebReplyDiagnosticMainFrameEmptyResponse;
+        } else if (statusCode >= 400 &&
+                   statusCode < 500) {
+            responseFailure =
+                BHTWebReplyDiagnosticMainFrameHTTPClientError;
+        } else if (statusCode >= 500) {
+            responseFailure =
+                BHTWebReplyDiagnosticMainFrameHTTPServerError;
+        }
+    }
+
+    if (responseFailure !=
+        BHTWebReplyDiagnosticEventCount) {
+        self.loadAttemptComplete = YES;
+        BHTRecordWebReplyDiagnostic(responseFailure);
+        decisionHandler(
+            WKNavigationResponsePolicyCancel);
+        [self showLoadFailure];
+        return;
+    }
+    decisionHandler(WKNavigationResponsePolicyAllow);
+}
+
+- (void)webView:(__unused WKWebView*)webView
         decidePolicyForNavigationAction:
             (WKNavigationAction*)navigationAction
         decisionHandler:
             (void (^)(WKNavigationActionPolicy))decisionHandler {
     NSURL* destination = navigationAction.request.URL;
+    BOOL opensNewWindow =
+        navigationAction.targetFrame == nil;
+    BOOL userInitiated =
+        BHTWebReplyNavigationIsUserInitiated(
+            navigationAction);
     BOOL isTopLevel =
-        navigationAction.targetFrame == nil ||
+        opensNewWindow ||
         navigationAction.targetFrame.isMainFrame;
     if (isTopLevel &&
         BHTWebReplyIsExpectedAppHandoffURL(destination)) {
         BHTRecordWebReplyDiagnostic(
             BHTWebReplyDiagnosticAppHandoffIgnored);
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    if (isTopLevel &&
+        BHTWebReplyURLIsAboutBlank(destination)) {
+        BHTRecordWebReplyDiagnostic(
+            opensNewWindow
+                ? BHTWebReplyDiagnosticBlankPopupIgnored
+                : BHTWebReplyDiagnosticBlankMainFramePrevented);
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    if (opensNewWindow && !userInitiated) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAutomaticPopupIgnored);
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
@@ -868,9 +1123,6 @@ static void BHTRecordWebReplyNavigationFailure(
     if (!allowed) {
         BHTRecordWebReplyDiagnostic(
             BHTWebReplyDiagnosticNavigationBlocked);
-        BOOL userInitiated =
-            BHTWebReplyNavigationIsUserInitiated(
-                navigationAction);
         BHTRecordWebReplyDiagnostic(
             userInitiated
                 ? BHTWebReplyDiagnosticNavigationBlockedUserInitiated
@@ -882,15 +1134,15 @@ static void BHTRecordWebReplyNavigationFailure(
         return;
     }
 
-    if (navigationAction.targetFrame == nil) {
-        decisionHandler(WKNavigationActionPolicyCancel);
-        [webView loadRequest:navigationAction.request];
+    if (opensNewWindow) {
+        decisionHandler(WKNavigationActionPolicyAllow);
         return;
     }
     decisionHandler(WKNavigationActionPolicyAllow);
 }
 
-- (WKWebView*)webView:(WKWebView*)webView
+- (WKWebView*)webView:
+        (__unused WKWebView*)webView
         createWebViewWithConfiguration:
             (__unused WKWebViewConfiguration*)configuration
               forNavigationAction:
@@ -903,14 +1155,25 @@ static void BHTRecordWebReplyNavigationFailure(
             BHTWebReplyDiagnosticAppHandoffIgnored);
         return nil;
     }
+    if (BHTWebReplyURLIsAboutBlank(destination)) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticBlankPopupIgnored);
+        return nil;
+    }
+    BOOL userInitiated =
+        BHTWebReplyNavigationIsUserInitiated(
+            navigationAction);
+    if (!userInitiated) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAutomaticPopupIgnored);
+        return nil;
+    }
     if (BHTWebReplyAllowsTopLevelURL(destination)) {
-        [webView loadRequest:navigationAction.request];
+        [self scheduleUserPopupRequest:
+            navigationAction.request];
     } else {
         BHTRecordWebReplyDiagnostic(
             BHTWebReplyDiagnosticNavigationBlocked);
-        BOOL userInitiated =
-            BHTWebReplyNavigationIsUserInitiated(
-                navigationAction);
         BHTRecordWebReplyDiagnostic(
             userInitiated
                 ? BHTWebReplyDiagnosticNavigationBlockedUserInitiated

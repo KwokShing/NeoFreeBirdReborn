@@ -1499,6 +1499,7 @@ def main() -> None:
         (
             "WKWebsiteDataStore.defaultDataStore",
             "preferredContentMode = WKContentModeMobile",
+            "allowsContentJavaScript = YES",
             "UIModalPresentationFullScreen",
             "UIModalPresentationFormSheet",
             "self.navigationItem.prompt =",
@@ -1510,7 +1511,9 @@ def main() -> None:
             '[host isEqualToString:@"appleid.apple.com"]',
             'componentsWithString:\n                @"https://x.com/intent/tweet"',
             'queryItemWithName:@"in_reply_to"',
-            'URLWithString:@"https://x.com/home"',
+            'componentsWithString:\n'
+                '                @"https://x.com/i/flow/login"',
+            'queryItemWithName:@"redirect_after_login"',
             "BHTWebReplyIsExpectedAppHandoffURL(",
             '[scheme isEqualToString:@"x"]',
             '[scheme isEqualToString:@"twitter"]',
@@ -1519,9 +1522,26 @@ def main() -> None:
             '[domain isEqualToString:@"WebKitErrorDomain"]',
             "BHTWebReplyDiagnosticPolicyInterruptionIgnored",
             "BHTWebReplyDiagnosticAppHandoffIgnored",
+            "BHTWebReplyDiagnosticAutomaticPopupIgnored",
+            "BHTWebReplyDiagnosticBlankPopupIgnored",
+            "BHTWebReplyDiagnosticBlankMainFramePrevented",
+            "BHTWebReplyDiagnosticBlankMainFrameFinished",
+            "BHTWebReplyDiagnosticUserPopupRerouted",
+            "BHTWebReplyDiagnosticMainFrameHTTPClientError",
+            "BHTWebReplyDiagnosticMainFrameHTTPServerError",
+            "BHTWebReplyDiagnosticMainFrameEmptyResponse",
+            "BHTWebReplyDiagnosticMainFrameUnsupportedMIMEType",
+            "BHTWebReplyDiagnosticLoadWatchdogExpired",
             "BHTWebReplyDiagnosticNavigationBlockedUserInitiated",
             "BHTWebReplyDiagnosticNavigationBlockedAutomatic",
             "BHTWebReplyNavigationIsUserInitiated(",
+            "BOOL opensNewWindow =",
+            "if (opensNewWindow && !userInitiated)",
+            "BHTWebReplyURLIsAboutBlank(",
+            "scheduleUserPopupRequest:",
+            "loadRequestWithWatchdog:",
+            "(int64_t)(20.0 * NSEC_PER_SEC)",
+            "decidePolicyForNavigationResponse:",
             "BHTRecordWebReplyNavigationFailure(error, YES)",
             "BHTRecordWebReplyNavigationFailure(error, NO)",
             "BHTWebReplyDiagnosticFailureOfflineOrCannotConnect",
@@ -1532,6 +1552,7 @@ def main() -> None:
             "BHTPresentWebReplyScreen(",
             '@"WEB_REPLY_SIGN_IN_TITLE"',
             '@"WEB_REPLY_SIGN_IN_PROMPT"',
+            '@"WEB_REPLY_LOADING"',
             "class_getInstanceMethod(object_getClass(object), selector)",
             "method_getNumberOfArguments(method) == 2",
             "@catch (__unused NSException* exception)",
@@ -1706,6 +1727,7 @@ def main() -> None:
             '"WEB_REPLY_SIGN_IN_TITLE"',
             '"WEB_REPLY_SIGN_IN_PROMPT"',
             '"WEB_REPLY_SIGN_IN_LOAD_FAILED"',
+            '"WEB_REPLY_LOADING"',
             '"WEB_REPLY_TITLE"',
             '"WEB_REPLY_ACCOUNT_PROMPT"',
             '"WEB_REPLY_LOAD_FAILED"',
@@ -1723,11 +1745,89 @@ def main() -> None:
         ),
         "redacted web reply compatibility report",
     )
-    if "Version: 6.1.0-beta.33" not in (
+    popup_policy_source = source_section(
+        web_reply_source,
+        "decidePolicyForNavigationAction:",
+        "createWebViewWithConfiguration:",
+        "web reply popup policy",
+    )
+    automatic_popup_guard = popup_policy_source.find(
+        "if (opensNewWindow && !userInitiated)"
+    )
+    blank_popup_guard = popup_policy_source.find(
+        "BHTWebReplyURLIsAboutBlank(destination)"
+    )
+    allowed_new_window_branch = popup_policy_source.find(
+        "if (opensNewWindow) {\n"
+        "        decisionHandler(WKNavigationActionPolicyAllow);"
+    )
+    if (
+        automatic_popup_guard < 0
+        or blank_popup_guard < 0
+        or allowed_new_window_branch < 0
+        or automatic_popup_guard > allowed_new_window_branch
+        or blank_popup_guard > allowed_new_window_branch
+        or "[webView loadRequest:" in popup_policy_source
+        or "scheduleUserPopupRequest:" in popup_policy_source
+    ):
+        raise AssertionError(
+            "Navigation policy must reject automatic/blank popups and "
+            "leave permitted user popup loading to WKUIDelegate"
+        )
+
+    popup_creation_source = source_section(
+        web_reply_source,
+        "createWebViewWithConfiguration:",
+        "@end",
+        "web reply popup creation",
+    )
+    popup_creation_guard = popup_creation_source.find(
+        "if (!userInitiated)"
+    )
+    popup_creation_blank_guard = popup_creation_source.find(
+        "if (BHTWebReplyURLIsAboutBlank(destination))"
+    )
+    popup_creation_load = popup_creation_source.find(
+        "[self scheduleUserPopupRequest:"
+    )
+    if (
+        popup_creation_guard < 0
+        or popup_creation_blank_guard < 0
+        or popup_creation_load < 0
+        or popup_creation_guard > popup_creation_load
+        or popup_creation_blank_guard > popup_creation_load
+    ):
+        raise AssertionError(
+            "WKUIDelegate must ignore automatic and about:blank popups "
+            "before scheduling their request in the main WebView"
+        )
+
+    popup_schedule_source = source_section(
+        web_reply_source,
+        "- (void)scheduleUserPopupRequest:",
+        "- (void)updateNavigationControls",
+        "asynchronous popup reroute",
+    )
+    if (
+        "dispatch_async(dispatch_get_main_queue()" not in
+            popup_schedule_source
+        or popup_schedule_source.find(
+            "dispatch_async(dispatch_get_main_queue()"
+        )
+        > popup_schedule_source.find(
+            "loadRequestWithWatchdog:requestCopy"
+        )
+    ):
+        raise AssertionError(
+            "A user popup must be rerouted after returning from WebKit's "
+            "navigation delegate"
+        )
+
+    if "Version: 6.1.0-beta.34" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The repaired Web Intent reply fallback must ship as beta.33"
+            "The automatic-popup reply fix must ship as beta.34"
         )
 
     branding_source = (
