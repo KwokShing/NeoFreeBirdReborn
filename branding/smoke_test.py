@@ -45,6 +45,32 @@ def main():
         info = {
             "CFBundleDisplayName": "X",
             "CFBundleIdentifier": "com.atebits.Tweetie2",
+            "CFBundleShortVersionString": "12.9",
+            "CFBundleVersion": "10",
+            "CFBundleURLTypes": [
+                {
+                    "CFBundleURLName": "com.twitter.twitter-iphone",
+                    "CFBundleURLSchemes": [
+                        "twitter",
+                        "twitterauth",
+                        "com.googleusercontent.apps.test-client",
+                    ],
+                }
+            ],
+            "LSApplicationQueriesSchemes": [
+                "twitterauth",
+                "googlechromes",
+            ],
+            "TFNClientPrimaryScheme": "twitter",
+            "TWSharedApplicationGroupIdentifier": (
+                "8248RGMF2D.group.com.twitter.twitter"
+            ),
+            "TWSharedKeychainIdentifier": (
+                "8248RGMF2D.com.atebits.Tweetie2"
+            ),
+            "TWSharedKeychainOAuthIdentifier": (
+                "8248RGMF2D.com.atebits.Tweetie2.oauth"
+            ),
             "CFBundleIcons": stock_icons,
             "CFBundleIcons~ipad": {
                 "CFBundleAlternateIcons": dict(
@@ -92,6 +118,20 @@ def main():
 
         assert branded["CFBundleDisplayName"] == "Twitter"
         assert localized_name["CFBundleDisplayName"] == "Twitter"
+        for preserved_key in (
+            "CFBundleIdentifier",
+            "CFBundleShortVersionString",
+            "CFBundleVersion",
+            "CFBundleURLTypes",
+            "LSApplicationQueriesSchemes",
+            "TFNClientPrimaryScheme",
+            "TWSharedApplicationGroupIdentifier",
+            "TWSharedKeychainIdentifier",
+            "TWSharedKeychainOAuthIdentifier",
+        ):
+            assert branded[preserved_key] == info[preserved_key], (
+                f"Branding changed login metadata: {preserved_key}"
+            )
         assert (expanded / "iTunesArtwork").read_bytes() == b"artwork"
         assert (branded_app / "InfoLink.plist").is_symlink()
         launch_archive = (branded_app / "LaunchScreen.nib").read_bytes()

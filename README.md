@@ -126,9 +126,13 @@ The full per-feature review is in
 ## Important login note
 
 X may reject modified clients through server/app attestation. This project does
-not bypass attestation and does not include replacement login flows, cookie or
-session-token harvesting, or subscription-state spoofing. Those approaches are
-fragile, unsafe for accounts, and outside this fork's compatibility work.
+not bypass attestation, harvest cookies or web sessions, back up credentials,
+or spoof subscription state. X 12.9 builds include an explicit
+**Compatibility Sign-in** fallback for cases where the normal X flow does not
+finish. Native sign-in remains the default. The fallback calls X 12.9's own
+password command, challenge UI, account registration, and credential storage;
+it fails closed if any required private method is missing. Because this relies
+on version-specific private APIs, use it only on X 12.9.
 
 ## Build locally
 

@@ -5,18 +5,9 @@
 
 #import <CoreText/CoreText.h>
 #import "HookHelpers.h"
+#import "Security/BHTAuthenticationURLUtility.h"
 
 // MARK: - Always open in Safari
-
-// In-app browser is used for two-factor authentication with security key,
-// login will not complete successfully if it's redirected to Safari
-static BOOL ShouldKeepBrowserURLInApp(NSURL* url) {
-    NSString* urlStr = [url absoluteString];
-
-    return [urlStr containsString:@"twitter.com/account/"] ||
-           [urlStr containsString:@"twitter.com/i/flow/"] ||
-           [urlStr containsString:@"x.com/account/"] || [urlStr containsString:@"x.com/i/flow/"];
-}
 
 // Every tapped link that resolves to the in-app Safari goes through this single
 // present funnel, so diverting here avoids presenting anything at all.
@@ -30,7 +21,8 @@ static BOOL ShouldKeepBrowserURLInApp(NSURL* url) {
     }
 
     NSURL* url = [self rootURL] ?: [self initialURL];
-    if (url == nil || ShouldKeepBrowserURLInApp(url)) {
+    BOOL shouldStayInApp = BHTShouldKeepAuthenticationURLInApp(url);
+    if (url == nil || shouldStayInApp) {
         return %orig;
     }
 
@@ -68,7 +60,8 @@ static BOOL ShouldKeepBrowserURLInApp(NSURL* url) {
     }
 
     NSURL* url = [self initialURL];
-    if (url == nil || ShouldKeepBrowserURLInApp(url)) {
+    BOOL shouldStayInApp = BHTShouldKeepAuthenticationURLInApp(url);
+    if (url == nil || shouldStayInApp) {
         return %orig;
     }
 

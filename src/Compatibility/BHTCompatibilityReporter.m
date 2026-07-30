@@ -1,7 +1,9 @@
 #import "Compatibility/BHTCompatibilityReporter.h"
 #import "Core/BHTSettings.h"
 #import "Likes/BHTLikesTab.h"
+#import "Login/BHTCompatibilityLogin.h"
 #import "MediaActions/BHTMediaActionUtility.h"
+#import "Security/BHTAuthenticationURLUtility.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 #import "ThemeColor/BHTThemePresets.h"
 
@@ -694,7 +696,15 @@ static NSArray* BHTRuntimeProbes(void) {
 
         BHTProbe(@"settings", @"T1GenericSettingsViewController", @"viewWillAppear:", NO),
         BHTProbe(@"settings", @"TFSFeatureSwitches", @"boolForKey:", NO),
-        BHTProbe(@"settings", @"TFSInstrumentedFeatureSwitches", @"boolForKey:", NO)
+        BHTProbe(@"settings", @"TFSInstrumentedFeatureSwitches", @"boolForKey:", NO),
+
+        BHTProbe(@"compatibilitySignIn", @"TFSTwitterAPIXAuthPasswordCommand", @"initWithContext:accountID:authContext:identifier:password:simCountryCode:httpRequestConfiguration:supportOneFactorAuthorization:knownDeviceToken:uiMetrics:authTokenStorage:source:responseModelBuilder:completionBlock:", NO),
+        BHTProbe(@"compatibilitySignIn", @"TFSTwitterServiceRunner", @"APICommandContext", YES),
+        BHTProbe(@"compatibilitySignIn", @"TFSTwitterServiceRunner", @"APICommandLoader", YES),
+        BHTProbe(@"compatibilitySignIn", @"TNUServiceHTTPConfiguration", @"configurationForForegroundRetriableRequest", YES),
+        BHTProbe(@"compatibilitySignIn", @"TFNTwitterAccount", @"initWithUsername:userID:", NO),
+        BHTProbe(@"compatibilitySignIn", @"TFNTwitterAccount", @"updateUserInfoAndCredentialsWithToken:secret:username:", NO),
+        BHTProbe(@"compatibilitySignIn", @"T1LoginChallengeFactory", @"loginChallengeWithMode:loginType:requestID:user:userID:URLString:loginCause:", YES)
     ];
 }
 
@@ -813,7 +823,10 @@ void BHTWriteCompatibilityReport(void) {
             @"commit": @"unknown",
 #endif
             @"unsafeLoginOverridesIncluded": @NO,
-            @"webSessionHarvestingIncluded": @NO
+            @"webSessionHarvestingIncluded": @NO,
+            @"compatibilityPasswordSignInIncluded": @YES,
+            @"attestationOverridesIncluded": @NO,
+            @"credentialBackupIncluded": @NO
         },
         @"summary": @{
             @"checks": @(probes.count),
@@ -822,6 +835,10 @@ void BHTWriteCompatibilityReport(void) {
         },
         @"features": featureSummary,
         @"settings": BHTSettingsSnapshot(),
+        @"authenticationRouting":
+            BHTAuthenticationRoutingDiagnosticSnapshot(),
+        @"compatibilitySignIn":
+            BHTCompatibilitySignInDiagnosticSnapshot(),
         @"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot(),
         @"mediaActionMenus": BHTMediaActionSettingsSnapshot(),
         @"likesRuntime": BHTLikesDiagnosticsSnapshot(),
