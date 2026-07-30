@@ -741,7 +741,7 @@ static void BHTCompleteSignedOutFlowAndSwitchAccount(
     BHTCompatibilityResult result) {
     Class hostClass =
         NSClassFromString(@"T1HostViewController");
-    id host = BHTSendObject(
+    UIViewController* host = (UIViewController*)BHTSendObject(
         hostClass,
         NSSelectorFromString(@"sharedHostViewController"));
     if (!host ||
@@ -809,7 +809,7 @@ static BOOL BHTPresentNativeLoginChallenge(
     SEL factorySelector = NSSelectorFromString(
         @"loginChallengeWithMode:loginType:requestID:user:"
          @"userID:URLString:loginCause:");
-    id host = BHTSendObject(
+    UIViewController* host = (UIViewController*)BHTSendObject(
         hostClass,
         NSSelectorFromString(@"sharedHostViewController"));
     if (!factoryClass ||
