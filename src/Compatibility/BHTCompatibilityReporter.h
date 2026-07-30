@@ -19,12 +19,39 @@ typedef NS_ENUM(NSUInteger, BHTForYouFilterDiagnosticEvent) {
     BHTForYouFilterDiagnosticEventCount,
 };
 
+typedef NS_ENUM(NSUInteger, BHTReplyWorkflowDiagnosticEvent) {
+    BHTReplyWorkflowDiagnosticReplyActionTapped = 0,
+    BHTReplyWorkflowDiagnosticReplyActionForwarded,
+    BHTReplyWorkflowDiagnosticPersistentComposerPresented,
+    BHTReplyWorkflowDiagnosticComposerPresented,
+    BHTReplyWorkflowDiagnosticComposerDisappeared,
+    BHTReplyWorkflowDiagnosticComposerClosed,
+    BHTReplyWorkflowDiagnosticSendButtonTapped,
+    BHTReplyWorkflowDiagnosticSendForwardedToX,
+    BHTReplyWorkflowDiagnosticOutboxQueued,
+    BHTReplyWorkflowDiagnosticOutboxProcessing,
+    BHTReplyWorkflowDiagnosticOutboxProcessed,
+    BHTReplyWorkflowDiagnosticSendCompleted,
+    BHTReplyWorkflowDiagnosticOutboxProcessFailed,
+    BHTReplyWorkflowDiagnosticCompositionSendFailed,
+    BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented,
+    BHTReplyWorkflowDiagnosticUnattributedComposerPresented,
+    BHTReplyWorkflowDiagnosticUnattributedSendButtonTapped,
+    BHTReplyWorkflowDiagnosticUnattributedSendForwardedToX,
+    BHTReplyWorkflowDiagnosticEventCount,
+};
+
 NSURL* BHTCompatibilityReportURL(void);
 void BHTWriteCompatibilityReport(void);
 void BHTWriteCompatibilityReportAsync(
     void (^completion)(NSURL* _Nullable reportURL));
 void BHTRecordForYouFilterDiagnostic(
     BHTForYouFilterDiagnosticEvent event);
+// Records fixed workflow stages only. Tweet/reply text, users, IDs, URLs,
+// account objects, notification payloads, and raw errors are never inspected.
+void BHTRecordReplyWorkflowDiagnostic(
+    BHTReplyWorkflowDiagnosticEvent event);
+void BHTInstallReplyWorkflowDiagnosticObservers(void);
 void BHTRecordNavigationEntryClasses(NSArray* entries);
 void BHTRecordTimelineItemObservation(id item, NSString* location, BOOL hidden);
 void BHTRecordMediaActionObservation(NSString* stage,

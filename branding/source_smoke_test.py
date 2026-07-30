@@ -1209,6 +1209,258 @@ def main() -> None:
         "redacted compatibility sign-in report integration",
     )
 
+    reply_header_source = (
+        ROOT / "src" / "Compatibility" / "BHTCompatibilityReporter.h"
+    ).read_text(encoding="utf-8")
+    reply_hook_source = (
+        ROOT / "src" / "Hooks" / "ReplyDiagnostics.x"
+    ).read_text(encoding="utf-8")
+    confirmations_source = (
+        ROOT / "src" / "Hooks" / "Confirmations.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        reply_header_source,
+        (
+            "BHTReplyWorkflowDiagnosticReplyActionTapped",
+            "BHTReplyWorkflowDiagnosticReplyActionForwarded",
+            "BHTReplyWorkflowDiagnosticPersistentComposerPresented",
+            "BHTReplyWorkflowDiagnosticComposerPresented",
+            "BHTReplyWorkflowDiagnosticComposerDisappeared",
+            "BHTReplyWorkflowDiagnosticComposerClosed",
+            "BHTReplyWorkflowDiagnosticSendButtonTapped",
+            "BHTReplyWorkflowDiagnosticSendForwardedToX",
+            "BHTReplyWorkflowDiagnosticOutboxQueued",
+            "BHTReplyWorkflowDiagnosticOutboxProcessing",
+            "BHTReplyWorkflowDiagnosticOutboxProcessed",
+            "BHTReplyWorkflowDiagnosticSendCompleted",
+            "BHTReplyWorkflowDiagnosticOutboxProcessFailed",
+            "BHTReplyWorkflowDiagnosticCompositionSendFailed",
+            "BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented",
+            "BHTRecordReplyWorkflowDiagnostic(",
+            "BHTInstallReplyWorkflowDiagnosticObservers(void)",
+        ),
+        "privacy-preserving reply workflow diagnostic API",
+    )
+    require_source_tokens(
+        compatibility_source,
+        (
+            "BHTReplyWorkflowDiagnosticCounters",
+            "BHTReplyWorkflowLastStage",
+            "BHTReplyWorkflowLastOutcome",
+            "BHTReplyNotificationObserverSpecs",
+            'dlsym(RTLD_DEFAULT, symbol)',
+            "dladdr(address, &symbolInfo)",
+            "dladdr((void*)candidateBits, &candidateInfo)",
+            "_Static_assert(",
+            "TFNTwitterCompositionOutboxDidAddCompositionNotification",
+            "TFNTwitterCompositionOutboxWillProcessCompositionNotification",
+            "TFNTwitterCompositionOutboxDidProcessCompositionNotification",
+            "TFNTwitterCompositionDidSendNotification",
+            "TFNTwitterCompositionOutboxDidFailProcessCompositionNotification",
+            "TFNTwitterCompositionSendDidFailNotification",
+            "__unused NSNotification* notification",
+            '@"replyWorkflow":',
+            "BHTReplyWorkflowDiagnosticSnapshot()",
+            '@"capturesTweetOrReplyText": @NO',
+            '@"capturesUsersOrAccountData": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesNotificationPayloads": @NO',
+            '@"capturesRawErrors": @NO',
+            '@"correlation":',
+            '@"process_level_temporal_heuristic"',
+            '@"diagnosticWindowSeconds":',
+            '@"runtimeShapeContainsPrivateAPIMetadata": @YES',
+        ),
+        "redacted reply workflow report integration",
+    )
+    reply_observer_source = source_section(
+        compatibility_source,
+        "void BHTInstallReplyWorkflowDiagnosticObservers(void)",
+        "static BOOL BHTReplySelectorIsSafeAndRelevant(",
+        "reply notification observers",
+    )
+    for private_value in (
+        "notification.userInfo",
+        "notification.object",
+        "[notification ",
+        "NSLog",
+        "localizedDescription",
+        "absoluteString",
+        "statusID",
+        "userID",
+        "fromUserName",
+        "password",
+        "authToken",
+    ):
+        if private_value in reply_observer_source:
+            raise AssertionError(
+                "Reply observers must count fixed stages without reading "
+                f"notification or account data: {private_value}"
+            )
+    require_source_tokens(
+        reply_hook_source,
+        (
+            "BHTReplyDiagnosticMethodHasShape(",
+            "BHTReplyDiagnosticMethodHasObjectArguments(",
+            'isEqualToString:@"12.9"',
+            "method_getNumberOfArguments(method)",
+            "if (*type != '@') return NO;",
+            "BHTInstallReplyWorkflowDiagnosticObservers();",
+            "%hook TTAStatusInlineReplyButton",
+            "BHTReplyWorkflowDiagnosticReplyActionTapped",
+            "%hook T1StatusViewInlineActionTapEventHandler",
+            "BHTReplyWorkflowDiagnosticReplyActionForwarded",
+            "%hook T1TweetComposeViewController",
+            "BHTReplyWorkflowDiagnosticComposerPresented",
+            "BHTReplyWorkflowDiagnosticComposerDisappeared",
+            "BHTReplyWorkflowDiagnosticComposerClosed",
+            "%hook T1PersistentComposeViewController",
+            "BHTReplyWorkflowDiagnosticPersistentComposerPresented",
+        ),
+        "guarded X 12.9 reply workflow hooks",
+    )
+    reply_forwarding_body = source_section(
+        reply_hook_source,
+        "originalStatus:(__unsafe_unretained id)originalStatus {",
+        "%end",
+        "opaque reply-action forwarding hook",
+    )
+    for private_value in (
+        "[account ",
+        "[event ",
+        "[controller ",
+        "[scribeContext ",
+        "[scribeElement ",
+        "[parameters ",
+        "[originalStatus ",
+        "objc_getAssociatedObject",
+        "NSLog",
+    ):
+        if private_value in reply_forwarding_body:
+            raise AssertionError(
+                "Reply-action diagnostics must forward opaque arguments "
+                f"without inspecting them: {private_value}"
+            )
+    if reply_forwarding_body.count("%orig(") != 1:
+        raise AssertionError(
+            "The reply-action diagnostic must forward to X exactly once"
+        )
+    reply_recorder_source = source_section(
+        compatibility_source,
+        "void BHTRecordReplyWorkflowDiagnostic(",
+        "typedef struct {",
+        "reply workflow state recorder",
+    )
+    persistent_case = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticPersistentComposerPresented:",
+        "case BHTReplyWorkflowDiagnosticComposerPresented:",
+        "persistent-composer attribution",
+    )
+    if (
+        "BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented"
+        not in persistent_case
+        or "BHTStartReplyWorkflowSessionLocked" in persistent_case
+    ):
+        raise AssertionError(
+            "Persistent composer appearance must not start a reply session"
+        )
+    failure_cases = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticOutboxProcessFailed:",
+        "case BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented:",
+        "terminal reply failure handling",
+    )
+    for required in (
+        "BHTReplyWorkflowSessionActive = NO;",
+        "BHTReplyWorkflowSendForwarded = NO;",
+        "BHTReplyWorkflowAwaitingComposerClose =",
+        "BHTReplyWorkflowExpiresAt = 0;",
+    ):
+        if required not in failure_cases:
+            raise AssertionError(
+                "A terminal reply failure must close temporal attribution: "
+                f"{required}"
+            )
+    notification_gate = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticOutboxQueued:",
+        "case BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented:",
+        "reply notification attribution gate",
+    )
+    if notification_gate.count(
+        "BHTReplyWorkflowSessionActive &&"
+    ) < 3 or notification_gate.count(
+        "BHTReplyWorkflowSendForwarded"
+    ) < 3:
+        raise AssertionError(
+            "Outbox, completion, and failure notifications must require "
+            "both an active reply attempt and a completed send handoff"
+        )
+    retry_case = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticSendButtonTapped:",
+        "case BHTReplyWorkflowDiagnosticSendForwardedToX:",
+        "failed-reply retry attribution",
+    )
+    for required in (
+        "retryingFailedReply",
+        '@"outbox_process_failed"',
+        '@"composition_send_failed"',
+        "BHTStartReplyWorkflowSessionLocked();",
+    ):
+        if required not in retry_case:
+            raise AssertionError(
+                "A retry from the same failed reply composer must start a "
+                f"new diagnostic attempt: {required}"
+            )
+    reply_snapshot_source = source_section(
+        compatibility_source,
+        "static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void)",
+        "static NSDictionary* BHTForYouControllerRuntimeShape(void)",
+        "reply workflow snapshot",
+    )
+    if reply_snapshot_source.find(
+        "@synchronized(BHTObservationLock())"
+    ) > reply_snapshot_source.find(
+        "atomic_load_explicit("
+    ):
+        raise AssertionError(
+            "Reply counters and state must be captured under the same lock"
+        )
+    send_confirmation_source = source_section(
+        confirmations_source,
+        "- (void)_t1_didTapSendButton:",
+        "%end",
+        "composer send confirmation hook",
+    )
+    if (
+        send_confirmation_source.count(
+            "BHTReplyWorkflowDiagnosticSendButtonTapped"
+        )
+        != 1
+        or send_confirmation_source.count(
+            "BHTReplyWorkflowDiagnosticSendForwardedToX"
+        )
+        != 2
+        or send_confirmation_source.count("%orig;") != 2
+    ):
+        raise AssertionError(
+            "Both confirmed and unconfirmed sends must record handoff and "
+            "forward to X exactly once"
+        )
+    send_hook_occurrences = sum(
+        hook.read_text(encoding="utf-8").count(
+            "- (void)_t1_didTapSendButton:"
+        )
+        for hook in (ROOT / "src" / "Hooks").glob("*.x")
+    )
+    if send_hook_occurrences != 1:
+        raise AssertionError(
+            "Reply diagnostics must instrument the existing send hook "
+            "instead of installing a competing hook"
+        )
+
     branding_source = (
         ROOT / "src" / "Branding" / "BHTBranding.m"
     ).read_text(encoding="utf-8")

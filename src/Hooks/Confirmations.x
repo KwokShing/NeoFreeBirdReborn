@@ -3,6 +3,7 @@
 //  NeoFreeBird
 //
 
+#import "Compatibility/BHTCompatibilityReporter.h"
 #import "HookHelpers.h"
 
 static void ShowConfirmation(void (^confirmed)(void)) {
@@ -29,11 +30,18 @@ static void ShowConfirmation(void (^confirmed)(void)) {
 %hook T1TweetComposeViewController
 
 - (void)_t1_didTapSendButton:(__unsafe_unretained UIButton*)sendButton {
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticSendButtonTapped);
+
     if (![BHTSettings boolForKey:@"tweet_confirm"]) {
+        BHTRecordReplyWorkflowDiagnostic(
+            BHTReplyWorkflowDiagnosticSendForwardedToX);
         return %orig;
     }
 
     ShowConfirmation(^{
+        BHTRecordReplyWorkflowDiagnostic(
+            BHTReplyWorkflowDiagnosticSendForwardedToX);
         %orig;
     });
 }
