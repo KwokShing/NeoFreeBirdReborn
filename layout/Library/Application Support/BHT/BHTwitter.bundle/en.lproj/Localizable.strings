@@ -158,10 +158,17 @@
 "RESTORE_REPLY_CONTEXT_DETAIL" = "Shows the people that are being replied to under Tweets.";
 
 "WEB_REPLY_FALLBACK_TITLE" = "Compatibility reply composer";
-"WEB_REPLY_FALLBACK_DETAIL" = "Opens replies in a native-style x.com screen inside the app when sideloaded X rejects native replies.";
+"WEB_REPLY_FALLBACK_DETAIL" = "Opens replies with X's official web reply screen inside the app when sideloaded X rejects native replies.";
 "WEB_REPLY_FALLBACK_DISCLOSURE" = "Replies will open on x.com inside the app. Its sign-in is separate from the account selected in X, so verify the displayed web account before posting. You may need to sign in once. WebKit keeps that visible session, but NeoFreeBird does not read your login, cookies, or reply text.";
 "WEB_REPLY_FALLBACK_KEEP_ENABLED" = "Keep Enabled";
+"WEB_REPLY_FALLBACK_SIGN_IN_NOW" = "Set Up Sign-In";
+"WEB_REPLY_FALLBACK_NOT_NOW" = "Not Now";
 "WEB_REPLY_FALLBACK_TURN_OFF" = "Turn Off";
+"WEB_REPLY_SIGN_IN_SETUP_TITLE" = "Set Up Web Reply Sign-In";
+"WEB_REPLY_SIGN_IN_SETUP_DETAIL" = "Open the persistent x.com session used by compatibility replies.";
+"WEB_REPLY_SIGN_IN_TITLE" = "Web Reply Sign-In";
+"WEB_REPLY_SIGN_IN_PROMPT" = "x.com • Sign in once, verify the account, then close";
+"WEB_REPLY_SIGN_IN_LOAD_FAILED" = "The X sign-in page could not be loaded.";
 "WEB_REPLY_TITLE" = "Reply";
 "WEB_REPLY_ACCOUNT_PROMPT" = "x.com • Check the signed-in account";
 "WEB_REPLY_BACK" = "Back";

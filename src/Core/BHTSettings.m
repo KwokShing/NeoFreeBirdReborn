@@ -398,6 +398,15 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                     },
                     @{
                         @"type": @"compactButton",
+                        @"key": @"web_reply_sign_in_setup",
+                        @"titleKey": @"WEB_REPLY_SIGN_IN_SETUP_TITLE",
+                        @"action": @"showWebReplySignInSetup:",
+                        @"parentKey": @"web_reply_fallback",
+                        @"searchAutoOpen": @YES,
+                        @"sectionKey": @"SETTINGS_SECTION_COMPOSING"
+                    },
+                    @{
+                        @"type": @"compactButton",
                         @"key": @"undo_tweet_timeout",
                         @"default": @10,
                         @"titleKey": @"UNDO_TWEET_TITLE",

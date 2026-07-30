@@ -18,6 +18,12 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
     id _Nullable sourceObject,
     UIViewController* _Nullable presenter);
 
+// Opens a visible x.com session using the same persistent WebKit data store
+// as the compatibility reply screen. This lets the user sign in once without
+// NeoFreeBird reading or copying cookies, credentials, or account data.
+BOOL BHTPresentWebReplySignInSetup(
+    UIViewController* _Nullable presenter);
+
 BOOL BHTWebReplyRouteResultConsumesTap(
     BHTWebReplyRouteResult result);
 

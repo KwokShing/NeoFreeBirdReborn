@@ -9,6 +9,7 @@
 #import "Core/BHTBundle.h"
 #import "Core/BHTSettings.h"
 #import "Headers/TWHeaders.h"
+#import "Reply/BHTWebReplyFallback.h"
 #import "Settings/ModernSettingsCells.h"
 
 @implementation TweetsSettingsViewController
@@ -32,14 +33,29 @@
             [bundle localizedStringForKey:
                         @"WEB_REPLY_FALLBACK_DISCLOSURE"]
                   preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
     [disclosure addAction:[UIAlertAction
         actionWithTitle:
             [bundle localizedStringForKey:
-                        @"WEB_REPLY_FALLBACK_KEEP_ENABLED"]
+                        @"WEB_REPLY_FALLBACK_SIGN_IN_NOW"]
                   style:UIAlertActionStyleDefault
+                handler:^(__unused UIAlertAction* action) {
+                    dispatch_after(
+                        dispatch_time(
+                            DISPATCH_TIME_NOW,
+                            (int64_t)(0.35 * NSEC_PER_SEC)),
+                        dispatch_get_main_queue(), ^{
+                            [weakSelf
+                                showWebReplySignInSetup:nil];
+                        });
+                }]];
+    [disclosure addAction:[UIAlertAction
+        actionWithTitle:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_NOT_NOW"]
+                  style:UIAlertActionStyleCancel
                 handler:nil]];
 
-    __weak typeof(self) weakSelf = self;
     __weak UISwitch* weakSender = sender;
     [disclosure addAction:[UIAlertAction
         actionWithTitle:
@@ -61,6 +77,11 @@
     [self presentViewController:disclosure
                        animated:YES
                      completion:nil];
+}
+
+- (void)showWebReplySignInSetup:
+    (__unused NSDictionary*)data {
+    BHTPresentWebReplySignInSetup(self);
 }
 
 - (UITableViewCell*)tableView:(UITableView*)tableView

@@ -1488,6 +1488,7 @@ def main() -> None:
             "BHTWebReplyRouteResultPresented",
             "BHTWebReplyRouteResultAlreadyPresented",
             "BHTTryPresentWebReplyFallback(",
+            "BHTPresentWebReplySignInSetup(",
             "BHTWebReplyRouteResultConsumesTap(",
             "BHTWebReplyFallbackDiagnosticSnapshot(void)",
         ),
@@ -1507,8 +1508,30 @@ def main() -> None:
             'BHTHostIsExactOrSubdomain(host, @"twitter.com")',
             '[host isEqualToString:@"accounts.google.com"]',
             '[host isEqualToString:@"appleid.apple.com"]',
-            'componentsWithString:\n                @"https://x.com/compose/post"',
+            'componentsWithString:\n                @"https://x.com/intent/tweet"',
             'queryItemWithName:@"in_reply_to"',
+            'URLWithString:@"https://x.com/home"',
+            "BHTWebReplyIsExpectedAppHandoffURL(",
+            '[scheme isEqualToString:@"x"]',
+            '[scheme isEqualToString:@"twitter"]',
+            "BHTWebKitFrameLoadInterruptedByPolicyChangeErrorCode = 102",
+            "BHTWebReplyIsWebKitErrorDomain(",
+            '[domain isEqualToString:@"WebKitErrorDomain"]',
+            "BHTWebReplyDiagnosticPolicyInterruptionIgnored",
+            "BHTWebReplyDiagnosticAppHandoffIgnored",
+            "BHTWebReplyDiagnosticNavigationBlockedUserInitiated",
+            "BHTWebReplyDiagnosticNavigationBlockedAutomatic",
+            "BHTWebReplyNavigationIsUserInitiated(",
+            "BHTRecordWebReplyNavigationFailure(error, YES)",
+            "BHTRecordWebReplyNavigationFailure(error, NO)",
+            "BHTWebReplyDiagnosticFailureOfflineOrCannotConnect",
+            "BHTWebReplyDiagnosticFailureDNS",
+            "BHTWebReplyDiagnosticFailureTLS",
+            "BHTWebReplyDiagnosticFailureTimedOut",
+            "BHTWebReplyDiagnosticFailureUnsupportedURL",
+            "BHTPresentWebReplyScreen(",
+            '@"WEB_REPLY_SIGN_IN_TITLE"',
+            '@"WEB_REPLY_SIGN_IN_PROMPT"',
             "class_getInstanceMethod(object_getClass(object), selector)",
             "method_getNumberOfArguments(method) == 2",
             "@catch (__unused NSException* exception)",
@@ -1517,7 +1540,9 @@ def main() -> None:
             "BHTActiveWebReplyNavigationController",
             "BOOL presentationAccepted =",
             "presenter.presentedViewController == navigation",
+            '@"usesOfficialWebIntent": @YES',
             '@"usesDefaultWebsiteDataStore": @YES',
+            '@"offersVisiblePersistentSignInSetup": @YES',
             '@"tweakReadsOrWritesCookies": @NO',
             '@"injectsPageScripts": @NO',
             '@"inspectsRequestBodies": @NO',
@@ -1525,11 +1550,16 @@ def main() -> None:
             '@"capturesStatusIdentifiers": @NO',
             '@"capturesAccountData": @NO',
             '@"observesSendCompletion": @NO',
+            '@"postsThroughHiddenWebView": @NO',
             '@"verifiesWebAccountMatchesAppAccount": @NO',
             '@"capturesRawErrors": @NO',
         ),
         "privacy-safe native-style web reply composer",
     )
+    if "https://x.com/compose/post" in web_reply_source:
+        raise AssertionError(
+            "Compatibility replies must use X's supported Web Intent route"
+        )
     for forbidden in (
         "httpCookieStore",
         "NSHTTPCookieStorage",
@@ -1644,6 +1674,9 @@ def main() -> None:
             '@"key": @"web_reply_fallback"',
             '@"default": @NO',
             '@"excludeFromProfile": @YES',
+            '@"key": @"web_reply_sign_in_setup"',
+            '@"action": @"showWebReplySignInSetup:"',
+            '@"parentKey": @"web_reply_fallback"',
             '![setting[@"excludeFromProfile"] boolValue]',
         ),
         "opt-in non-exportable web reply preference",
@@ -1653,8 +1686,10 @@ def main() -> None:
         (
             'isEqualToString:@"web_reply_fallback"',
             '@"WEB_REPLY_FALLBACK_DISCLOSURE"',
-            '@"WEB_REPLY_FALLBACK_KEEP_ENABLED"',
+            '@"WEB_REPLY_FALLBACK_SIGN_IN_NOW"',
+            '@"WEB_REPLY_FALLBACK_NOT_NOW"',
             '@"WEB_REPLY_FALLBACK_TURN_OFF"',
+            "BHTPresentWebReplySignInSetup(self)",
         ),
         "web reply account-boundary disclosure",
     )
@@ -1664,6 +1699,13 @@ def main() -> None:
             '"WEB_REPLY_FALLBACK_TITLE"',
             '"WEB_REPLY_FALLBACK_DETAIL"',
             '"WEB_REPLY_FALLBACK_DISCLOSURE"',
+            '"WEB_REPLY_FALLBACK_SIGN_IN_NOW"',
+            '"WEB_REPLY_FALLBACK_NOT_NOW"',
+            '"WEB_REPLY_SIGN_IN_SETUP_TITLE"',
+            '"WEB_REPLY_SIGN_IN_SETUP_DETAIL"',
+            '"WEB_REPLY_SIGN_IN_TITLE"',
+            '"WEB_REPLY_SIGN_IN_PROMPT"',
+            '"WEB_REPLY_SIGN_IN_LOAD_FAILED"',
             '"WEB_REPLY_TITLE"',
             '"WEB_REPLY_ACCOUNT_PROMPT"',
             '"WEB_REPLY_LOAD_FAILED"',
@@ -1681,11 +1723,11 @@ def main() -> None:
         ),
         "redacted web reply compatibility report",
     )
-    if "Version: 6.1.0-beta.32" not in (
+    if "Version: 6.1.0-beta.33" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The native-style reply fallback must ship as beta.32"
+            "The repaired Web Intent reply fallback must ship as beta.33"
         )
 
     branding_source = (
