@@ -302,41 +302,116 @@ static BOOL BHTHostAccountSwitchSignatureIsSupported(void) {
            BHTSignatureArgumentIsBoolean(signature, 3);
 }
 
-static BOOL BHTCompatibilityRuntimeIsAvailable(void) {
-    if (!BHTCompatibilityVersionIsSupported()) return NO;
-    BHTLoadCompatibilityFrameworkIfNeeded();
-    if (!BHTGuestAccountIdentifier()) return NO;
-
-    NSArray<NSString*>* classes = @[
-        @"TFSTwitterAPIXAuthPasswordCommand",
-        @"TFSTwitterServiceRunner",
-        @"TNUServiceHTTPConfiguration",
-        @"T1OnboardingAuthTokenStorage",
-        @"TFSTwitterXAuthPasswordResponseBuilder",
-        @"TFNTwitterAccount",
-        @"TFNTwitter",
-        @"T1HostViewController",
-        @"T1LoginChallengeFactory",
-    ];
-    for (NSString* className in classes) {
-        if (!NSClassFromString(className)) return NO;
+static NSArray<NSString*>*
+BHTMissingCompatibilityRequirements(void) {
+    NSMutableArray<NSString*>* missing =
+        [NSMutableArray array];
+    if (!BHTCompatibilityVersionIsSupported()) {
+        [missing addObject:@"appVersion"];
+        return [missing copy];
     }
 
-    return
-        BHTClassResponds(
-            @"TFSTwitterServiceRunner", @"APICommandContext") &&
-        BHTClassResponds(
-            @"TFSTwitterServiceRunner", @"APICommandLoader") &&
-        BHTClassResponds(
+    BHTLoadCompatibilityFrameworkIfNeeded();
+    if (!BHTGuestAccountIdentifier()) {
+        [missing addObject:@"guestIdentifier"];
+    }
+
+    BOOL commandClass =
+        NSClassFromString(
+            @"TFSTwitterAPIXAuthPasswordCommand") != Nil;
+    BOOL serviceRunnerClass =
+        NSClassFromString(@"TFSTwitterServiceRunner") != Nil;
+    BOOL requestConfigurationClass =
+        NSClassFromString(@"TNUServiceHTTPConfiguration") != Nil;
+    BOOL authStorageClass =
+        NSClassFromString(@"T1OnboardingAuthTokenStorage") != Nil;
+    BOOL resultBuilderClass =
+        NSClassFromString(
+            @"TFSTwitterXAuthPasswordResponseBuilder") != Nil;
+    BOOL accountClass =
+        NSClassFromString(@"TFNTwitterAccount") != Nil;
+    BOOL accountManagerClass =
+        NSClassFromString(@"TFNTwitter") != Nil;
+    BOOL hostControllerClass =
+        NSClassFromString(@"T1HostViewController") != Nil;
+    BOOL challengeFactoryClass =
+        NSClassFromString(@"T1LoginChallengeFactory") != Nil;
+
+    if (!commandClass) {
+        [missing addObject:@"commandClass"];
+    }
+    if (!serviceRunnerClass) {
+        [missing addObject:@"serviceRunnerClass"];
+    }
+    if (!requestConfigurationClass) {
+        [missing addObject:@"requestConfigurationClass"];
+    }
+    if (!authStorageClass) {
+        [missing addObject:@"authStorageClass"];
+    }
+    if (!resultBuilderClass) {
+        [missing addObject:@"resultBuilderClass"];
+    }
+    if (!accountClass) {
+        [missing addObject:@"accountClass"];
+    }
+    if (!accountManagerClass) {
+        [missing addObject:@"accountManagerClass"];
+    }
+    if (!hostControllerClass) {
+        [missing addObject:@"hostControllerClass"];
+    }
+    if (!challengeFactoryClass) {
+        [missing addObject:@"challengeFactoryClass"];
+    }
+
+    if (serviceRunnerClass &&
+        !BHTClassResponds(
+            @"TFSTwitterServiceRunner", @"APICommandContext")) {
+        [missing addObject:@"serviceContextMethod"];
+    }
+    if (serviceRunnerClass &&
+        !BHTClassResponds(
+            @"TFSTwitterServiceRunner", @"APICommandLoader")) {
+        [missing addObject:@"serviceLoaderMethod"];
+    }
+    if (requestConfigurationClass &&
+        !BHTClassResponds(
             @"TNUServiceHTTPConfiguration",
-            @"configurationForForegroundRetriableRequest") &&
-        BHTClassResponds(
-            @"TFNTwitterAccount", @"knownDeviceToken") &&
-        BHTNativeAccountSignaturesAreSupported() &&
-        BHTClassResponds(@"TFNTwitter", @"sharedTwitter") &&
-        BHTClassResponds(@"TFNTwitter", @"saveSharedTwitter") &&
-        BHTHostAccountSwitchSignatureIsSupported() &&
-        BHTPasswordCommandSignatureIsSupported();
+            @"configurationForForegroundRetriableRequest")) {
+        [missing addObject:@"requestConfigurationMethod"];
+    }
+    if (accountClass &&
+        !BHTClassResponds(
+            @"TFNTwitterAccount", @"knownDeviceToken")) {
+        [missing addObject:@"knownDeviceMethod"];
+    }
+    if (accountClass &&
+        !BHTNativeAccountSignaturesAreSupported()) {
+        [missing addObject:@"accountABI"];
+    }
+    if (accountManagerClass &&
+        !BHTClassResponds(@"TFNTwitter", @"sharedTwitter")) {
+        [missing addObject:@"sharedAccountManagerMethod"];
+    }
+    if (accountManagerClass &&
+        !BHTClassResponds(@"TFNTwitter", @"saveSharedTwitter")) {
+        [missing addObject:@"saveAccountManagerMethod"];
+    }
+    if (hostControllerClass &&
+        !BHTHostAccountSwitchSignatureIsSupported()) {
+        [missing addObject:@"hostSwitchABI"];
+    }
+    if (commandClass &&
+        !BHTPasswordCommandSignatureIsSupported()) {
+        [missing addObject:@"commandABI"];
+    }
+
+    return [missing copy];
+}
+
+static BOOL BHTCompatibilityRuntimeIsAvailable(void) {
+    return BHTMissingCompatibilityRequirements().count == 0;
 }
 
 BOOL BHTCompatibilitySignInIsAvailable(void) {
@@ -964,12 +1039,15 @@ static BOOL BHTPresentNativeLoginChallenge(
 @property(nonatomic) BOOL cancelled;
 @property(nonatomic) BOOL requestStarted;
 @property(nonatomic) BOOL sharingReport;
+@property(nonatomic) BOOL runtimeAvailable;
 @end
 
 @implementation BHTCompatibilityLoginViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.runtimeAvailable =
+        BHTCompatibilityRuntimeIsAvailable();
     self.title =
         BHTCompatibilityLocalized(@"COMPATIBILITY_SIGN_IN_TITLE");
     self.view.backgroundColor = UIColor.systemBackgroundColor;
@@ -1108,11 +1186,20 @@ static BOOL BHTPresentNativeLoginChallenge(
         [self.passwordField.heightAnchor constraintEqualToConstant:48.0],
         [self.signInButton.heightAnchor constraintEqualToConstant:50.0],
     ]];
+
+    NSString* initialStatus =
+        self.runtimeAvailable
+            ? @""
+            : BHTCompatibilityLocalized(
+                  @"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR");
+    [self setBusy:NO status:initialStatus];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [self.usernameField becomeFirstResponder];
+    if (self.runtimeAvailable) {
+        [self.usernameField becomeFirstResponder];
+    }
 }
 
 - (void)shareLoginReport:(UIBarButtonItem*)sender {
@@ -1214,10 +1301,12 @@ static BOOL BHTPresentNativeLoginChallenge(
 }
 
 - (void)setBusy:(BOOL)busy status:(NSString*)status {
-    self.usernameField.enabled = !busy;
-    self.passwordField.enabled = !busy;
-    self.signInButton.enabled = !busy;
-    self.signInButton.alpha = busy ? 0.55 : 1.0;
+    BOOL controlsEnabled =
+        self.runtimeAvailable && !busy;
+    self.usernameField.enabled = controlsEnabled;
+    self.passwordField.enabled = controlsEnabled;
+    self.signInButton.enabled = controlsEnabled;
+    self.signInButton.alpha = controlsEnabled ? 1.0 : 0.55;
     self.navigationItem.leftBarButtonItem.enabled =
         !self.requestStarted;
     self.navigationItem.rightBarButtonItem.enabled =
@@ -1432,6 +1521,7 @@ static BOOL BHTPresentNativeLoginChallenge(
         return;
     }
     if (!BHTCompatibilityRuntimeIsAvailable()) {
+        self.runtimeAvailable = NO;
         [self finishWithSuccess:NO
                failureCategory:@"missing_runtime"];
         return;
@@ -1483,18 +1573,13 @@ void BHTPresentCompatibilitySignIn(
             BHTActiveViewController();
         if (!source) return;
 
-        if (!BHTCompatibilityRuntimeIsAvailable()) {
-            NSString* message =
-                BHTCompatibilityVersionIsSupported()
-                    ? BHTCompatibilityLocalized(
-                          @"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR")
-                    : BHTCompatibilityLocalized(
-                          @"COMPATIBILITY_SIGN_IN_VERSION_ERROR");
+        if (!BHTCompatibilityVersionIsSupported()) {
             UIAlertController* alert = [UIAlertController
                 alertControllerWithTitle:
                     BHTCompatibilityLocalized(
                         @"COMPATIBILITY_SIGN_IN_TITLE")
-                                 message:message
+                                 message:BHTCompatibilityLocalized(
+                                             @"COMPATIBILITY_SIGN_IN_VERSION_ERROR")
                           preferredStyle:
                               UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction
@@ -1541,7 +1626,7 @@ void BHTPresentCompatibilitySignIn(
 void BHTInstallCompatibilitySignInEntry(
     UIViewController* onboardingController) {
     if (!onboardingController ||
-        !BHTCompatibilityRuntimeIsAvailable()) {
+        !BHTCompatibilityVersionIsSupported()) {
         return;
     }
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -1611,6 +1696,8 @@ void BHTInstallCompatibilitySignInEntry(
 
 NSDictionary<NSString*, id>*
 BHTCompatibilitySignInDiagnosticSnapshot(void) {
+    NSArray<NSString*>* missingRequirements =
+        BHTMissingCompatibilityRequirements();
     NSArray<NSString*>* names = @[
         @"presented",
         @"attempted",
@@ -1645,7 +1732,11 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"appVersionSupported":
             @(BHTCompatibilityVersionIsSupported()),
         @"runtimeAvailable":
-            @(BHTCompatibilityRuntimeIsAvailable()),
+            @(missingRequirements.count == 0),
+        @"missingRuntimeRequirements":
+            missingRequirements,
+        @"preLoginDiagnosticsEligible":
+            @(BHTCompatibilityVersionIsSupported()),
         @"lastStage": lastStage,
         @"lastFailureCategory": lastFailure,
         @"counters": [counters copy],

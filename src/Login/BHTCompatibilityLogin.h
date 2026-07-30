@@ -3,7 +3,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-// X 12.9-only, user-initiated fallback. Native X sign-in remains untouched.
+// Reports whether the X 12.9-only credential fallback can run.
+// Native X sign-in remains untouched. The pre-login diagnostic screen may
+// still be shown when this returns NO.
 BOOL BHTCompatibilitySignInIsAvailable(void);
 void BHTPresentCompatibilitySignIn(
     UIViewController* _Nullable presenter);
@@ -13,8 +15,9 @@ void BHTPresentCompatibilitySignIn(
 void BHTInstallCompatibilitySignInEntry(
     UIViewController* _Nullable onboardingController);
 
-// Aggregate stages and counters only. Credentials, tokens, URLs, response
-// bodies, account identifiers, and raw errors are never included.
+// Aggregate stages, counters, and fixed capability identifiers only.
+// Credentials, tokens, URLs, response bodies, account identifiers, and raw
+// errors are never included.
 NSDictionary<NSString*, id>*
 BHTCompatibilitySignInDiagnosticSnapshot(void);
 

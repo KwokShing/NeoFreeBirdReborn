@@ -414,9 +414,13 @@ def main() -> None:
             '@"TwitterSPMMigration"',
             "RTLD_LAZY | RTLD_LOCAL",
             "dlsym(\n            BHTCompatibilityFrameworkHandle,",
+            "static NSArray<NSString*>*\n"
+            "BHTMissingCompatibilityRequirements(void)",
             "static BOOL BHTCompatibilityRuntimeIsAvailable(void)",
-            "if (!BHTCompatibilityVersionIsSupported()) return NO;",
+            "if (!BHTCompatibilityVersionIsSupported()) {",
             "BHTLoadCompatibilityFrameworkIfNeeded();",
+            "return "
+            "BHTMissingCompatibilityRequirements().count == 0;",
             "return BHTCompatibilityRuntimeIsAvailable();",
         ),
         "hard X 12.9 compatibility gate",
@@ -428,6 +432,66 @@ def main() -> None:
             "isEqualToString:BHTCompatibilityTargetVersion",
         ),
         "exact X 12.9 version comparison",
+    )
+
+    missing_runtime_requirements = source_section(
+        compatibility_login_source,
+        "static NSArray<NSString*>*\n"
+        "BHTMissingCompatibilityRequirements(void)",
+        "static BOOL BHTCompatibilityRuntimeIsAvailable(void)",
+        "privacy-safe compatibility runtime requirements",
+    )
+    expected_requirement_ids = [
+        "appVersion",
+        "guestIdentifier",
+        "commandClass",
+        "serviceRunnerClass",
+        "requestConfigurationClass",
+        "authStorageClass",
+        "resultBuilderClass",
+        "accountClass",
+        "accountManagerClass",
+        "hostControllerClass",
+        "challengeFactoryClass",
+        "serviceContextMethod",
+        "serviceLoaderMethod",
+        "requestConfigurationMethod",
+        "knownDeviceMethod",
+        "accountABI",
+        "sharedAccountManagerMethod",
+        "saveAccountManagerMethod",
+        "hostSwitchABI",
+        "commandABI",
+    ]
+    emitted_requirement_ids = re.findall(
+        r'\[missing addObject:@"([^"]+)"\];',
+        missing_runtime_requirements,
+    )
+    if emitted_requirement_ids != expected_requirement_ids:
+        raise AssertionError(
+            "Compatibility diagnostics must emit only the ordered, "
+            "fixed runtime-requirement identifiers: "
+            f"{emitted_requirement_ids}"
+        )
+    if missing_runtime_requirements.count("[missing addObject:") != len(
+        expected_requirement_ids
+    ):
+        raise AssertionError(
+            "Compatibility diagnostics must not add dynamic runtime "
+            "values to the missing-requirements list"
+        )
+    require_source_tokens(
+        missing_runtime_requirements,
+        (
+            "BHTLoadCompatibilityFrameworkIfNeeded();",
+            "BHTGuestAccountIdentifier()",
+            "BHTClassResponds(",
+            "BHTNativeAccountSignaturesAreSupported()",
+            "BHTHostAccountSwitchSignatureIsSupported()",
+            "BHTPasswordCommandSignatureIsSupported()",
+            "return [missing copy];",
+        ),
+        "single-source compatibility runtime probes",
     )
 
     require_source_tokens(
@@ -464,7 +528,8 @@ def main() -> None:
     password_signature = source_section(
         compatibility_login_source,
         "static BOOL BHTPasswordCommandSignatureIsSupported(void)",
-        "static BOOL BHTCompatibilityRuntimeIsAvailable(void)",
+        "static NSArray<NSString*>*\n"
+        "BHTMissingCompatibilityRequirements(void)",
         "X password command signature guard",
     )
     require_source_tokens(
@@ -640,15 +705,53 @@ def main() -> None:
         "NSDictionary<NSString*, id>*",
         "compatibility onboarding entry gate",
     )
-    for guarded_path, description in (
+    for diagnostic_path, description in (
         (compatibility_presenter, "sign-in presenter"),
         (compatibility_entry, "onboarding entry"),
     ):
-        if "BHTCompatibilityRuntimeIsAvailable()" not in guarded_path:
+        if "BHTCompatibilityVersionIsSupported()" not in diagnostic_path:
             raise AssertionError(
-                f"The {description} must remain behind the X 12.9 "
-                "runtime gate"
+                f"The {description} must remain behind the exact X 12.9 "
+                "version gate"
             )
+        if "BHTCompatibilityRuntimeIsAvailable()" in diagnostic_path:
+            raise AssertionError(
+                f"The {description} must remain reachable when a private "
+                "runtime requirement is missing"
+            )
+
+    compatibility_view_setup = source_section(
+        compatibility_login_source,
+        "- (void)viewDidLoad {",
+        "- (void)viewDidAppear:(BOOL)animated {",
+        "diagnostic-capable compatibility sign-in screen",
+    )
+    require_source_tokens(
+        compatibility_view_setup,
+        (
+            "self.runtimeAvailable =\n"
+            "        BHTCompatibilityRuntimeIsAvailable();",
+            "NSString* initialStatus =",
+            "self.runtimeAvailable",
+            '@"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR"',
+            "[self setBusy:NO status:initialStatus];",
+        ),
+        "runtime-aware compatibility sign-in screen",
+    )
+    compatibility_view_appearance = source_section(
+        compatibility_login_source,
+        "- (void)viewDidAppear:(BOOL)animated {",
+        "- (void)shareLoginReport:",
+        "compatibility sign-in keyboard behavior",
+    )
+    require_source_tokens(
+        compatibility_view_appearance,
+        (
+            "if (self.runtimeAvailable) {",
+            "[self.usernameField becomeFirstResponder];",
+        ),
+        "keyboard suppression on a diagnostic-only screen",
+    )
 
     metrics_collector = source_section(
         compatibility_login_source,
@@ -803,6 +906,11 @@ def main() -> None:
     require_source_tokens(
         busy_state,
         (
+            "BOOL controlsEnabled =\n"
+            "        self.runtimeAvailable && !busy;",
+            "self.usernameField.enabled = controlsEnabled;",
+            "self.passwordField.enabled = controlsEnabled;",
+            "self.signInButton.enabled = controlsEnabled;",
             "self.navigationItem.rightBarButtonItem.enabled =",
             "!busy && !self.sharingReport;",
         ),
@@ -856,6 +964,12 @@ def main() -> None:
             "Compatibility sign-in must not start while a report "
             "snapshot is being prepared"
         )
+    version_check_position = sign_in_action.index(
+        "if (!BHTCompatibilityVersionIsSupported())"
+    )
+    runtime_check_position = sign_in_action.index(
+        "if (!BHTCompatibilityRuntimeIsAvailable())"
+    )
     password_copy_position = sign_in_action.index(
         "NSString* password = [self.passwordField.text copy];"
     )
@@ -866,13 +980,21 @@ def main() -> None:
         "self.metricsCollector ="
     )
     if not (
-        password_copy_position
+        version_check_position
+        < runtime_check_position
+        < password_copy_position
         < password_clear_position
         < metrics_request_position
     ):
         raise AssertionError(
-            "The visible password field must be cleared before any "
-            "compatibility sign-in request begins"
+            "The compatibility runtime must be rechecked before credentials "
+            "are read, and the visible password field must be cleared "
+            "before any sign-in request begins"
+        )
+    if "self.runtimeAvailable = NO;" not in sign_in_action:
+        raise AssertionError(
+            "A failed runtime recheck must keep credential controls "
+            "disabled"
         )
     if compatibility_login_source.count(
         'self.passwordField.text = @"";'
@@ -905,6 +1027,8 @@ def main() -> None:
     require_source_tokens(
         login_diagnostic,
         (
+            '@"missingRuntimeRequirements":',
+            '@"preLoginDiagnosticsEligible":',
             '@"nativeSignInRemainsDefault": @YES',
             '@"credentialPersistence": @"x_native_account_storage"',
             '@"attestationOverridesIncluded": @NO',

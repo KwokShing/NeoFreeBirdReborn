@@ -132,7 +132,11 @@ or spoof subscription state. X 12.9 builds include an explicit
 finish. Native sign-in remains the default. The fallback calls X 12.9's own
 password command, challenge UI, account registration, and credential storage;
 it fails closed if any required private method is missing. Because this relies
-on version-specific private APIs, use it only on X 12.9.
+on version-specific private APIs, use it only on X 12.9. The diagnostic entry
+remains visible on exact X 12.9 even if a required component is unavailable;
+in that case credential fields stay disabled and **Share Report** identifies
+the missing capability without including credentials or raw authentication
+data.
 
 ## Build locally
 
