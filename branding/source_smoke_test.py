@@ -1501,9 +1501,25 @@ def main() -> None:
             "preferredContentMode = WKContentModeMobile",
             "allowsContentJavaScript = YES",
             "UIModalPresentationFullScreen",
+            "UIModalPresentationPageSheet",
             "UIModalPresentationFormSheet",
-            "self.navigationItem.prompt =",
-            '@"WEB_REPLY_ACCOUNT_PROMPT"',
+            "BHTWebReplyScreenModeReply",
+            "BHTWebReplyScreenModeSignInSetup",
+            "setToolbarHidden:YES",
+            "didCommitNavigation:",
+            "BHTWebReplyDiagnosticNavigationCommitted",
+            "BHTWebReplyDiagnosticLoaderHiddenOnCommit",
+            "BHTWebReplyDiagnosticSignInLandingRecognized",
+            "BHTWebReplyDiagnosticWebViewCloseReceived",
+            "BHTWebReplyURLIsSignedInLanding(",
+            "BHTWebReplyURLObservationContext",
+            'forKeyPath:@"URL"',
+            "considerSetupLandingURL:",
+            "hasVisibleCommittedContent",
+            "(int64_t)(0.65 * NSEC_PER_SEC)",
+            "estimatedProgress >=\n                    0.99",
+            "showSetupReady",
+            "recoverFromIgnoredNavigationError",
             "BHTHostIsExactOrSubdomain(",
             'BHTHostIsExactOrSubdomain(host, @"x.com")',
             'BHTHostIsExactOrSubdomain(host, @"twitter.com")',
@@ -1551,8 +1567,9 @@ def main() -> None:
             "BHTWebReplyDiagnosticFailureUnsupportedURL",
             "BHTPresentWebReplyScreen(",
             '@"WEB_REPLY_SIGN_IN_TITLE"',
-            '@"WEB_REPLY_SIGN_IN_PROMPT"',
-            '@"WEB_REPLY_LOADING"',
+            '@"WEB_REPLY_SIGN_IN_LOAD_FAILED"',
+            '@"WEB_REPLY_PREPARING"',
+            '@"WEB_REPLY_SIGN_IN_LOADING"',
             "class_getInstanceMethod(object_getClass(object), selector)",
             "method_getNumberOfArguments(method) == 2",
             "@catch (__unused NSException* exception)",
@@ -1564,6 +1581,10 @@ def main() -> None:
             '@"usesOfficialWebIntent": @YES',
             '@"usesDefaultWebsiteDataStore": @YES',
             '@"offersVisiblePersistentSignInSetup": @YES',
+            '@"revealsContentOnFirstMainFrameCommit": @YES',
+            '@"usesModeSpecificNativeChrome": @YES',
+            '@"showsPersistentBrowserToolbar": @NO',
+            '@"recognizesSignedInLandingWithoutCookieInspection": @YES',
             '@"tweakReadsOrWritesCookies": @NO',
             '@"injectsPageScripts": @NO',
             '@"inspectsRequestBodies": @NO',
@@ -1577,6 +1598,23 @@ def main() -> None:
         ),
         "privacy-safe native-style web reply composer",
     )
+    if (
+        "self.navigationItem.prompt =" in web_reply_source
+        or "setToolbarHidden:NO" in web_reply_source
+    ):
+        raise AssertionError(
+            "Compatibility replies must not expose persistent browser chrome"
+        )
+    setup_ready_source = source_section(
+        web_reply_source,
+        "- (void)showSetupReady",
+        "- (void)recoverFromIgnoredNavigationError",
+        "web reply setup-ready transition",
+    )
+    if "[self.webView stopLoading]" in setup_ready_source:
+        raise AssertionError(
+            "Setup success must not interrupt X while its session finishes"
+        )
     if "https://x.com/compose/post" in web_reply_source:
         raise AssertionError(
             "Compatibility replies must use X's supported Web Intent route"
@@ -1728,8 +1766,16 @@ def main() -> None:
             '"WEB_REPLY_SIGN_IN_PROMPT"',
             '"WEB_REPLY_SIGN_IN_LOAD_FAILED"',
             '"WEB_REPLY_LOADING"',
+            '"WEB_REPLY_PREPARING"',
+            '"WEB_REPLY_SIGN_IN_LOADING"',
+            '"WEB_REPLY_SIGN_IN_READY_TITLE"',
+            '"WEB_REPLY_SIGN_IN_READY_DETAIL"',
             '"WEB_REPLY_TITLE"',
             '"WEB_REPLY_ACCOUNT_PROMPT"',
+            '"WEB_REPLY_DONE"',
+            '"WEB_REPLY_MORE"',
+            '"WEB_REPLY_ABOUT"',
+            '"WEB_REPLY_CANCEL"',
             '"WEB_REPLY_LOAD_FAILED"',
             '"WEB_REPLY_BLOCKED_LINK_DETAIL"',
         ),
@@ -1805,7 +1851,7 @@ def main() -> None:
     popup_schedule_source = source_section(
         web_reply_source,
         "- (void)scheduleUserPopupRequest:",
-        "- (void)updateNavigationControls",
+        "- (void)showLoadFailure",
         "asynchronous popup reroute",
     )
     if (
@@ -1823,11 +1869,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.34" not in (
+    if "Version: 6.1.0-beta.35" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The automatic-popup reply fix must ship as beta.34"
+            "The seamless compatibility reply fix must ship as beta.35"
         )
 
     branding_source = (
