@@ -622,7 +622,7 @@ def main() -> None:
     compatibility_entry = source_section(
         compatibility_login_source,
         "void BHTInstallCompatibilitySignInEntry(",
-        "NSDictionary<NSString*, id*>*",
+        "NSDictionary<NSString*, id>*",
         "compatibility onboarding entry gate",
     )
     for guarded_path, description in (

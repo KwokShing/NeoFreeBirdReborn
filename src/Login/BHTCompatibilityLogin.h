@@ -15,7 +15,7 @@ void BHTInstallCompatibilitySignInEntry(
 
 // Aggregate stages and counters only. Credentials, tokens, URLs, response
 // bodies, account identifiers, and raw errors are never included.
-NSDictionary<NSString*, id*>*
+NSDictionary<NSString*, id>*
 BHTCompatibilitySignInDiagnosticSnapshot(void);
 
 NS_ASSUME_NONNULL_END

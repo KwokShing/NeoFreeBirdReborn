@@ -1518,7 +1518,7 @@ void BHTInstallCompatibilitySignInEntry(
     });
 }
 
-NSDictionary<NSString*, id*>*
+NSDictionary<NSString*, id>*
 BHTCompatibilitySignInDiagnosticSnapshot(void) {
     NSArray<NSString*>* names = @[
         @"presented",
