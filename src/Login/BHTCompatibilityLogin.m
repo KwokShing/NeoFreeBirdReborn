@@ -27,7 +27,7 @@ supportOneFactorAuthorization:(BOOL)supportOneFactorAuthorization
    knownDeviceToken:(id)knownDeviceToken
           uiMetrics:(NSString* _Nullable)metrics
    authTokenStorage:(id)authTokenStorage
-             source:(id _Nullable)source
+             source:(NSUInteger)source
 responseModelBuilder:(id)responseBuilder
     completionBlock:
         (void (^)(BOOL success, id response, id error))completion;
@@ -176,6 +176,16 @@ static BOOL BHTSignatureArgumentIsInteger(
     return type && strchr("qQlL", type[0]) != NULL;
 }
 
+static BOOL BHTSignatureArgumentIsNSUInteger(
+    NSMethodSignature* signature, NSUInteger index) {
+    if (!signature || index >= signature.numberOfArguments) {
+        return NO;
+    }
+    const char* type = BHTUnqualifiedObjCType(
+        [signature getArgumentTypeAtIndex:index]);
+    return type && strcmp(type, @encode(NSUInteger)) == 0;
+}
+
 static BOOL BHTSignatureArgumentIsBoolean(
     NSMethodSignature* signature, NSUInteger index) {
     if (!signature || index >= signature.numberOfArguments) {
@@ -223,7 +233,15 @@ static BOOL BHTPasswordCommandSignatureIsSupported(void) {
     if (!BHTSignatureArgumentIsBoolean(signature, 9)) {
         return NO;
     }
-    for (NSUInteger index = 10; index <= 15; index++) {
+    for (NSUInteger index = 10; index <= 12; index++) {
+        if (!BHTSignatureArgumentIsObject(signature, index)) {
+            return NO;
+        }
+    }
+    if (!BHTSignatureArgumentIsNSUInteger(signature, 13)) {
+        return NO;
+    }
+    for (NSUInteger index = 14; index <= 15; index++) {
         if (!BHTSignatureArgumentIsObject(signature, index)) {
             return NO;
         }
@@ -662,7 +680,8 @@ static id BHTCreatePasswordCommand(
     id knownDeviceToken = BHTSendObject(
         accountClass, NSSelectorFromString(@"knownDeviceToken"));
     id authTokenStorage = [[storageClass alloc] init];
-    id source = nil;
+    // X 12.9 encodes source: as NSUInteger; native-compatible callers use 0.
+    NSUInteger source = 0;
     id responseBuilder = [[builderClass alloc] init];
     id completionBlock = [completion copy];
 

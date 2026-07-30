@@ -545,8 +545,19 @@ def main() -> None:
             "returnType[0] != '@'",
             "BHTSignatureArgumentIsObject",
             "BHTSignatureArgumentIsBoolean(signature, 9)",
+            "for (NSUInteger index = 10; index <= 12; index++)",
+            "BHTSignatureArgumentIsNSUInteger(signature, 13)",
+            "for (NSUInteger index = 14; index <= 15; index++)",
         ),
         "exact native X password-command signature",
+    )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            "static BOOL BHTSignatureArgumentIsNSUInteger(",
+            "strcmp(type, @encode(NSUInteger)) == 0",
+        ),
+        "architecture-correct X source-argument ABI guard",
     )
     password_command = source_section(
         compatibility_login_source,
@@ -572,6 +583,7 @@ def main() -> None:
             "knownDeviceToken:knownDeviceToken",
             "uiMetrics:metrics",
             "authTokenStorage:authTokenStorage",
+            "NSUInteger source = 0;",
             "source:source",
             "responseModelBuilder:responseBuilder",
             "completionBlock:completionBlock",
@@ -583,6 +595,15 @@ def main() -> None:
             "Compatibility sign-in must not invoke an ARC-owned private "
             "initializer through NSInvocation"
         )
+    for stale_source_contract in (
+        "source:(id _Nullable)source",
+        "id source = nil;",
+    ):
+        if stale_source_contract in compatibility_login_source:
+            raise AssertionError(
+                "X 12.9 source: must remain an NSUInteger with the "
+                f"native-compatible value 0: {stale_source_contract}"
+            )
     require_source_tokens(
         compatibility_login_source,
         (
@@ -590,6 +611,7 @@ def main() -> None:
             "@protocol BHTNativeAccountInitializing",
             "v28@?0B8@12@20",
             "initWithContext:(id)context",
+            "source:(NSUInteger)source",
             "(void (^)(BOOL success, id response, id error))completion;",
             "completionBlock:",
         ),
