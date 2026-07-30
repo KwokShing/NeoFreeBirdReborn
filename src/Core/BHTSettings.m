@@ -315,6 +315,16 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                 @"titleKey": @"MODERN_SETTINGS_PROFILES_TITLE",
                 @"subtitleKey": @"MODERN_SETTINGS_PROFILES_SUBTITLE",
                 @"settings": @[
+                    @{
+                        @"titleKey":
+                            @"COMPATIBILITY_SIGN_IN_TITLE",
+                        @"action":
+                            @"showCompatibilitySignIn:",
+                        @"type": @"button",
+                        @"searchAutoOpen": @YES,
+                        @"sectionKey":
+                            @"SETTINGS_SECTION_ACCOUNT_ACCESS"
+                    },
                     @{@"key": @"follow_confirm",
                       @"default": @NO,
                       @"type": @"toggle",

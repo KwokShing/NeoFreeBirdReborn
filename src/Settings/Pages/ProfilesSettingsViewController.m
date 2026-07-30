@@ -8,6 +8,7 @@
 #import "Settings/Pages/ProfilesSettingsViewController.h"
 #import "Core/BHTBundle.h"
 #import "Headers/TWHeaders.h"
+#import "Login/BHTCompatibilityLogin.h"
 
 extern void applySquareAvatarsSetting(void);
 
@@ -23,6 +24,10 @@ extern void applySquareAvatarsSetting(void);
     if ([key isEqualToString:@"square_avatars"]) {
         applySquareAvatarsSetting();
     }
+}
+
+- (void)showCompatibilitySignIn:(__unused NSDictionary*)data {
+    BHTPresentCompatibilitySignIn(self);
 }
 
 @end

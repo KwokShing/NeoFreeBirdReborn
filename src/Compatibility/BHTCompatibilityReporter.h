@@ -21,6 +21,8 @@ typedef NS_ENUM(NSUInteger, BHTForYouFilterDiagnosticEvent) {
 
 NSURL* BHTCompatibilityReportURL(void);
 void BHTWriteCompatibilityReport(void);
+void BHTWriteCompatibilityReportAsync(
+    void (^completion)(NSURL* _Nullable reportURL));
 void BHTRecordForYouFilterDiagnostic(
     BHTForYouFilterDiagnosticEvent event);
 void BHTRecordNavigationEntryClasses(NSArray* entries);

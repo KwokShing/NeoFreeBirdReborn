@@ -126,9 +126,17 @@ The full per-feature review is in
 ## Important login note
 
 X may reject modified clients through server/app attestation. This project does
-not bypass attestation and does not include replacement login flows, cookie or
-session-token harvesting, or subscription-state spoofing. Those approaches are
-fragile, unsafe for accounts, and outside this fork's compatibility work.
+not bypass attestation, harvest cookies or web sessions, back up credentials,
+or spoof subscription state. X 12.9 builds include an explicit
+**Compatibility Sign-in** fallback for cases where the normal X flow does not
+finish. Native sign-in remains the default. The fallback calls X 12.9's own
+password command, challenge UI, account registration, and credential storage;
+it fails closed if any required private method is missing. Because this relies
+on version-specific private APIs, use it only on X 12.9. The diagnostic entry
+remains visible on exact X 12.9 even if a required component is unavailable;
+in that case credential fields stay disabled and **Share Report** identifies
+the missing capability without including credentials or raw authentication
+data.
 
 ## Build locally
 
@@ -166,7 +174,13 @@ its submodules, so fork changes are included in the build.
 
 ## Test logs
 
-After installing a test build:
+While signed out on X 12.9:
+
+1. Open **Compatibility Sign-in** from X's login page.
+2. Tap **Share Report** in the top-right corner.
+3. Save or share the generated JSON.
+
+After signing in, the same report remains available from NeoFreeBird:
 
 1. Open `Settings > NeoFreeBird > Debug`.
 2. Tap **Export compatibility report**.

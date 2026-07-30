@@ -12,8 +12,13 @@ only unconditional code paths.
 ## Safety boundary
 
 - No attestation bypass is implemented.
-- No login replacement, cookie harvesting, session-token extraction, or web
-  GraphQL credential reuse is compiled.
+- Native X sign-in remains the default. A user-invoked X 12.9-only
+  Compatibility Sign-in fallback calls X's own password command, native
+  challenge UI, account registration, and credential storage. Every required
+  class and method is checked before use.
+- No cookie harvesting, session-token extraction, web GraphQL credential
+  reuse, plaintext credential backup, or diagnostic secret logging is
+  compiled.
 - Subscription state is not spoofed. Native/server-backed eligibility remains
   authoritative.
 - Tweet source labels use X 12.9's on-device `TFNTwitterStatus-composerSource`
@@ -113,6 +118,7 @@ Status meanings:
 | Profile | `restore_follow_button` | Updated | Keeps genuine active subscriptions intact |
 | Profile | `square_avatars` | Ported | Live avatar/image/shadow restyling |
 | Profile | `full_profile_counts` | Updated | Previously always on; now opt-in |
+| Account access | Compatibility Sign-in | New/runtime check | Explicit X 12.9-only fallback available from signed-out onboarding and Profiles settings; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
 | Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; only X 12.9's available canonical-user selector is hooked |
 | Tweets | `enable_edit_tweet` | Updated | Exposes native UI only; server eligibility still applies |
 | Tweets | undo timeout | Ported | Unified timeout picker and old-key migration |
@@ -157,8 +163,10 @@ change the FFmpeg TLS backend without a demonstrated build need.
   BHTwitter settings screen. The X 12.9 audit found the current
   `selectTimelineVariant:shouldRefresh:` path but not a stable enum value; the
   branch does not guess one.
-- Web reply/login replacements, stored cookies, embedded credentials,
-  subscription spoofing, and attestation evasion remain excluded.
+- Web reply/login replacements, stored cookies, credential/token backups,
+  subscription spoofing, and attestation evasion remain excluded. The guarded
+  Compatibility Sign-in fallback is not a web-session replacement and stores
+  the resulting account only through X's native account service.
 
 ## Device validation
 
@@ -183,6 +191,14 @@ privacy-safe `likesRuntime` section
 records root creation, selection/reset counts, media count, and URL acceptance.
 Missing private selectors degrade to native behavior and are listed in the
 report rather than being guessed silently.
+
+Beta 29 adds the opt-in X 12.9 Compatibility Sign-in fallback. It preserves
+normal X sign-in, validates the full private method shape before invocation,
+uses nonpersistent UI-metrics loading, clears the password field immediately,
+routes two-factor challenges through X's native challenge controller, and
+registers successful accounts only through X's account service. Its
+compatibility diagnostics contain aggregate stages and categories only—never
+credentials, tokens, URLs, response bodies, or account identifiers.
 
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids

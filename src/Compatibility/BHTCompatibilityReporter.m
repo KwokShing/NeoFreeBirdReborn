@@ -1,7 +1,10 @@
 #import "Compatibility/BHTCompatibilityReporter.h"
+#import "Core/BHTManager.h"
 #import "Core/BHTSettings.h"
 #import "Likes/BHTLikesTab.h"
+#import "Login/BHTCompatibilityLogin.h"
 #import "MediaActions/BHTMediaActionUtility.h"
+#import "Security/BHTAuthenticationURLUtility.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 #import "ThemeColor/BHTThemePresets.h"
 
@@ -694,7 +697,15 @@ static NSArray* BHTRuntimeProbes(void) {
 
         BHTProbe(@"settings", @"T1GenericSettingsViewController", @"viewWillAppear:", NO),
         BHTProbe(@"settings", @"TFSFeatureSwitches", @"boolForKey:", NO),
-        BHTProbe(@"settings", @"TFSInstrumentedFeatureSwitches", @"boolForKey:", NO)
+        BHTProbe(@"settings", @"TFSInstrumentedFeatureSwitches", @"boolForKey:", NO),
+
+        BHTProbe(@"compatibilitySignIn", @"TFSTwitterAPIXAuthPasswordCommand", @"initWithContext:accountID:authContext:identifier:password:simCountryCode:httpRequestConfiguration:supportOneFactorAuthorization:knownDeviceToken:uiMetrics:authTokenStorage:source:responseModelBuilder:completionBlock:", NO),
+        BHTProbe(@"compatibilitySignIn", @"TFSTwitterServiceRunner", @"APICommandContext", YES),
+        BHTProbe(@"compatibilitySignIn", @"TFSTwitterServiceRunner", @"APICommandLoader", YES),
+        BHTProbe(@"compatibilitySignIn", @"TNUServiceHTTPConfiguration", @"configurationForForegroundRetriableRequest", YES),
+        BHTProbe(@"compatibilitySignIn", @"TFNTwitterAccount", @"initWithUsername:userID:", NO),
+        BHTProbe(@"compatibilitySignIn", @"TFNTwitterAccount", @"updateUserInfoAndCredentialsWithToken:secret:username:", NO),
+        BHTProbe(@"compatibilitySignIn", @"T1LoginChallengeFactory", @"loginChallengeWithMode:loginType:requestID:user:userID:URLString:loginCause:", YES)
     ];
 }
 
@@ -774,7 +785,7 @@ static NSDictionary* BHTMediaActionSettingsSnapshot(void) {
     };
 }
 
-void BHTWriteCompatibilityReport(void) {
+static NSURL* BHTWriteCompatibilityReportNow(void) {
     NSArray* probes = BHTRuntimeProbes();
     NSUInteger available = 0;
     NSMutableDictionary<NSString*, NSMutableDictionary*>* featureSummary =
@@ -813,7 +824,10 @@ void BHTWriteCompatibilityReport(void) {
             @"commit": @"unknown",
 #endif
             @"unsafeLoginOverridesIncluded": @NO,
-            @"webSessionHarvestingIncluded": @NO
+            @"webSessionHarvestingIncluded": @NO,
+            @"compatibilityPasswordSignInIncluded": @YES,
+            @"attestationOverridesIncluded": @NO,
+            @"credentialBackupIncluded": @NO
         },
         @"summary": @{
             @"checks": @(probes.count),
@@ -822,6 +836,10 @@ void BHTWriteCompatibilityReport(void) {
         },
         @"features": featureSummary,
         @"settings": BHTSettingsSnapshot(),
+        @"authenticationRouting":
+            BHTAuthenticationRoutingDiagnosticSnapshot(),
+        @"compatibilitySignIn":
+            BHTCompatibilitySignInDiagnosticSnapshot(),
         @"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot(),
         @"mediaActionMenus": BHTMediaActionSettingsSnapshot(),
         @"likesRuntime": BHTLikesDiagnosticsSnapshot(),
@@ -841,7 +859,47 @@ void BHTWriteCompatibilityReport(void) {
     NSData* data = [NSJSONSerialization dataWithJSONObject:report
                                                    options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
                                                      error:nil];
-    if (data) [data writeToURL:BHTCompatibilityReportURL() options:NSDataWritingAtomic error:nil];
+    if (!data) return nil;
+
+    NSURL* reportURL = BHTCompatibilityReportURL();
+    BOOL wroteReport =
+        [data writeToURL:reportURL
+                 options:NSDataWritingAtomic
+                   error:nil];
+    return wroteReport ? reportURL : nil;
+}
+
+void BHTWriteCompatibilityReport(void) {
+    (void)BHTWriteCompatibilityReportNow();
+}
+
+void BHTWriteCompatibilityReportAsync(
+    void (^completion)(NSURL* _Nullable reportURL)) {
+    dispatch_async(BHTCompatibilityReportQueue(), ^{
+        NSURL* currentReportURL =
+            BHTWriteCompatibilityReportNow();
+        NSURL* reportURL = nil;
+        if (currentReportURL) {
+            NSURL* snapshotURL =
+                [BHTManager
+                    temporaryFileURLWithExtension:@"json"];
+            BOOL copiedSnapshot =
+                [NSFileManager.defaultManager
+                    copyItemAtURL:currentReportURL
+                            toURL:snapshotURL
+                            error:nil];
+            if (copiedSnapshot) {
+                reportURL = snapshotURL;
+            } else {
+                [NSFileManager.defaultManager
+                    removeItemAtURL:snapshotURL
+                              error:nil];
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) completion(reportURL);
+        });
+    });
 }
 
 void BHTRecordNavigationEntryClasses(NSArray* entries) {

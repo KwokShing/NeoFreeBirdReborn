@@ -105,6 +105,18 @@ def main() -> None:
             f"Duplicate English localization keys: "
             f"{duplicate_localizations}"
         )
+    missing_login_report_localizations = sorted(
+        {
+            "COMPATIBILITY_SIGN_IN_SHARE_REPORT",
+            "COMPATIBILITY_SIGN_IN_REPORT_ERROR",
+        }
+        - localized_keys
+    )
+    if missing_login_report_localizations:
+        raise AssertionError(
+            "Missing pre-login report localizations: "
+            f"{missing_login_report_localizations}"
+        )
 
     setting_keys = re.findall(
         r'@"key"\s*:\s*@"([^"]+)"', settings_source
@@ -297,6 +309,798 @@ def main() -> None:
                 "Compatibility diagnostics must not expose a custom theme "
                 f"name or persistent identifier: {private_lookup}"
             )
+
+    authentication_source = (
+        ROOT / "src" / "Security" / "BHTAuthenticationURLUtility.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        authentication_source,
+        (
+            "BHTDeclaredAuthenticationSchemes",
+            '@"CFBundleURLTypes"',
+            '@"CFBundleURLSchemes"',
+            '@"twitterauth"',
+            '@"com.googleusercontent.apps."',
+            '@"accounts.x.com"',
+            '@"accounts.twitter.com"',
+            '@"accounts.google.com"',
+            '@"appleid.apple.com"',
+            '@"/account"',
+            '@"/login"',
+            '@"/i/flow"',
+            '@"/i/oauth2"',
+            '@"/oauth"',
+            '@"oauth_token"',
+            '@"oauth_verifier"',
+            '@"oauth_callback"',
+            '@"redirect_uri"',
+            '@"redirect_after_login"',
+            "BHTHostMatchesDomain",
+            "BHTPathEqualsOrDescendsFrom",
+        ),
+        "authentication URL preservation policy",
+    )
+    authentication_diagnostic = source_section(
+        authentication_source,
+        "BHTAuthenticationRoutingDiagnosticSnapshot(void)",
+        "return [snapshot copy];",
+        "authentication routing diagnostic",
+    )
+    for private_value in (
+        "absoluteString",
+        "components.host",
+        "components.path",
+        "components.query",
+        "CFBundleURLSchemes",
+        "BHTDeclaredAuthenticationSchemes",
+    ):
+        if private_value in authentication_diagnostic:
+            raise AssertionError(
+                "Authentication routing diagnostics must contain only "
+                f"aggregate counters: {private_value}"
+            )
+    misc_source = (
+        ROOT / "src" / "Hooks" / "Misc.x"
+    ).read_text(encoding="utf-8")
+    if misc_source.count(
+        "BHTShouldKeepAuthenticationURLInApp(url)"
+    ) != 2:
+        raise AssertionError(
+            "Both in-app browser routing hooks must preserve "
+            "authentication URLs"
+        )
+    if "containsString:@\"twitter.com/account/\"" in misc_source:
+        raise AssertionError(
+            "Authentication routing must use parsed URL components, "
+            "not substring matching"
+        )
+
+    compatibility_login_header = (
+        ROOT / "src" / "Login" / "BHTCompatibilityLogin.h"
+    ).read_text(encoding="utf-8")
+    compatibility_login_source = (
+        ROOT / "src" / "Login" / "BHTCompatibilityLogin.m"
+    ).read_text(encoding="utf-8")
+    compatibility_report_header = (
+        ROOT / "src" / "Compatibility" / "BHTCompatibilityReporter.h"
+    ).read_text(encoding="utf-8")
+    compatibility_login_hook = (
+        ROOT / "src" / "Hooks" / "CompatibilityLogin.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        compatibility_login_header,
+        (
+            "BHTCompatibilitySignInIsAvailable",
+            "BHTPresentCompatibilitySignIn",
+            "BHTInstallCompatibilitySignInEntry",
+            "BHTCompatibilitySignInDiagnosticSnapshot",
+            "Native X sign-in remains untouched",
+        ),
+        "compatibility sign-in public contract",
+    )
+
+    version_gate = source_section(
+        compatibility_login_source,
+        "static BOOL BHTCompatibilityVersionIsSupported(void)",
+        "static BOOL BHTClassResponds(",
+        "compatibility sign-in version gate",
+    )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            'BHTCompatibilityTargetVersion = @"12.9"',
+            "static void BHTLoadCompatibilityFrameworkIfNeeded(void)",
+            '@"TwitterSPMMigration.framework"',
+            '@"TwitterSPMMigration"',
+            "RTLD_LAZY | RTLD_LOCAL",
+            "dlsym(\n            BHTCompatibilityFrameworkHandle,",
+            "static NSArray<NSString*>*\n"
+            "BHTMissingCompatibilityRequirements(void)",
+            "static BOOL BHTCompatibilityRuntimeIsAvailable(void)",
+            "if (!BHTCompatibilityVersionIsSupported()) {",
+            "BHTLoadCompatibilityFrameworkIfNeeded();",
+            "return "
+            "BHTMissingCompatibilityRequirements().count == 0;",
+            "return BHTCompatibilityRuntimeIsAvailable();",
+        ),
+        "hard X 12.9 compatibility gate",
+    )
+    require_source_tokens(
+        version_gate,
+        (
+            "BHTAppVersion()",
+            "isEqualToString:BHTCompatibilityTargetVersion",
+        ),
+        "exact X 12.9 version comparison",
+    )
+
+    missing_runtime_requirements = source_section(
+        compatibility_login_source,
+        "static NSArray<NSString*>*\n"
+        "BHTMissingCompatibilityRequirements(void)",
+        "static BOOL BHTCompatibilityRuntimeIsAvailable(void)",
+        "privacy-safe compatibility runtime requirements",
+    )
+    expected_requirement_ids = [
+        "appVersion",
+        "guestIdentifier",
+        "commandClass",
+        "serviceRunnerClass",
+        "requestConfigurationClass",
+        "authStorageClass",
+        "resultBuilderClass",
+        "accountClass",
+        "accountManagerClass",
+        "hostControllerClass",
+        "challengeFactoryClass",
+        "serviceContextMethod",
+        "serviceLoaderMethod",
+        "requestConfigurationMethod",
+        "knownDeviceMethod",
+        "accountABI",
+        "sharedAccountManagerMethod",
+        "saveAccountManagerMethod",
+        "hostSwitchABI",
+        "commandABI",
+    ]
+    emitted_requirement_ids = re.findall(
+        r'\[missing addObject:@"([^"]+)"\];',
+        missing_runtime_requirements,
+    )
+    if emitted_requirement_ids != expected_requirement_ids:
+        raise AssertionError(
+            "Compatibility diagnostics must emit only the ordered, "
+            "fixed runtime-requirement identifiers: "
+            f"{emitted_requirement_ids}"
+        )
+    if missing_runtime_requirements.count("[missing addObject:") != len(
+        expected_requirement_ids
+    ):
+        raise AssertionError(
+            "Compatibility diagnostics must not add dynamic runtime "
+            "values to the missing-requirements list"
+        )
+    require_source_tokens(
+        missing_runtime_requirements,
+        (
+            "BHTLoadCompatibilityFrameworkIfNeeded();",
+            "BHTGuestAccountIdentifier()",
+            "BHTClassResponds(",
+            "BHTNativeAccountSignaturesAreSupported()",
+            "BHTHostAccountSwitchSignatureIsSupported()",
+            "BHTPasswordCommandSignatureIsSupported()",
+            "return [missing copy];",
+        ),
+        "single-source compatibility runtime probes",
+    )
+
+    require_source_tokens(
+        compatibility_login_hook,
+        (
+            "%hook T1HostViewController",
+            "makeOnboardingViewControllerWithCompletion:",
+            "void (^wrappedCompletion)(UIViewController*)",
+            "BHTInstallCompatibilitySignInEntry(controller);",
+            "completion(controller);",
+            "%orig(wrappedCompletion);",
+        ),
+        "native onboarding completion wrapper",
+    )
+    if "private_startLoginFlowWithSender:" in compatibility_login_hook:
+        raise AssertionError(
+            "Compatibility sign-in must not replace X's native login action"
+        )
+    install_position = compatibility_login_hook.index(
+        "BHTInstallCompatibilitySignInEntry(controller);"
+    )
+    completion_position = compatibility_login_hook.index(
+        "completion(controller);"
+    )
+    original_position = compatibility_login_hook.index(
+        "%orig(wrappedCompletion);"
+    )
+    if not install_position < completion_position < original_position:
+        raise AssertionError(
+            "Compatibility sign-in must decorate and forward X's native "
+            "onboarding completion"
+        )
+
+    password_signature = source_section(
+        compatibility_login_source,
+        "static BOOL BHTPasswordCommandSignatureIsSupported(void)",
+        "static NSArray<NSString*>*\n"
+        "BHTMissingCompatibilityRequirements(void)",
+        "X password command signature guard",
+    )
+    require_source_tokens(
+        password_signature,
+        (
+            '@"TFSTwitterAPIXAuthPasswordCommand"',
+            '@"initWithContext:accountID:authContext:identifier:"',
+            '"password:simCountryCode:httpRequestConfiguration:"',
+            '"supportOneFactorAuthorization:knownDeviceToken:"',
+            '"uiMetrics:authTokenStorage:source:responseModelBuilder:"',
+            '"completionBlock:"',
+            "signature.numberOfArguments != 16",
+            "returnType[0] != '@'",
+            "BHTSignatureArgumentIsObject",
+            "BHTSignatureArgumentIsBoolean(signature, 9)",
+            "for (NSUInteger index = 10; index <= 12; index++)",
+            "BHTSignatureArgumentIsNSUInteger(signature, 13)",
+            "for (NSUInteger index = 14; index <= 15; index++)",
+        ),
+        "exact native X password-command signature",
+    )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            "static BOOL BHTSignatureArgumentIsNSUInteger(",
+            "strcmp(type, @encode(NSUInteger)) == 0",
+        ),
+        "architecture-correct X source-argument ABI guard",
+    )
+    password_command = source_section(
+        compatibility_login_source,
+        "static id BHTCreatePasswordCommand(",
+        "static BOOL BHTStartPasswordCommand(",
+        "guarded password command construction",
+    )
+    require_source_tokens(
+        password_command,
+        (
+            "BHTPasswordCommandSignatureIsSupported()",
+            "id<BHTXAuthPasswordCommandInitializing> allocatedCommand",
+            "return [allocatedCommand",
+            "initWithContext:context",
+            "accountID:accountID",
+            "authContext:authContext",
+            "identifier:identifier",
+            "password:password",
+            "simCountryCode:simCountryCode",
+            "httpRequestConfiguration:requestConfiguration",
+            "supportOneFactorAuthorization:"
+            "supportOneFactorAuthorization",
+            "knownDeviceToken:knownDeviceToken",
+            "uiMetrics:metrics",
+            "authTokenStorage:authTokenStorage",
+            "NSUInteger source = 0;",
+            "source:source",
+            "responseModelBuilder:responseBuilder",
+            "completionBlock:completionBlock",
+        ),
+        "typed password-command construction behind the ABI guard",
+    )
+    if "NSInvocation" in compatibility_login_source:
+        raise AssertionError(
+            "Compatibility sign-in must not invoke an ARC-owned private "
+            "initializer through NSInvocation"
+        )
+    for stale_source_contract in (
+        "source:(id _Nullable)source",
+        "id source = nil;",
+    ):
+        if stale_source_contract in compatibility_login_source:
+            raise AssertionError(
+                "X 12.9 source: must remain an NSUInteger with the "
+                f"native-compatible value 0: {stale_source_contract}"
+            )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            "@protocol BHTXAuthPasswordCommandInitializing",
+            "@protocol BHTNativeAccountInitializing",
+            "v28@?0B8@12@20",
+            "initWithContext:(id)context",
+            "source:(NSUInteger)source",
+            "(void (^)(BOOL success, id response, id error))completion;",
+            "completionBlock:",
+        ),
+        "typed private password-command initializer contract",
+    )
+
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            '"TFSTwitterAPIGuestAccountID"',
+            '@"TFSTwitterServiceRunner"',
+            '@"APICommandContext"',
+            '@"APICommandLoader"',
+            '@"startCommand:"',
+            '@"TNUServiceHTTPConfiguration"',
+            '@"configurationForForegroundRetriableRequest"',
+            '@"T1OnboardingAuthTokenStorage"',
+            '@"TFSTwitterXAuthPasswordResponseBuilder"',
+            '@"TFNTwitterAccount"',
+            '@"initWithUsername:userID:"',
+            '@"updateUserInfoAndCredentialsWithToken:secret:username:"',
+            '@"TFNTwitter"',
+            '@"sharedTwitter"',
+            '@"accountService"',
+            '@"addAccount:"',
+            '@"saveSharedTwitter"',
+            '@"viewAccount:animated:"',
+            '@"TFSAccountNotification"',
+            '@"TFSAccountsDidChange"',
+            '@"T1LoginChallengeFactory"',
+            '@"loginVerificationRequestId"',
+            '@"challengeURLString"',
+            '@"loginChallengeWithMode:loginType:requestID:user:"',
+            '"userID:URLString:loginCause:"',
+            '@"loginVerificationRequestType"',
+            '@"loginVerificationRequestCause"',
+            '@"loginVerificationUserId"',
+            '@"setDidAddAccountBlock:"',
+            '@"setLoginChallengeProvider:"',
+            '@"presentLoginChallengeFromViewController:animated:completion:"',
+        ),
+        "native X account and challenge integration selectors",
+    )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            "BHTNativeAccountSignaturesAreSupported",
+            "BHTLoginChallengeFactorySignatureIsSupported",
+            "BHTHostAccountSwitchSignatureIsSupported",
+            "NSInteger mode = securityKeyEnabled ? 1 : 0;",
+            "postNotificationName:notificationName",
+            "object:twitter",
+        ),
+        "native account and challenge ABI guards",
+    )
+    challenge_completion = source_section(
+        compatibility_login_source,
+        "void (^didAddAccount)(id, id) =",
+        "SEL setProvider =",
+        "native challenge account completion",
+    )
+    register_position = challenge_completion.index(
+        "BHTRegisterNativeAccount(account)"
+    )
+    switch_position = challenge_completion.index(
+        "BHTSwitchToNativeAccount(account)"
+    )
+    if register_position >= switch_position:
+        raise AssertionError(
+            "Challenge completion must register before switching to the "
+            "new account"
+        )
+    require_source_tokens(
+        challenge_completion,
+        (
+            "dismissViewControllerAnimated:YES",
+            "completion:switchAccount",
+            '@"account_switch_failed"',
+        ),
+        "challenge dismissal before account switch",
+    )
+    direct_completion = source_section(
+        compatibility_login_source,
+        "static void BHTCompleteSignedOutFlowAndSwitchAccount(",
+        "static BOOL BHTPresentNativeLoginChallenge(",
+        "direct-login onboarding completion",
+    )
+    require_source_tokens(
+        direct_completion,
+        (
+            '@"signedOutOnboardingFlow"',
+            '@"completeFlowAnimated:completion:"',
+            "BHTSwitchToNativeAccount(account)",
+            '@"account_switch_failed"',
+            "compatibilityController.navigationController",
+            "dismissViewControllerAnimated:YES",
+        ),
+        "native signed-out flow completion before account switch",
+    )
+    if "presenter.presentingViewController" in compatibility_login_source:
+        raise AssertionError(
+            "Compatibility sign-in must not guess at X's modal hierarchy"
+        )
+    compatibility_presenter = source_section(
+        compatibility_login_source,
+        "void BHTPresentCompatibilitySignIn(",
+        "@interface BHTCompatibilityEntryTarget",
+        "compatibility sign-in presentation gate",
+    )
+    compatibility_entry = source_section(
+        compatibility_login_source,
+        "void BHTInstallCompatibilitySignInEntry(",
+        "NSDictionary<NSString*, id>*",
+        "compatibility onboarding entry gate",
+    )
+    for diagnostic_path, description in (
+        (compatibility_presenter, "sign-in presenter"),
+        (compatibility_entry, "onboarding entry"),
+    ):
+        if "BHTCompatibilityVersionIsSupported()" not in diagnostic_path:
+            raise AssertionError(
+                f"The {description} must remain behind the exact X 12.9 "
+                "version gate"
+            )
+        if "BHTCompatibilityRuntimeIsAvailable()" in diagnostic_path:
+            raise AssertionError(
+                f"The {description} must remain reachable when a private "
+                "runtime requirement is missing"
+            )
+
+    compatibility_view_setup = source_section(
+        compatibility_login_source,
+        "- (void)viewDidLoad {",
+        "- (void)viewDidAppear:(BOOL)animated {",
+        "diagnostic-capable compatibility sign-in screen",
+    )
+    require_source_tokens(
+        compatibility_view_setup,
+        (
+            "self.runtimeAvailable =\n"
+            "        BHTCompatibilityRuntimeIsAvailable();",
+            "NSString* initialStatus =",
+            "self.runtimeAvailable",
+            '@"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR"',
+            "[self setBusy:NO status:initialStatus];",
+        ),
+        "runtime-aware compatibility sign-in screen",
+    )
+    compatibility_view_appearance = source_section(
+        compatibility_login_source,
+        "- (void)viewDidAppear:(BOOL)animated {",
+        "- (void)shareLoginReport:",
+        "compatibility sign-in keyboard behavior",
+    )
+    require_source_tokens(
+        compatibility_view_appearance,
+        (
+            "if (self.runtimeAvailable) {",
+            "[self.usernameField becomeFirstResponder];",
+        ),
+        "keyboard suppression on a diagnostic-only screen",
+    )
+
+    metrics_collector = source_section(
+        compatibility_login_source,
+        "- (void)startWithCompletion:",
+        "- (void)userContentController:",
+        "ephemeral compatibility metrics collector",
+    )
+    if "[WKWebsiteDataStore nonPersistentDataStore]" not in metrics_collector:
+        raise AssertionError(
+            "Compatibility metrics must use a nonpersistent web data store"
+        )
+    if "[WKWebsiteDataStore defaultDataStore]" in metrics_collector:
+        raise AssertionError(
+            "Compatibility metrics must never use persistent web data"
+        )
+    require_source_tokens(
+        metrics_collector,
+        (
+            "new URL(String(u),",
+            "p.searchParams.get('result')",
+            "postMessage(r)",
+        ),
+        "metrics result-only bridge",
+    )
+    if "postMessage(String(u))" in metrics_collector:
+        raise AssertionError(
+            "Compatibility metrics must not forward complete request URLs "
+            "into native code"
+        )
+
+    metrics_response = source_section(
+        compatibility_login_source,
+        "- (void)userContentController:",
+        "- (void)finishWithMetrics:",
+        "metrics result receiver",
+    )
+    if "NSURLComponents" in metrics_response:
+        raise AssertionError(
+            "The native metrics receiver must accept only the extracted "
+            "result value, not a complete request URL"
+        )
+
+    cancellation_path = source_section(
+        compatibility_login_source,
+        "- (void)cancelTapped {",
+        "- (BOOL)textFieldShouldReturn:",
+        "compatibility sign-in cancellation",
+    )
+    require_source_tokens(
+        cancellation_path,
+        (
+            "if (self.requestStarted) return;",
+            "self.cancelled = YES;",
+            "[self.metricsCollector cancel];",
+            "self.metricsCollector = nil;",
+            'self.passwordField.text = @"";',
+        ),
+        "pre-request cancellation teardown",
+    )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            '#import "Compatibility/BHTCompatibilityReporter.h"',
+            "- (void)cancel;",
+            "self.completion = nil;",
+            "if (self.cancelled) return;",
+            "self.requestStarted = YES;",
+            "self.navigationItem.leftBarButtonItem.enabled = NO;",
+            "if (!strongSelf || strongSelf.cancelled) return;",
+        ),
+        "cancelled-request race guards",
+    )
+
+    report_share = source_section(
+        compatibility_login_source,
+        "- (void)shareLoginReport:(UIBarButtonItem*)sender {",
+        "- (void)cancelTapped {",
+        "pre-login compatibility report sharing",
+    )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            '@"COMPATIBILITY_SIGN_IN_SHARE_REPORT"',
+            "@selector(shareLoginReport:)",
+            '@"NeoFreeBird.ShareLoginReport"',
+        ),
+        "pre-login report navigation item",
+    )
+    require_source_tokens(
+        report_share,
+        (
+            "if (self.sharingReport || self.requestStarted ||",
+            "self.metricsCollector || self.presentedViewController)",
+            "self.sharingReport = YES;",
+            "sender.enabled = NO;",
+            "BHTWriteCompatibilityReportAsync(^(NSURL* reportURL)",
+            "reportURL.isFileURL",
+            "strongSelf.viewIfLoaded.window",
+            "strongSelf.sharingReport = NO;",
+            "if (!strongSelf)",
+            "strongSelf.requestStarted ||",
+            "strongSelf.metricsCollector ||",
+            "strongSelf.presentedViewController ||",
+            "initWithActivityItems:@[reportURL]",
+            "applicationActivities:nil",
+            "popover.barButtonItem = sender;",
+            "popover.sourceView = strongSelf.view;",
+            "popover.sourceRect = CGRectMake(",
+            "share.completionWithItemsHandler =",
+            "removeItemAtURL:reportURL",
+            "[strongSelf presentViewController:share",
+        ),
+        "fresh file-only pre-login report share sheet",
+    )
+    require_source_tokens(
+        compatibility_report_header,
+        ("BHTWriteCompatibilityReportAsync(",),
+        "asynchronous compatibility report API",
+    )
+    require_source_tokens(
+        compatibility_source,
+        ('#import "Core/BHTManager.h"',),
+        "owned temporary report export directory",
+    )
+    async_report_writer = source_section(
+        compatibility_source,
+        "void BHTWriteCompatibilityReportAsync(",
+        "void BHTRecordNavigationEntryClasses(",
+        "asynchronous compatibility report writer",
+    )
+    require_source_tokens(
+        async_report_writer,
+        (
+            "dispatch_async(BHTCompatibilityReportQueue(), ^{",
+            "BHTWriteCompatibilityReportNow();",
+            'temporaryFileURLWithExtension:@"json"',
+            "copyItemAtURL:currentReportURL",
+            "toURL:snapshotURL",
+            "if (copiedSnapshot)",
+            "removeItemAtURL:snapshotURL",
+            "dispatch_async(dispatch_get_main_queue(), ^{",
+            "if (completion) completion(reportURL);",
+        ),
+        "fresh background report generation with main-thread completion",
+    )
+    busy_state = source_section(
+        compatibility_login_source,
+        "- (void)setBusy:(BOOL)busy status:(NSString*)status {",
+        "- (NSString*)messageForFailureCategory:",
+        "compatibility sign-in busy state",
+    )
+    require_source_tokens(
+        busy_state,
+        (
+            "BOOL controlsEnabled =\n"
+            "        self.runtimeAvailable && !busy;",
+            "self.usernameField.enabled = controlsEnabled;",
+            "self.passwordField.enabled = controlsEnabled;",
+            "self.signInButton.enabled = controlsEnabled;",
+            "self.navigationItem.rightBarButtonItem.enabled =",
+            "!busy && !self.sharingReport;",
+        ),
+        "report sharing disabled only during an active login or export",
+    )
+    report_request_position = report_share.index(
+        "BHTWriteCompatibilityReportAsync(^(NSURL* reportURL)"
+    )
+    report_sheet_position = report_share.index(
+        "initWithActivityItems:@[reportURL]"
+    )
+    report_present_position = report_share.index(
+        "[strongSelf presentViewController:share"
+    )
+    if not (
+        report_request_position
+        < report_sheet_position
+        < report_present_position
+    ):
+        raise AssertionError(
+            "Pre-login report sharing must refresh the report before "
+            "sharing its local file"
+        )
+    for private_value in (
+        "usernameField",
+        "passwordField",
+        "absoluteString",
+        "NSURLComponents",
+        "localizedDescription",
+        "response",
+        "token",
+        "secret",
+        "cookie",
+        "NSUserDefaults",
+        "UIPasteboard",
+    ):
+        if private_value in report_share:
+            raise AssertionError(
+                "Pre-login report sharing must not include credentials, "
+                f"authentication values, or raw runtime data: {private_value}"
+            )
+
+    sign_in_action = source_section(
+        compatibility_login_source,
+        "- (void)signInTapped {",
+        "\n}\n\n@end",
+        "compatibility password submission",
+    )
+    if "self.metricsCollector || self.sharingReport" not in sign_in_action:
+        raise AssertionError(
+            "Compatibility sign-in must not start while a report "
+            "snapshot is being prepared"
+        )
+    version_check_position = sign_in_action.index(
+        "if (!BHTCompatibilityVersionIsSupported())"
+    )
+    runtime_check_position = sign_in_action.index(
+        "if (!BHTCompatibilityRuntimeIsAvailable())"
+    )
+    password_copy_position = sign_in_action.index(
+        "NSString* password = [self.passwordField.text copy];"
+    )
+    password_clear_position = sign_in_action.index(
+        'self.passwordField.text = @"";'
+    )
+    metrics_request_position = sign_in_action.index(
+        "self.metricsCollector ="
+    )
+    if not (
+        version_check_position
+        < runtime_check_position
+        < password_copy_position
+        < password_clear_position
+        < metrics_request_position
+    ):
+        raise AssertionError(
+            "The compatibility runtime must be rechecked before credentials "
+            "are read, and the visible password field must be cleared "
+            "before any sign-in request begins"
+        )
+    if "self.runtimeAvailable = NO;" not in sign_in_action:
+        raise AssertionError(
+            "A failed runtime recheck must keep credential controls "
+            "disabled"
+        )
+    if compatibility_login_source.count(
+        'self.passwordField.text = @"";'
+    ) < 3:
+        raise AssertionError(
+            "Compatibility sign-in must clear its password field on "
+            "submit, cancel, and completion"
+        )
+
+    if "NSUserDefaults" in compatibility_login_source:
+        raise AssertionError(
+            "Compatibility sign-in must never store credentials or tokens "
+            "in NSUserDefaults"
+        )
+    for logging_api in (
+        "NSLog",
+        "os_log",
+        "localizedDescription",
+        "debugDescription",
+    ):
+        if logging_api in compatibility_login_source:
+            raise AssertionError(
+                "Compatibility sign-in must not log sensitive runtime "
+                f"values: {logging_api}"
+            )
+
+    login_diagnostic = compatibility_login_source.split(
+        "BHTCompatibilitySignInDiagnosticSnapshot(void)", 1
+    )[1]
+    require_source_tokens(
+        login_diagnostic,
+        (
+            '@"missingRuntimeRequirements":',
+            '@"preLoginDiagnosticsEligible":',
+            '@"nativeSignInRemainsDefault": @YES',
+            '@"credentialPersistence": @"x_native_account_storage"',
+            '@"attestationOverridesIncluded": @NO',
+            '@"credentialBackupIncluded": @NO',
+        ),
+        "compatibility sign-in safety diagnostic",
+    )
+    for private_value in (
+        "NSLog",
+        "absoluteString",
+        "URLString",
+        "queryItems",
+        "message.body",
+        "localizedDescription",
+        "debugDescription",
+        "response",
+        "NSError",
+    ):
+        if private_value in login_diagnostic:
+            raise AssertionError(
+                "Compatibility sign-in diagnostics must not expose raw "
+                f"URLs, errors, or responses: {private_value}"
+            )
+    if re.search(
+        r"\b(url|error|response|token|secret|password|username|cookie)\b",
+        login_diagnostic,
+        re.IGNORECASE,
+    ):
+        raise AssertionError(
+            "Compatibility sign-in diagnostics must contain aggregate "
+            "stages and counters only"
+        )
+
+    require_source_tokens(
+        compatibility_source,
+        (
+            '#import "Login/BHTCompatibilityLogin.h"',
+            '#import "Security/BHTAuthenticationURLUtility.h"',
+            '@"authenticationRouting":',
+            "BHTAuthenticationRoutingDiagnosticSnapshot()",
+            '@"compatibilitySignIn":',
+            "BHTCompatibilitySignInDiagnosticSnapshot()",
+            '@"unsafeLoginOverridesIncluded": @NO',
+            '@"webSessionHarvestingIncluded": @NO',
+            '@"compatibilityPasswordSignInIncluded": @YES',
+            '@"attestationOverridesIncluded": @NO',
+            '@"credentialBackupIncluded": @NO',
+        ),
+        "redacted compatibility sign-in report integration",
+    )
 
     branding_source = (
         ROOT / "src" / "Branding" / "BHTBranding.m"
