@@ -705,7 +705,10 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"compatibilitySignIn", @"TNUServiceHTTPConfiguration", @"configurationForForegroundRetriableRequest", YES),
         BHTProbe(@"compatibilitySignIn", @"TFNTwitterAccount", @"initWithUsername:userID:", NO),
         BHTProbe(@"compatibilitySignIn", @"TFNTwitterAccount", @"updateUserInfoAndCredentialsWithToken:secret:username:", NO),
-        BHTProbe(@"compatibilitySignIn", @"T1LoginChallengeFactory", @"loginChallengeWithMode:loginType:requestID:user:userID:URLString:loginCause:", YES)
+        BHTProbe(@"compatibilitySignIn", @"T1LoginChallengeFactory", @"loginChallengeWithMode:loginType:requestID:user:userID:URLString:loginCause:", YES),
+        BHTProbe(@"compatibilitySignIn", @"T1AccountsViewController", @"viewWillAppear:", NO),
+        BHTProbe(@"compatibilitySignIn", @"T1AccountsViewController", @"viewDidAppear:", NO),
+        BHTProbe(@"compatibilitySignIn", @"T1AccountsViewController", @"didAddAccountBlock", NO)
     ];
 }
 

@@ -392,9 +392,12 @@ def main() -> None:
         (
             "BHTCompatibilitySignInIsAvailable",
             "BHTPresentCompatibilitySignIn",
+            "BHTPresentCompatibilitySignInForAddingAccount",
             "BHTInstallCompatibilitySignInEntry",
+            "BHTInstallCompatibilityAddAccountSignInEntry",
             "BHTCompatibilitySignInDiagnosticSnapshot",
             "Native X sign-in remains untouched",
+            "native Add Account and Create Account actions remain",
         ),
         "compatibility sign-in public contract",
     )
@@ -503,8 +506,16 @@ def main() -> None:
             "BHTInstallCompatibilitySignInEntry(controller);",
             "completion(controller);",
             "%orig(wrappedCompletion);",
+            "%hook T1AccountsViewController",
+            "- (void)viewWillAppear:(BOOL)animated {",
+            "- (void)viewDidAppear:(BOOL)animated {",
+            "BHTInstallCompatibilityAddAccountSignInEntry(self);",
+            'NSClassFromString(@"T1AccountsViewController")',
+            "@selector(viewWillAppear:)",
+            "@selector(viewDidAppear:)",
+            "%init(BHTCompatibilityAddAccountHooks);",
         ),
-        "native onboarding completion wrapper",
+        "native onboarding and add-account entry wrappers",
     )
     if "private_startLoginFlowWithSender:" in compatibility_login_hook:
         raise AssertionError(
@@ -711,21 +722,84 @@ def main() -> None:
         ),
         "native signed-out flow completion before account switch",
     )
+    add_account_callback_abi = source_section(
+        compatibility_login_source,
+        "static BOOL BHTNativeDidAddAccountBlockIsSupported(",
+        "static void BHTCompleteSignedOutFlowAndSwitchAccount(",
+        "native add-account callback ABI guard",
+    )
+    require_source_tokens(
+        add_account_callback_abi,
+        (
+            'strstr(className, "Block")',
+            "BHTBlockHasSignature",
+            "signatureWithObjCTypes:typeEncoding",
+            "signature.numberOfArguments == 3",
+            "BHTSignatureArgumentIsObject(signature, 1)",
+            "BHTSignatureArgumentIsObject(signature, 2)",
+        ),
+        "native add-account callback ABI validation",
+    )
+    add_account_completion = source_section(
+        compatibility_login_source,
+        "static void BHTCompleteAddAccountFlow(",
+        "static BOOL BHTPresentNativeLoginChallenge(",
+        "native signed-in add-account completion",
+    )
+    require_source_tokens(
+        add_account_completion,
+        (
+            '@"didAddAccountBlock"',
+            "didAddAccount(accountsController, account);",
+            "compatibilityController.navigationController",
+            "challengePresenter.presentedViewController",
+            "dismissViewControllerAnimated:YES",
+            "BHTSwitchToNativeAccount(account)",
+            "BHTCompatibilityAccountHandoffAttempted",
+            "BHTCompatibilityAccountHandoffDispatched",
+            "BHTCompatibilityAccountHandoffFailed",
+        ),
+        "native signed-in add-account callback and dismissal",
+    )
+    challenge_flow = source_section(
+        compatibility_login_source,
+        "static BOOL BHTPresentNativeLoginChallenge(",
+        "@interface BHTCompatibilityLoginViewController",
+        "context-aware native challenge presentation",
+    )
+    require_source_tokens(
+        challenge_flow,
+        (
+            "UIViewController* compatibilityController",
+            "UIViewController* addAccountController",
+            "? BHTTopViewController(compatibilityController)",
+            "challengePresenter, YES, nil",
+            "BHTCompleteAddAccountFlow(",
+            "if (!addAccountController && signedOutFlow &&",
+        ),
+        "separate signed-in and signed-out challenge ownership",
+    )
     if "presenter.presentingViewController" in compatibility_login_source:
         raise AssertionError(
             "Compatibility sign-in must not guess at X's modal hierarchy"
         )
     compatibility_presenter = source_section(
         compatibility_login_source,
-        "void BHTPresentCompatibilitySignIn(",
+        "static void BHTPresentCompatibilitySignInForContext(",
         "@interface BHTCompatibilityEntryTarget",
         "compatibility sign-in presentation gate",
     )
     compatibility_entry = source_section(
         compatibility_login_source,
         "void BHTInstallCompatibilitySignInEntry(",
-        "NSDictionary<NSString*, id>*",
+        "void BHTInstallCompatibilityAddAccountSignInEntry(",
         "compatibility onboarding entry gate",
+    )
+    compatibility_add_account_entry = source_section(
+        compatibility_login_source,
+        "void BHTInstallCompatibilityAddAccountSignInEntry(",
+        "NSDictionary<NSString*, id>*",
+        "compatibility add-account entry gate",
     )
     for diagnostic_path, description in (
         (compatibility_presenter, "sign-in presenter"),
@@ -741,6 +815,32 @@ def main() -> None:
                 f"The {description} must remain reachable when a private "
                 "runtime requirement is missing"
             )
+
+    require_source_tokens(
+        compatibility_presenter,
+        (
+            "BHTCompatibilityPresentedSignInController",
+            "BHTCompatibilityPresentedSignInController =",
+        ),
+        "single-instance compatibility sign-in presentation",
+    )
+
+    require_source_tokens(
+        compatibility_add_account_entry,
+        (
+            "BHTCompatibilitySignInIsAvailable()",
+            "BHTNativeAddAccountCompletionGetterIsSupported()",
+            '@"COMPATIBILITY_SIGN_IN_ADD_ACCOUNT_ACTION"',
+            '@"NeoFreeBird.CompatibilityAddAccountSignIn"',
+            "rightBarButtonItems",
+            "[currentItems containsObject:item]",
+            "[updatedItems addObject:item]",
+            "setRightBarButtonItems:[updatedItems copy]",
+            "&BHTCompatibilityAddAccountItemKey",
+            "&BHTCompatibilityAddAccountTargetKey",
+        ),
+        "idempotent add-account navigation action",
+    )
 
     compatibility_view_setup = source_section(
         compatibility_login_source,
@@ -1055,6 +1155,13 @@ def main() -> None:
             '@"credentialPersistence": @"x_native_account_storage"',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
+            '@"addAccountEntryAvailable":',
+            '@"nativeAddAccountCompletionSelectorAvailable":',
+            '@"addAccountEntryInstalled"',
+            '@"addAccountEntryOpened"',
+            '@"accountHandoffAttempted"',
+            '@"accountHandoffDispatched"',
+            '@"accountHandoffFailed"',
         ),
         "compatibility sign-in safety diagnostic",
     )

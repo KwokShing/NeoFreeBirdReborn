@@ -9,11 +9,19 @@ NS_ASSUME_NONNULL_BEGIN
 BOOL BHTCompatibilitySignInIsAvailable(void);
 void BHTPresentCompatibilitySignIn(
     UIViewController* _Nullable presenter);
+void BHTPresentCompatibilitySignInForAddingAccount(
+    UIViewController* _Nullable accountsController);
 
 // Adds a small alternate-sign-in entry to X's signed-out onboarding surface.
 // The returned native onboarding controller is otherwise left intact.
 void BHTInstallCompatibilitySignInEntry(
     UIViewController* _Nullable onboardingController);
+
+// Adds a separate Compatibility Sign-in action to X's signed-in account
+// management screen. X's native Add Account and Create Account actions remain
+// unchanged.
+void BHTInstallCompatibilityAddAccountSignInEntry(
+    UIViewController* _Nullable accountsController);
 
 // Aggregate stages, counters, and fixed capability identifiers only.
 // Credentials, tokens, URLs, response bodies, account identifiers, and raw

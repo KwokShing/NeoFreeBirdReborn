@@ -8,6 +8,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
+#import <stdint.h>
 #import <string.h>
 
 static NSString* const BHTCompatibilityTargetVersion = @"12.9";
@@ -57,10 +58,19 @@ typedef NS_ENUM(NSUInteger, BHTCompatibilityLoginEvent) {
 
 static atomic_ulong
     BHTCompatibilityLoginCounters[BHTCompatibilityLoginEventCount];
+static atomic_ulong BHTCompatibilityAddAccountEntryInstalled;
+static atomic_ulong BHTCompatibilityAddAccountEntryOpened;
+static atomic_ulong BHTCompatibilityAccountHandoffAttempted;
+static atomic_ulong BHTCompatibilityAccountHandoffDispatched;
+static atomic_ulong BHTCompatibilityAccountHandoffFailed;
 static NSString* BHTCompatibilityLoginLastStage = @"idle";
 static NSString* BHTCompatibilityLoginLastFailure = @"none";
+static __weak UIViewController*
+    BHTCompatibilityPresentedSignInController;
 static char BHTCompatibilityEntryButtonKey;
 static char BHTCompatibilityEntryTargetKey;
+static char BHTCompatibilityAddAccountItemKey;
+static char BHTCompatibilityAddAccountTargetKey;
 static void* BHTCompatibilityFrameworkHandle;
 
 static NSObject* BHTCompatibilityLoginLock(void) {
@@ -318,6 +328,19 @@ static BOOL BHTHostAccountSwitchSignatureIsSupported(void) {
            returnType && returnType[0] == 'v' &&
            BHTSignatureArgumentIsObject(signature, 2) &&
            BHTSignatureArgumentIsBoolean(signature, 3);
+}
+
+static BOOL BHTNativeAddAccountCompletionGetterIsSupported(void) {
+    Class accountsClass =
+        NSClassFromString(@"T1AccountsViewController");
+    NSMethodSignature* signature =
+        BHTInstanceMethodSignature(
+            accountsClass,
+            NSSelectorFromString(@"didAddAccountBlock"));
+    const char* returnType =
+        BHTUnqualifiedObjCType(signature.methodReturnType);
+    return signature && signature.numberOfArguments == 2 &&
+           returnType && returnType[0] == '@';
 }
 
 static NSArray<NSString*>*
@@ -804,8 +827,14 @@ static BOOL BHTRegisterNativeAccount(id account) {
 }
 
 static BOOL BHTSwitchToNativeAccount(id account) {
+    atomic_fetch_add_explicit(
+        &BHTCompatibilityAccountHandoffAttempted, 1,
+        memory_order_relaxed);
     if (!account ||
         !BHTHostAccountSwitchSignatureIsSupported()) {
+        atomic_fetch_add_explicit(
+            &BHTCompatibilityAccountHandoffFailed, 1,
+            memory_order_relaxed);
         return NO;
     }
     Class hostClass =
@@ -819,16 +848,84 @@ static BOOL BHTSwitchToNativeAccount(id account) {
         @try {
             ((void (*)(id, SEL, id, BOOL))objc_msgSend)(
                 host, viewAccount, account, YES);
+            atomic_fetch_add_explicit(
+                &BHTCompatibilityAccountHandoffDispatched, 1,
+                memory_order_relaxed);
             return YES;
         } @catch (__unused NSException* exception) {
+            atomic_fetch_add_explicit(
+                &BHTCompatibilityAccountHandoffFailed, 1,
+                memory_order_relaxed);
             return NO;
         }
     }
+    atomic_fetch_add_explicit(
+        &BHTCompatibilityAccountHandoffFailed, 1,
+        memory_order_relaxed);
     return NO;
 }
 
 typedef void (^BHTCompatibilityResult)(
     BOOL success, NSString* _Nullable failureCategory);
+typedef void (^BHTNativeDidAddAccountBlock)(
+    id controller, id account);
+
+typedef struct {
+    void* isa;
+    int32_t flags;
+    int32_t reserved;
+    void (*invoke)(void*, ...);
+    void* descriptor;
+} BHTBlockLiteral;
+
+enum {
+    BHTBlockHasCopyDispose = (1 << 25),
+    BHTBlockHasSignature = (1 << 30),
+};
+
+static BOOL BHTNativeDidAddAccountBlockIsSupported(id value) {
+    if (!value) return NO;
+
+    Class blockClass = object_getClass(value);
+    const char* className =
+        blockClass ? class_getName(blockClass) : NULL;
+    if (!className || !strstr(className, "Block")) {
+        return NO;
+    }
+
+    BHTBlockLiteral* block =
+        (__bridge BHTBlockLiteral*)value;
+    if (!block->descriptor ||
+        !(block->flags & BHTBlockHasSignature)) {
+        return NO;
+    }
+
+    uintptr_t descriptor =
+        (uintptr_t)block->descriptor +
+        (sizeof(uintptr_t) * 2);
+    if (block->flags & BHTBlockHasCopyDispose) {
+        descriptor += sizeof(void*) * 2;
+    }
+    const char* typeEncoding =
+        *(const char* const*)descriptor;
+    if (!typeEncoding) return NO;
+
+    @try {
+        NSMethodSignature* signature =
+            [NSMethodSignature
+                signatureWithObjCTypes:typeEncoding];
+        const char* returnType =
+            BHTUnqualifiedObjCType(
+                signature.methodReturnType);
+        return signature &&
+               signature.numberOfArguments == 3 &&
+               returnType && returnType[0] == 'v' &&
+               BHTSignatureArgumentIsObject(signature, 1) &&
+               BHTSignatureArgumentIsObject(signature, 2);
+    } @catch (__unused NSException* exception) {
+        return NO;
+    }
+}
 
 static void BHTCompleteSignedOutFlowAndSwitchAccount(
     id account,
@@ -884,9 +981,96 @@ static void BHTCompleteSignedOutFlowAndSwitchAccount(
     }
 }
 
+static void BHTCompleteAddAccountFlow(
+    id account,
+    UIViewController* compatibilityController,
+    UIViewController* accountsController,
+    UIViewController* challengePresenter,
+    BHTCompatibilityResult result) {
+    if (!account || !accountsController) {
+        if (result) result(NO, @"account_switch_failed");
+        return;
+    }
+
+    SEL callbackSelector =
+        NSSelectorFromString(@"didAddAccountBlock");
+    id callbackValue =
+        BHTNativeAddAccountCompletionGetterIsSupported()
+            ? BHTSendObject(
+                  accountsController, callbackSelector)
+            : nil;
+    BHTNativeDidAddAccountBlock didAddAccount =
+        BHTNativeDidAddAccountBlockIsSupported(callbackValue)
+            ? [callbackValue copy]
+            : nil;
+
+    void (^finishAccountFlow)(void) = ^{
+        if (didAddAccount) {
+            atomic_fetch_add_explicit(
+                &BHTCompatibilityAccountHandoffAttempted, 1,
+                memory_order_relaxed);
+            @try {
+                // X 12.9's native completion uses
+                // (accountsController, account). Its encoded block ABI is
+                // validated above before this private callback is invoked.
+                didAddAccount(accountsController, account);
+                atomic_fetch_add_explicit(
+                    &BHTCompatibilityAccountHandoffDispatched, 1,
+                    memory_order_relaxed);
+                if (result) result(YES, nil);
+            } @catch (__unused NSException* exception) {
+                atomic_fetch_add_explicit(
+                    &BHTCompatibilityAccountHandoffFailed, 1,
+                    memory_order_relaxed);
+                BOOL switched =
+                    BHTSwitchToNativeAccount(account);
+                if (result) {
+                    result(
+                        switched,
+                        switched
+                            ? nil
+                            : @"account_switch_failed");
+                }
+            }
+            return;
+        }
+
+        BOOL switched = BHTSwitchToNativeAccount(account);
+        if (result) {
+            result(
+                switched,
+                switched ? nil : @"account_switch_failed");
+        }
+    };
+
+    void (^dismissCompatibility)(void) = ^{
+        UIViewController* modal =
+            compatibilityController.navigationController ?:
+            compatibilityController;
+        if (modal.presentingViewController &&
+            !modal.isBeingDismissed) {
+            [modal dismissViewControllerAnimated:YES
+                                      completion:finishAccountFlow];
+        } else {
+            finishAccountFlow();
+        }
+    };
+
+    if (challengePresenter.presentedViewController &&
+        !challengePresenter.presentedViewController.isBeingDismissed) {
+        [challengePresenter
+            dismissViewControllerAnimated:YES
+                               completion:dismissCompatibility];
+    } else {
+        dismissCompatibility();
+    }
+}
+
 static BOOL BHTPresentNativeLoginChallenge(
     id response,
     NSString* fallbackUsername,
+    UIViewController* compatibilityController,
+    UIViewController* addAccountController,
     BHTCompatibilityResult result) {
     SEL requestIDSelector =
         NSSelectorFromString(@"loginVerificationRequestId");
@@ -912,6 +1096,17 @@ static BOOL BHTPresentNativeLoginChallenge(
             factoryClass, factorySelector) ||
         !host) {
         if (result) result(NO, @"challenge_runtime_missing");
+        return YES;
+    }
+
+    UIViewController* challengePresenter =
+        addAccountController
+            ? BHTTopViewController(compatibilityController)
+            : host;
+    if (!challengePresenter) {
+        if (result) {
+            result(NO, @"challenge_presentation_failed");
+        }
         return YES;
     }
 
@@ -976,6 +1171,17 @@ static BOOL BHTPresentNativeLoginChallenge(
                         }
                         return;
                     }
+                    BHTCompatibilityRecord(
+                        BHTCompatibilityLoginEventAuthenticated,
+                        @"authenticated", nil);
+
+                    if (addAccountController) {
+                        BHTCompleteAddAccountFlow(
+                            account, compatibilityController,
+                            addAccountController,
+                            challengePresenter, result);
+                        return;
+                    }
 
                     void (^switchAccount)(void) = ^{
                         BOOL switched =
@@ -1019,7 +1225,8 @@ static BOOL BHTPresentNativeLoginChallenge(
     void (^presentChallenge)(void) = ^{
         @try {
             ((void (*)(id, SEL, id, BOOL, id))objc_msgSend)(
-                challenge, presentSelector, host, YES, nil);
+                challenge, presentSelector,
+                challengePresenter, YES, nil);
             BHTCompatibilityRecord(
                 BHTCompatibilityLoginEventChallengePresented,
                 @"challenge_presented", nil);
@@ -1035,7 +1242,7 @@ static BOOL BHTPresentNativeLoginChallenge(
     id signedOutFlow = BHTSendObject(host, flowSelector);
     SEL completeSelector =
         NSSelectorFromString(@"completeFlowAnimated:completion:");
-    if (signedOutFlow &&
+    if (!addAccountController && signedOutFlow &&
         [signedOutFlow respondsToSelector:completeSelector]) {
         ((void (*)(id, SEL, BOOL, id))objc_msgSend)(
             signedOutFlow, completeSelector, NO,
@@ -1059,6 +1266,7 @@ static BOOL BHTPresentNativeLoginChallenge(
 @property(nonatomic) BOOL requestStarted;
 @property(nonatomic) BOOL sharingReport;
 @property(nonatomic) BOOL runtimeAvailable;
+@property(nonatomic, weak) UIViewController* addAccountController;
 @end
 
 @implementation BHTCompatibilityLoginViewController
@@ -1361,9 +1569,6 @@ static BOOL BHTPresentNativeLoginChallenge(
             (BOOL)success
           failureCategory:(NSString*)failureCategory {
     if (success) {
-        BHTCompatibilityRecord(
-            BHTCompatibilityLoginEventAuthenticated,
-            @"completed", nil);
         self.passwordField.text = @"";
         UIViewController* modal =
             self.navigationController ?: self;
@@ -1430,17 +1635,27 @@ static BOOL BHTPresentNativeLoginChallenge(
                  failureCategory:@"account_registration_failed"];
             return;
         }
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventAuthenticated,
+            @"authenticated", nil);
 
         self.passwordField.text = @"";
-        BHTCompleteSignedOutFlowAndSwitchAccount(
-            account, self,
+        BHTCompatibilityResult completion =
             ^(BOOL switched, NSString* switchFailure) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self
                         finishWithSuccess:switched
                          failureCategory:switchFailure];
                 });
-            });
+            };
+        if (self.addAccountController) {
+            BHTCompleteAddAccountFlow(
+                account, self, self.addAccountController,
+                nil, completion);
+        } else {
+            BHTCompleteSignedOutFlowAndSwitchAccount(
+                account, self, completion);
+        }
         return;
     }
 
@@ -1455,7 +1670,8 @@ static BOOL BHTPresentNativeLoginChallenge(
         BOOL handled = NO;
         @try {
             handled = BHTPresentNativeLoginChallenge(
-                response, fallbackUsername,
+                response, fallbackUsername, self,
+                self.addAccountController,
                 ^(BOOL challengeSuccess,
                   NSString* challengeFailure) {
                     dispatch_async(
@@ -1584,9 +1800,14 @@ static BOOL BHTPresentNativeLoginChallenge(
 
 @end
 
-void BHTPresentCompatibilitySignIn(
-    UIViewController* presenter) {
+static void BHTPresentCompatibilitySignInForContext(
+    UIViewController* presenter,
+    UIViewController* addAccountController) {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (BHTCompatibilityPresentedSignInController) {
+            return;
+        }
+
         UIViewController* source =
             BHTTopViewController(presenter) ?:
             BHTActiveViewController();
@@ -1618,6 +1839,7 @@ void BHTPresentCompatibilitySignIn(
             @"presented", @"none");
         BHTCompatibilityLoginViewController* login =
             [BHTCompatibilityLoginViewController new];
+        login.addAccountController = addAccountController;
         UINavigationController* navigation =
             [[UINavigationController alloc]
                 initWithRootViewController:login];
@@ -1625,20 +1847,43 @@ void BHTPresentCompatibilitySignIn(
             UIModalPresentationFormSheet;
         navigation.preferredContentSize =
             CGSizeMake(520.0, 620.0);
+        BHTCompatibilityPresentedSignInController =
+            navigation;
         [source presentViewController:navigation
                             animated:YES
                           completion:nil];
     });
 }
 
+void BHTPresentCompatibilitySignIn(
+    UIViewController* presenter) {
+    BHTPresentCompatibilitySignInForContext(
+        presenter, nil);
+}
+
+void BHTPresentCompatibilitySignInForAddingAccount(
+    UIViewController* accountsController) {
+    BHTPresentCompatibilitySignInForContext(
+        accountsController, accountsController);
+}
+
 @interface BHTCompatibilityEntryTarget : NSObject
 @property(nonatomic, weak) UIViewController* presenter;
 - (void)openCompatibilitySignIn;
+- (void)openCompatibilitySignInForAddingAccount;
 @end
 
 @implementation BHTCompatibilityEntryTarget
 - (void)openCompatibilitySignIn {
     BHTPresentCompatibilitySignIn(self.presenter);
+}
+
+- (void)openCompatibilitySignInForAddingAccount {
+    atomic_fetch_add_explicit(
+        &BHTCompatibilityAddAccountEntryOpened, 1,
+        memory_order_relaxed);
+    BHTPresentCompatibilitySignInForAddingAccount(
+        self.presenter);
 }
 @end
 
@@ -1713,6 +1958,62 @@ void BHTInstallCompatibilitySignInEntry(
     });
 }
 
+void BHTInstallCompatibilityAddAccountSignInEntry(
+    UIViewController* accountsController) {
+    if (!accountsController ||
+        !BHTCompatibilitySignInIsAvailable() ||
+        !BHTNativeAddAccountCompletionGetterIsSupported()) {
+        return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIBarButtonItem* item = objc_getAssociatedObject(
+            accountsController,
+            &BHTCompatibilityAddAccountItemKey);
+        if (!item) {
+            BHTCompatibilityEntryTarget* target =
+                [BHTCompatibilityEntryTarget new];
+            target.presenter = accountsController;
+
+            item = [[UIBarButtonItem alloc]
+                initWithTitle:BHTCompatibilityLocalized(
+                                  @"COMPATIBILITY_SIGN_IN_ADD_ACCOUNT_ACTION")
+                         style:UIBarButtonItemStylePlain
+                        target:target
+                        action:@selector(
+                            openCompatibilitySignInForAddingAccount)];
+            item.accessibilityIdentifier =
+                @"NeoFreeBird.CompatibilityAddAccountSignIn";
+            item.accessibilityLabel =
+                BHTCompatibilityLocalized(
+                    @"COMPATIBILITY_SIGN_IN_TITLE");
+
+            objc_setAssociatedObject(
+                accountsController,
+                &BHTCompatibilityAddAccountItemKey, item,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(
+                accountsController,
+                &BHTCompatibilityAddAccountTargetKey, target,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            atomic_fetch_add_explicit(
+                &BHTCompatibilityAddAccountEntryInstalled, 1,
+                memory_order_relaxed);
+        }
+
+        NSArray<UIBarButtonItem*>* currentItems =
+            accountsController.navigationItem.rightBarButtonItems ?:
+            @[];
+        if (![currentItems containsObject:item]) {
+            NSMutableArray<UIBarButtonItem*>* updatedItems =
+                [currentItems mutableCopy];
+            [updatedItems addObject:item];
+            [accountsController.navigationItem
+                setRightBarButtonItems:[updatedItems copy]
+                              animated:NO];
+        }
+    });
+}
+
 NSDictionary<NSString*, id>*
 BHTCompatibilitySignInDiagnosticSnapshot(void) {
     NSArray<NSString*>* missingRequirements =
@@ -1738,6 +2039,26 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
                 &BHTCompatibilityLoginCounters[index],
                 memory_order_relaxed));
     }];
+    counters[@"addAccountEntryInstalled"] =
+        @(atomic_load_explicit(
+            &BHTCompatibilityAddAccountEntryInstalled,
+            memory_order_relaxed));
+    counters[@"addAccountEntryOpened"] =
+        @(atomic_load_explicit(
+            &BHTCompatibilityAddAccountEntryOpened,
+            memory_order_relaxed));
+    counters[@"accountHandoffAttempted"] =
+        @(atomic_load_explicit(
+            &BHTCompatibilityAccountHandoffAttempted,
+            memory_order_relaxed));
+    counters[@"accountHandoffDispatched"] =
+        @(atomic_load_explicit(
+            &BHTCompatibilityAccountHandoffDispatched,
+            memory_order_relaxed));
+    counters[@"accountHandoffFailed"] =
+        @(atomic_load_explicit(
+            &BHTCompatibilityAccountHandoffFailed,
+            memory_order_relaxed));
 
     NSString* lastStage;
     NSString* lastFailure;
@@ -1746,6 +2067,18 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         lastFailure =
             [BHTCompatibilityLoginLastFailure copy] ?: @"none";
     }
+    Class accountsClass =
+        NSClassFromString(@"T1AccountsViewController");
+    BOOL nativeAddAccountCompletionSelectorAvailable =
+        BHTNativeAddAccountCompletionGetterIsSupported();
+    BOOL addAccountEntryAvailable =
+        missingRequirements.count == 0 &&
+        accountsClass &&
+        [accountsClass instancesRespondToSelector:
+                           @selector(viewWillAppear:)] &&
+        [accountsClass instancesRespondToSelector:
+                           @selector(viewDidAppear:)] &&
+        nativeAddAccountCompletionSelectorAvailable;
     return @{
         @"targetAppVersion": BHTCompatibilityTargetVersion,
         @"appVersionSupported":
@@ -1756,6 +2089,10 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
             missingRequirements,
         @"preLoginDiagnosticsEligible":
             @(BHTCompatibilityVersionIsSupported()),
+        @"addAccountEntryAvailable":
+            @(addAccountEntryAvailable),
+        @"nativeAddAccountCompletionSelectorAvailable":
+            @(nativeAddAccountCompletionSelectorAvailable),
         @"lastStage": lastStage,
         @"lastFailureCategory": lastFailure,
         @"counters": [counters copy],
