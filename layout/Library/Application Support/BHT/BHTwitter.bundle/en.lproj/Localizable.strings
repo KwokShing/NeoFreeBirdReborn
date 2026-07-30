@@ -105,6 +105,8 @@
 "COMPATIBILITY_SIGN_IN_REJECTED_ERROR" = "X did not accept this sign-in. Check your details or use X's normal sign-in.";
 "COMPATIBILITY_SIGN_IN_GENERIC_ERROR" = "The compatibility sign-in could not finish safely. Try X's normal sign-in or export a compatibility report.";
 "COMPATIBILITY_SIGN_IN_OK" = "OK";
+"COMPATIBILITY_SIGN_IN_SHARE_REPORT" = "Share Report";
+"COMPATIBILITY_SIGN_IN_REPORT_ERROR" = "NeoFreeBird could not create the login report. Try again after another sign-in attempt.";
 
 /*Tweets*/
 "TWEET_TO_IMAGE_TITLE" = "Save Tweet as image";

@@ -1,4 +1,5 @@
 #import "Compatibility/BHTCompatibilityReporter.h"
+#import "Core/BHTManager.h"
 #import "Core/BHTSettings.h"
 #import "Likes/BHTLikesTab.h"
 #import "Login/BHTCompatibilityLogin.h"
@@ -784,7 +785,7 @@ static NSDictionary* BHTMediaActionSettingsSnapshot(void) {
     };
 }
 
-void BHTWriteCompatibilityReport(void) {
+static NSURL* BHTWriteCompatibilityReportNow(void) {
     NSArray* probes = BHTRuntimeProbes();
     NSUInteger available = 0;
     NSMutableDictionary<NSString*, NSMutableDictionary*>* featureSummary =
@@ -858,7 +859,47 @@ void BHTWriteCompatibilityReport(void) {
     NSData* data = [NSJSONSerialization dataWithJSONObject:report
                                                    options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
                                                      error:nil];
-    if (data) [data writeToURL:BHTCompatibilityReportURL() options:NSDataWritingAtomic error:nil];
+    if (!data) return nil;
+
+    NSURL* reportURL = BHTCompatibilityReportURL();
+    BOOL wroteReport =
+        [data writeToURL:reportURL
+                 options:NSDataWritingAtomic
+                   error:nil];
+    return wroteReport ? reportURL : nil;
+}
+
+void BHTWriteCompatibilityReport(void) {
+    (void)BHTWriteCompatibilityReportNow();
+}
+
+void BHTWriteCompatibilityReportAsync(
+    void (^completion)(NSURL* _Nullable reportURL)) {
+    dispatch_async(BHTCompatibilityReportQueue(), ^{
+        NSURL* currentReportURL =
+            BHTWriteCompatibilityReportNow();
+        NSURL* reportURL = nil;
+        if (currentReportURL) {
+            NSURL* snapshotURL =
+                [BHTManager
+                    temporaryFileURLWithExtension:@"json"];
+            BOOL copiedSnapshot =
+                [NSFileManager.defaultManager
+                    copyItemAtURL:currentReportURL
+                            toURL:snapshotURL
+                            error:nil];
+            if (copiedSnapshot) {
+                reportURL = snapshotURL;
+            } else {
+                [NSFileManager.defaultManager
+                    removeItemAtURL:snapshotURL
+                              error:nil];
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) completion(reportURL);
+        });
+    });
 }
 
 void BHTRecordNavigationEntryClasses(NSArray* entries) {

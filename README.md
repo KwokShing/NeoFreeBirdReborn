@@ -170,7 +170,13 @@ its submodules, so fork changes are included in the build.
 
 ## Test logs
 
-After installing a test build:
+While signed out on X 12.9:
+
+1. Open **Compatibility Sign-in** from X's login page.
+2. Tap **Share Report** in the top-right corner.
+3. Save or share the generated JSON.
+
+After signing in, the same report remains available from NeoFreeBird:
 
 1. Open `Settings > NeoFreeBird > Debug`.
 2. Tap **Export compatibility report**.

@@ -105,6 +105,18 @@ def main() -> None:
             f"Duplicate English localization keys: "
             f"{duplicate_localizations}"
         )
+    missing_login_report_localizations = sorted(
+        {
+            "COMPATIBILITY_SIGN_IN_SHARE_REPORT",
+            "COMPATIBILITY_SIGN_IN_REPORT_ERROR",
+        }
+        - localized_keys
+    )
+    if missing_login_report_localizations:
+        raise AssertionError(
+            "Missing pre-login report localizations: "
+            f"{missing_login_report_localizations}"
+        )
 
     setting_keys = re.findall(
         r'@"key"\s*:\s*@"([^"]+)"', settings_source
@@ -368,6 +380,9 @@ def main() -> None:
     ).read_text(encoding="utf-8")
     compatibility_login_source = (
         ROOT / "src" / "Login" / "BHTCompatibilityLogin.m"
+    ).read_text(encoding="utf-8")
+    compatibility_report_header = (
+        ROOT / "src" / "Compatibility" / "BHTCompatibilityReporter.h"
     ).read_text(encoding="utf-8")
     compatibility_login_hook = (
         ROOT / "src" / "Hooks" / "CompatibilityLogin.x"
@@ -696,6 +711,7 @@ def main() -> None:
     require_source_tokens(
         compatibility_login_source,
         (
+            '#import "Compatibility/BHTCompatibilityReporter.h"',
             "- (void)cancel;",
             "self.completion = nil;",
             "if (self.cancelled) return;",
@@ -706,12 +722,140 @@ def main() -> None:
         "cancelled-request race guards",
     )
 
+    report_share = source_section(
+        compatibility_login_source,
+        "- (void)shareLoginReport:(UIBarButtonItem*)sender {",
+        "- (void)cancelTapped {",
+        "pre-login compatibility report sharing",
+    )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            '@"COMPATIBILITY_SIGN_IN_SHARE_REPORT"',
+            "@selector(shareLoginReport:)",
+            '@"NeoFreeBird.ShareLoginReport"',
+        ),
+        "pre-login report navigation item",
+    )
+    require_source_tokens(
+        report_share,
+        (
+            "if (self.sharingReport || self.requestStarted ||",
+            "self.metricsCollector || self.presentedViewController)",
+            "self.sharingReport = YES;",
+            "sender.enabled = NO;",
+            "BHTWriteCompatibilityReportAsync(^(NSURL* reportURL)",
+            "reportURL.isFileURL",
+            "strongSelf.viewIfLoaded.window",
+            "strongSelf.sharingReport = NO;",
+            "if (!strongSelf)",
+            "strongSelf.requestStarted ||",
+            "strongSelf.metricsCollector ||",
+            "strongSelf.presentedViewController ||",
+            "initWithActivityItems:@[reportURL]",
+            "applicationActivities:nil",
+            "popover.barButtonItem = sender;",
+            "popover.sourceView = strongSelf.view;",
+            "popover.sourceRect = CGRectMake(",
+            "share.completionWithItemsHandler =",
+            "removeItemAtURL:reportURL",
+            "[strongSelf presentViewController:share",
+        ),
+        "fresh file-only pre-login report share sheet",
+    )
+    require_source_tokens(
+        compatibility_report_header,
+        ("BHTWriteCompatibilityReportAsync(",),
+        "asynchronous compatibility report API",
+    )
+    require_source_tokens(
+        compatibility_source,
+        ('#import "Core/BHTManager.h"',),
+        "owned temporary report export directory",
+    )
+    async_report_writer = source_section(
+        compatibility_source,
+        "void BHTWriteCompatibilityReportAsync(",
+        "void BHTRecordNavigationEntryClasses(",
+        "asynchronous compatibility report writer",
+    )
+    require_source_tokens(
+        async_report_writer,
+        (
+            "dispatch_async(BHTCompatibilityReportQueue(), ^{",
+            "BHTWriteCompatibilityReportNow();",
+            'temporaryFileURLWithExtension:@"json"',
+            "copyItemAtURL:currentReportURL",
+            "toURL:snapshotURL",
+            "if (copiedSnapshot)",
+            "removeItemAtURL:snapshotURL",
+            "dispatch_async(dispatch_get_main_queue(), ^{",
+            "if (completion) completion(reportURL);",
+        ),
+        "fresh background report generation with main-thread completion",
+    )
+    busy_state = source_section(
+        compatibility_login_source,
+        "- (void)setBusy:(BOOL)busy status:(NSString*)status {",
+        "- (NSString*)messageForFailureCategory:",
+        "compatibility sign-in busy state",
+    )
+    require_source_tokens(
+        busy_state,
+        (
+            "self.navigationItem.rightBarButtonItem.enabled =",
+            "!busy && !self.sharingReport;",
+        ),
+        "report sharing disabled only during an active login or export",
+    )
+    report_request_position = report_share.index(
+        "BHTWriteCompatibilityReportAsync(^(NSURL* reportURL)"
+    )
+    report_sheet_position = report_share.index(
+        "initWithActivityItems:@[reportURL]"
+    )
+    report_present_position = report_share.index(
+        "[strongSelf presentViewController:share"
+    )
+    if not (
+        report_request_position
+        < report_sheet_position
+        < report_present_position
+    ):
+        raise AssertionError(
+            "Pre-login report sharing must refresh the report before "
+            "sharing its local file"
+        )
+    for private_value in (
+        "usernameField",
+        "passwordField",
+        "absoluteString",
+        "NSURLComponents",
+        "localizedDescription",
+        "response",
+        "token",
+        "secret",
+        "cookie",
+        "NSUserDefaults",
+        "UIPasteboard",
+    ):
+        if private_value in report_share:
+            raise AssertionError(
+                "Pre-login report sharing must not include credentials, "
+                f"authentication values, or raw runtime data: {private_value}"
+            )
+
     sign_in_action = source_section(
         compatibility_login_source,
         "- (void)signInTapped {",
         "\n}\n\n@end",
         "compatibility password submission",
     )
+    if "self.metricsCollector || self.sharingReport" not in sign_in_action:
+        raise AssertionError(
+            "Compatibility sign-in must not start while a report "
+            "snapshot is being prepared"
+        )
     password_copy_position = sign_in_action.index(
         "NSString* password = [self.passwordField.text copy];"
     )

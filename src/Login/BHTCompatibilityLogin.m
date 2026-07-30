@@ -1,5 +1,6 @@
 #import "Login/BHTCompatibilityLogin.h"
 
+#import "Compatibility/BHTCompatibilityReporter.h"
 #import "Core/BHTBundle.h"
 
 #import <WebKit/WebKit.h>
@@ -962,6 +963,7 @@ static BOOL BHTPresentNativeLoginChallenge(
     BHTCompatibilityMetricsCollector* metricsCollector;
 @property(nonatomic) BOOL cancelled;
 @property(nonatomic) BOOL requestStarted;
+@property(nonatomic) BOOL sharingReport;
 @end
 
 @implementation BHTCompatibilityLoginViewController
@@ -976,6 +978,15 @@ static BOOL BHTPresentNativeLoginChallenge(
             initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
                                  target:self
                                  action:@selector(cancelTapped)];
+    self.navigationItem.rightBarButtonItem =
+        [[UIBarButtonItem alloc]
+            initWithTitle:BHTCompatibilityLocalized(
+                              @"COMPATIBILITY_SIGN_IN_SHARE_REPORT")
+                     style:UIBarButtonItemStylePlain
+                    target:self
+                    action:@selector(shareLoginReport:)];
+    self.navigationItem.rightBarButtonItem.accessibilityIdentifier =
+        @"NeoFreeBird.ShareLoginReport";
 
     UILabel* heading = [UILabel new];
     heading.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1104,6 +1115,84 @@ static BOOL BHTPresentNativeLoginChallenge(
     [self.usernameField becomeFirstResponder];
 }
 
+- (void)shareLoginReport:(UIBarButtonItem*)sender {
+    if (self.sharingReport || self.requestStarted ||
+        self.metricsCollector || self.presentedViewController) {
+        return;
+    }
+
+    self.sharingReport = YES;
+    sender.enabled = NO;
+    [self.view endEditing:YES];
+
+    __weak typeof(self) weakSelf = self;
+    BHTWriteCompatibilityReportAsync(^(NSURL* reportURL) {
+        BHTCompatibilityLoginViewController* strongSelf =
+            weakSelf;
+        if (!strongSelf) {
+            if (reportURL.isFileURL) {
+                [NSFileManager.defaultManager
+                    removeItemAtURL:reportURL
+                              error:nil];
+            }
+            return;
+        }
+
+        strongSelf.sharingReport = NO;
+        sender.enabled =
+            !strongSelf.requestStarted &&
+            !strongSelf.metricsCollector;
+        if (!reportURL.isFileURL) {
+            if (strongSelf.viewIfLoaded.window) {
+                strongSelf.statusLabel.textColor =
+                    UIColor.systemRedColor;
+                strongSelf.statusLabel.text =
+                    BHTCompatibilityLocalized(
+                        @"COMPATIBILITY_SIGN_IN_REPORT_ERROR");
+            }
+            return;
+        }
+        if (strongSelf.cancelled ||
+            strongSelf.requestStarted ||
+            strongSelf.metricsCollector ||
+            strongSelf.presentedViewController ||
+            !strongSelf.viewIfLoaded.window) {
+            [NSFileManager.defaultManager
+                removeItemAtURL:reportURL
+                          error:nil];
+            return;
+        }
+
+        UIActivityViewController* share =
+            [[UIActivityViewController alloc]
+                initWithActivityItems:@[reportURL]
+                applicationActivities:nil];
+        UIPopoverPresentationController* popover =
+            share.popoverPresentationController;
+        if (sender) {
+            popover.barButtonItem = sender;
+        } else {
+            popover.sourceView = strongSelf.view;
+            popover.sourceRect = CGRectMake(
+                CGRectGetMidX(strongSelf.view.bounds),
+                CGRectGetMidY(strongSelf.view.bounds),
+                1.0, 1.0);
+        }
+        share.completionWithItemsHandler =
+            ^(__unused UIActivityType activityType,
+              __unused BOOL completed,
+              __unused NSArray* returnedItems,
+              __unused NSError* activityError) {
+                [NSFileManager.defaultManager
+                    removeItemAtURL:reportURL
+                              error:nil];
+            };
+        [strongSelf presentViewController:share
+                                animated:YES
+                              completion:nil];
+    });
+}
+
 - (void)cancelTapped {
     if (self.requestStarted) return;
     self.cancelled = YES;
@@ -1131,6 +1220,8 @@ static BOOL BHTPresentNativeLoginChallenge(
     self.signInButton.alpha = busy ? 0.55 : 1.0;
     self.navigationItem.leftBarButtonItem.enabled =
         !self.requestStarted;
+    self.navigationItem.rightBarButtonItem.enabled =
+        !busy && !self.sharingReport;
     if (busy) {
         [self.activity startAnimating];
     } else {
@@ -1332,7 +1423,7 @@ static BOOL BHTPresentNativeLoginChallenge(
 
 - (void)signInTapped {
     if (self.cancelled || self.requestStarted ||
-        self.metricsCollector) {
+        self.metricsCollector || self.sharingReport) {
         return;
     }
     if (!BHTCompatibilityVersionIsSupported()) {
