@@ -26,10 +26,43 @@
 
 %end
 
+// The signed-in secondary-account flow uses a different controller than
+// first-launch onboarding. Add a separate action to that screen without
+// replacing either of X's native account actions.
+%group BHTCompatibilityAddAccountHooks
+
+%hook T1AccountsViewController
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    BHTInstallCompatibilityAddAccountSignInEntry(self);
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    // Reconcile once more after X finishes configuring its navigation
+    // items so a late native update cannot hide the compatibility action.
+    BHTInstallCompatibilityAddAccountSignInEntry(self);
+}
+
+%end
+
+%end
+
 %ctor {
     NSString* version = [NSBundle.mainBundle
         objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if ([version isEqualToString:@"12.9"]) {
         %init(BHTCompatibilityLoginHooks);
+
+        Class accountsController =
+            NSClassFromString(@"T1AccountsViewController");
+        if (accountsController &&
+            [accountsController instancesRespondToSelector:
+                @selector(viewWillAppear:)] &&
+            [accountsController instancesRespondToSelector:
+                @selector(viewDidAppear:)]) {
+            %init(BHTCompatibilityAddAccountHooks);
+        }
     }
 }
