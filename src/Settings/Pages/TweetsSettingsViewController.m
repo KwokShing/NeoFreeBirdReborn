@@ -17,6 +17,52 @@
     return @"tweets";
 }
 
+- (void)switchChanged:(UISwitch*)sender {
+    NSString* key = BHTSettingsKeyForSwitch(sender);
+    BOOL enablingWebReply =
+        [key isEqualToString:@"web_reply_fallback"] && sender.isOn;
+    [super switchChanged:sender];
+    if (!enablingWebReply) return;
+
+    BHTBundle* bundle = BHTBundle.sharedBundle;
+    UIAlertController* disclosure = [UIAlertController
+        alertControllerWithTitle:
+            [bundle localizedStringForKey:@"WEB_REPLY_FALLBACK_TITLE"]
+                         message:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_DISCLOSURE"]
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [disclosure addAction:[UIAlertAction
+        actionWithTitle:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_KEEP_ENABLED"]
+                  style:UIAlertActionStyleDefault
+                handler:nil]];
+
+    __weak typeof(self) weakSelf = self;
+    __weak UISwitch* weakSender = sender;
+    [disclosure addAction:[UIAlertAction
+        actionWithTitle:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_TURN_OFF"]
+                  style:UIAlertActionStyleDestructive
+                handler:^(__unused UIAlertAction* action) {
+                    UISwitch* strongSender = weakSender;
+                    if (!strongSender) {
+                        [NSUserDefaults.standardUserDefaults
+                            setBool:NO
+                             forKey:@"web_reply_fallback"];
+                        [weakSelf.tableView reloadData];
+                        return;
+                    }
+                    strongSender.on = NO;
+                    [weakSelf switchChanged:strongSender];
+                }]];
+    [self presentViewController:disclosure
+                       animated:YES
+                     completion:nil];
+}
+
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
     NSDictionary* settingData = [self settingAtIndexPath:indexPath];

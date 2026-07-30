@@ -4,6 +4,7 @@
 #import "Likes/BHTLikesTab.h"
 #import "Login/BHTCompatibilityLogin.h"
 #import "MediaActions/BHTMediaActionUtility.h"
+#import "Reply/BHTWebReplyFallback.h"
 #import "Security/BHTAuthenticationURLUtility.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 #import "ThemeColor/BHTThemePresets.h"
@@ -89,6 +90,7 @@ static const NSTimeInterval
 static NSString* const BHTReplyWorkflowEventNames[] = {
     @"replyActionTapped",
     @"replyActionForwardedToX",
+    @"webFallbackPresented",
     @"persistentComposerPresented",
     @"composerPresented",
     @"composerDisappeared",
@@ -164,6 +166,20 @@ void BHTRecordReplyWorkflowDiagnostic(
                 if (!BHTReplyWorkflowSessionActive) {
                     BHTStartReplyWorkflowSessionLocked();
                 }
+                break;
+            case BHTReplyWorkflowDiagnosticWebFallbackPresented:
+                if (!BHTReplyWorkflowSessionActive) {
+                    BHTStartReplyWorkflowSessionLocked();
+                }
+                BHTReplyWorkflowLastOutcome =
+                    @"web_fallback_presented";
+                BHTReplyWorkflowSessionActive = NO;
+                BHTReplyWorkflowSendForwarded = NO;
+                BHTReplyWorkflowComposerPresented = NO;
+                BHTReplyWorkflowComposerVisible = NO;
+                BHTReplyWorkflowComposerClosed = NO;
+                BHTReplyWorkflowAwaitingComposerClose = NO;
+                BHTReplyWorkflowExpiresAt = 0;
                 break;
             case BHTReplyWorkflowDiagnosticPersistentComposerPresented:
                 if (!BHTReplyWorkflowSessionActive) {
@@ -1335,6 +1351,7 @@ static NSDictionary* BHTSettingsSnapshot(void) {
         @"hide_bookmark_button", @"hide_downvote_button",
         @"disable_sensitive_tweet_warnings", @"bypass_age_verification",
         @"reply_sorting", @"restore_reply_context", @"restore_tweet_labels",
+        @"web_reply_fallback",
         @"no_history", @"hide_trends", @"hide_trend_videos",
         @"restore_twitter_names", @"refresh_pill_label",
         @"color_twitter_icon_in_top_bar", @"disable_screenshot_detection",
@@ -1441,6 +1458,8 @@ static NSURL* BHTWriteCompatibilityReportNow(void) {
             BHTCompatibilitySignInDiagnosticSnapshot(),
         @"replyWorkflow":
             BHTReplyWorkflowDiagnosticSnapshot(),
+        @"webReplyFallback":
+            BHTWebReplyFallbackDiagnosticSnapshot(),
         @"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot(),
         @"mediaActionMenus": BHTMediaActionSettingsSnapshot(),
         @"likesRuntime": BHTLikesDiagnosticsSnapshot(),

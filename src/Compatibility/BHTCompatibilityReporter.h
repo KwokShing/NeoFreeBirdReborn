@@ -22,6 +22,7 @@ typedef NS_ENUM(NSUInteger, BHTForYouFilterDiagnosticEvent) {
 typedef NS_ENUM(NSUInteger, BHTReplyWorkflowDiagnosticEvent) {
     BHTReplyWorkflowDiagnosticReplyActionTapped = 0,
     BHTReplyWorkflowDiagnosticReplyActionForwarded,
+    BHTReplyWorkflowDiagnosticWebFallbackPresented,
     BHTReplyWorkflowDiagnosticPersistentComposerPresented,
     BHTReplyWorkflowDiagnosticComposerPresented,
     BHTReplyWorkflowDiagnosticComposerDisappeared,

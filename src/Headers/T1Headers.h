@@ -185,6 +185,7 @@
 
 @interface T1PersistentComposeViewController : UIViewController
 @property (readonly, nonatomic) id statusViewModel;
+- (void)persistentComposeViewDidTap:(id)sender;
 @end
 
 @protocol TTACoreStatusViewEventHandler <NSObject>

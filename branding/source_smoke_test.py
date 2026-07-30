@@ -1223,6 +1223,7 @@ def main() -> None:
         (
             "BHTReplyWorkflowDiagnosticReplyActionTapped",
             "BHTReplyWorkflowDiagnosticReplyActionForwarded",
+            "BHTReplyWorkflowDiagnosticWebFallbackPresented",
             "BHTReplyWorkflowDiagnosticPersistentComposerPresented",
             "BHTReplyWorkflowDiagnosticComposerPresented",
             "BHTReplyWorkflowDiagnosticComposerDisappeared",
@@ -1459,6 +1460,232 @@ def main() -> None:
         raise AssertionError(
             "Reply diagnostics must instrument the existing send hook "
             "instead of installing a competing hook"
+        )
+
+    web_reply_header = (
+        ROOT / "src" / "Reply" / "BHTWebReplyFallback.h"
+    ).read_text(encoding="utf-8")
+    web_reply_source = (
+        ROOT / "src" / "Reply" / "BHTWebReplyFallback.m"
+    ).read_text(encoding="utf-8")
+    tweets_settings_source = (
+        ROOT
+        / "src"
+        / "Settings"
+        / "Pages"
+        / "TweetsSettingsViewController.m"
+    ).read_text(encoding="utf-8")
+    settings_source = SETTINGS.read_text(encoding="utf-8")
+    english_source = ENGLISH.read_text(encoding="utf-8")
+
+    require_source_tokens(
+        web_reply_header,
+        (
+            "BHTWebReplyRouteResultDisabled",
+            "BHTWebReplyRouteResultMissingOrInvalidStatus",
+            "BHTWebReplyRouteResultOffMainThread",
+            "BHTWebReplyRouteResultPresentationUnavailable",
+            "BHTWebReplyRouteResultPresented",
+            "BHTWebReplyRouteResultAlreadyPresented",
+            "BHTTryPresentWebReplyFallback(",
+            "BHTWebReplyRouteResultConsumesTap(",
+            "BHTWebReplyFallbackDiagnosticSnapshot(void)",
+        ),
+        "web reply fallback API",
+    )
+    require_source_tokens(
+        web_reply_source,
+        (
+            "WKWebsiteDataStore.defaultDataStore",
+            "preferredContentMode = WKContentModeMobile",
+            "UIModalPresentationFullScreen",
+            "UIModalPresentationFormSheet",
+            "self.navigationItem.prompt =",
+            '@"WEB_REPLY_ACCOUNT_PROMPT"',
+            "BHTHostIsExactOrSubdomain(",
+            'BHTHostIsExactOrSubdomain(host, @"x.com")',
+            'BHTHostIsExactOrSubdomain(host, @"twitter.com")',
+            '[host isEqualToString:@"accounts.google.com"]',
+            '[host isEqualToString:@"appleid.apple.com"]',
+            'componentsWithString:\n                @"https://x.com/compose/post"',
+            'queryItemWithName:@"in_reply_to"',
+            "class_getInstanceMethod(object_getClass(object), selector)",
+            "method_getNumberOfArguments(method) == 2",
+            "@catch (__unused NSException* exception)",
+            "const NSUInteger maximumObjects = 24;",
+            "const NSUInteger maximumDepth = 4;",
+            "BHTActiveWebReplyNavigationController",
+            "BOOL presentationAccepted =",
+            "presenter.presentedViewController == navigation",
+            '@"usesDefaultWebsiteDataStore": @YES',
+            '@"tweakReadsOrWritesCookies": @NO',
+            '@"injectsPageScripts": @NO',
+            '@"inspectsRequestBodies": @NO',
+            '@"capturesReplyText": @NO',
+            '@"capturesStatusIdentifiers": @NO',
+            '@"capturesAccountData": @NO',
+            '@"observesSendCompletion": @NO',
+            '@"verifiesWebAccountMatchesAppAccount": @NO',
+            '@"capturesRawErrors": @NO',
+        ),
+        "privacy-safe native-style web reply composer",
+    )
+    for forbidden in (
+        "httpCookieStore",
+        "NSHTTPCookieStorage",
+        "WKUserScript",
+        "evaluateJavaScript",
+        "addScriptMessageHandler",
+        "document.cookie",
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "Authorization",
+        "auth_token",
+        '"ct0"',
+        '"Bearer',
+        "NSURLSession",
+        "NSLog",
+        "localizedDescription",
+    ):
+        if forbidden in web_reply_source:
+            raise AssertionError(
+                "The compatibility composer must not inspect or seed web "
+                f"session data: {forbidden}"
+            )
+    if (
+        'hasSuffix:[@"." stringByAppendingString:' not in web_reply_source
+        or "containsString" in source_section(
+            web_reply_source,
+            "static BOOL BHTHostIsExactOrSubdomain(",
+            "static BOOL BHTWebReplyAllowsTopLevelURL(",
+            "web reply host boundary check",
+        )
+    ):
+        raise AssertionError(
+            "Web reply navigation must use a suffix-boundary host check"
+        )
+
+    web_route_source = source_section(
+        web_reply_source,
+        "BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(",
+        "BOOL BHTWebReplyRouteResultConsumesTap(",
+        "web reply route",
+    )
+    if web_route_source.find(
+        'boolForKey:@"web_reply_fallback"'
+    ) > web_route_source.find("BHTResolveStatusIdentifier("):
+        raise AssertionError(
+            "The status object must remain opaque while web replies are off"
+        )
+    route_consumption_source = source_section(
+        web_reply_source,
+        "BOOL BHTWebReplyRouteResultConsumesTap(",
+        "NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void)",
+        "web reply tap-consumption rule",
+    )
+    if (
+        "BHTWebReplyRouteResultPresented" not in route_consumption_source
+        or "BHTWebReplyRouteResultAlreadyPresented"
+        not in route_consumption_source
+    ):
+        raise AssertionError(
+            "Only a presented or already-visible web composer may consume "
+            "the native reply tap"
+        )
+    for fallback_result in (
+        "BHTWebReplyRouteResultDisabled",
+        "BHTWebReplyRouteResultMissingOrInvalidStatus",
+        "BHTWebReplyRouteResultOffMainThread",
+        "BHTWebReplyRouteResultPresentationUnavailable",
+    ):
+        if fallback_result in route_consumption_source:
+            raise AssertionError(
+                "A failed web route must preserve X's native reply: "
+                f"{fallback_result}"
+            )
+
+    require_source_tokens(
+        reply_hook_source,
+        (
+            '#import "Reply/BHTWebReplyFallback.h"',
+            "BHTTryPresentWebReplyFallback(",
+            "BHTWebReplyRouteResultConsumesTap(routeResult)",
+            "BHTReplyWorkflowDiagnosticWebFallbackPresented",
+            "%group BHTPersistentReplyActionFallbackHooks",
+            "- (void)persistentComposeViewDidTap:",
+            'boolForKey:@"web_reply_fallback"',
+            "self.statusViewModel",
+            'NSSelectorFromString(@"persistentComposeViewDidTap:")',
+        ),
+        "native reply fallback integration",
+    )
+    persistent_fallback = source_section(
+        reply_hook_source,
+        "- (void)persistentComposeViewDidTap:",
+        "%end",
+        "persistent composer web fallback",
+    )
+    if persistent_fallback.count("%orig(sender);") != 1:
+        raise AssertionError(
+            "The persistent reply tap must forward to X exactly once when "
+            "the web composer is unavailable"
+        )
+    if persistent_fallback.find(
+        'boolForKey:@"web_reply_fallback"'
+    ) > persistent_fallback.find("self.statusViewModel"):
+        raise AssertionError(
+            "Persistent reply metadata must not be read while web replies "
+            "are disabled"
+        )
+
+    require_source_tokens(
+        settings_source,
+        (
+            '@"key": @"web_reply_fallback"',
+            '@"default": @NO',
+            '@"excludeFromProfile": @YES',
+            '![setting[@"excludeFromProfile"] boolValue]',
+        ),
+        "opt-in non-exportable web reply preference",
+    )
+    require_source_tokens(
+        tweets_settings_source,
+        (
+            'isEqualToString:@"web_reply_fallback"',
+            '@"WEB_REPLY_FALLBACK_DISCLOSURE"',
+            '@"WEB_REPLY_FALLBACK_KEEP_ENABLED"',
+            '@"WEB_REPLY_FALLBACK_TURN_OFF"',
+        ),
+        "web reply account-boundary disclosure",
+    )
+    require_source_tokens(
+        english_source,
+        (
+            '"WEB_REPLY_FALLBACK_TITLE"',
+            '"WEB_REPLY_FALLBACK_DETAIL"',
+            '"WEB_REPLY_FALLBACK_DISCLOSURE"',
+            '"WEB_REPLY_TITLE"',
+            '"WEB_REPLY_ACCOUNT_PROMPT"',
+            '"WEB_REPLY_LOAD_FAILED"',
+            '"WEB_REPLY_BLOCKED_LINK_DETAIL"',
+        ),
+        "web reply localization",
+    )
+    require_source_tokens(
+        compatibility_source,
+        (
+            '#import "Reply/BHTWebReplyFallback.h"',
+            '@"webReplyFallback":',
+            "BHTWebReplyFallbackDiagnosticSnapshot()",
+            '@"web_reply_fallback"',
+        ),
+        "redacted web reply compatibility report",
+    )
+    if "Version: 6.1.0-beta.32" not in (
+        ROOT / "control"
+    ).read_text(encoding="utf-8"):
+        raise AssertionError(
+            "The native-style reply fallback must ship as beta.32"
         )
 
     branding_source = (

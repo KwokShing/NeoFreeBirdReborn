@@ -7,7 +7,9 @@
 //
 
 #import "Compatibility/BHTCompatibilityReporter.h"
+#import "Core/BHTSettings.h"
 #import "HookHelpers.h"
+#import "Reply/BHTWebReplyFallback.h"
 
 #import <objc/runtime.h>
 
@@ -75,6 +77,15 @@ static BOOL BHTReplyDiagnosticMethodHasObjectArguments(
                         scribeElement:(__unsafe_unretained id)scribeElement
                            parameters:(__unsafe_unretained id)parameters
                        originalStatus:(__unsafe_unretained id)originalStatus {
+    BHTWebReplyRouteResult routeResult =
+        BHTTryPresentWebReplyFallback(
+            originalStatus, topMostController());
+    if (BHTWebReplyRouteResultConsumesTap(routeResult)) {
+        BHTRecordReplyWorkflowDiagnostic(
+            BHTReplyWorkflowDiagnosticWebFallbackPresented);
+        return;
+    }
+
     BHTRecordReplyWorkflowDiagnostic(
         BHTReplyWorkflowDiagnosticReplyActionForwarded);
     %orig(
@@ -129,6 +140,34 @@ static BOOL BHTReplyDiagnosticMethodHasObjectArguments(
 
 %end
 
+%group BHTPersistentReplyActionFallbackHooks
+
+%hook T1PersistentComposeViewController
+
+- (void)persistentComposeViewDidTap:(__unsafe_unretained id)sender {
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticReplyActionTapped);
+
+    if ([BHTSettings boolForKey:@"web_reply_fallback"]) {
+        BHTWebReplyRouteResult routeResult =
+            BHTTryPresentWebReplyFallback(
+                self.statusViewModel, topMostController());
+        if (BHTWebReplyRouteResultConsumesTap(routeResult)) {
+            BHTRecordReplyWorkflowDiagnostic(
+                BHTReplyWorkflowDiagnosticWebFallbackPresented);
+            return;
+        }
+    }
+
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticReplyActionForwarded);
+    %orig(sender);
+}
+
+%end
+
+%end
+
 %ctor {
     NSString* version = [NSBundle.mainBundle
         objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
@@ -169,5 +208,11 @@ static BOOL BHTReplyDiagnosticMethodHasObjectArguments(
     if (BHTReplyDiagnosticMethodHasShape(
             persistentComposer, @selector(viewDidAppear:), 1)) {
         %init(BHTPersistentReplyComposerDiagnosticHooks);
+    }
+    SEL persistentTapSelector =
+        NSSelectorFromString(@"persistentComposeViewDidTap:");
+    if (BHTReplyDiagnosticMethodHasObjectArguments(
+            persistentComposer, persistentTapSelector, 1)) {
+        %init(BHTPersistentReplyActionFallbackHooks);
     }
 }

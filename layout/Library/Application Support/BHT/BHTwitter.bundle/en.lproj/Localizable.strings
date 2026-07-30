@@ -157,6 +157,22 @@
 "RESTORE_REPLY_CONTEXT_TITLE" = "Restore reply context";
 "RESTORE_REPLY_CONTEXT_DETAIL" = "Shows the people that are being replied to under Tweets.";
 
+"WEB_REPLY_FALLBACK_TITLE" = "Compatibility reply composer";
+"WEB_REPLY_FALLBACK_DETAIL" = "Opens replies in a native-style x.com screen inside the app when sideloaded X rejects native replies.";
+"WEB_REPLY_FALLBACK_DISCLOSURE" = "Replies will open on x.com inside the app. Its sign-in is separate from the account selected in X, so verify the displayed web account before posting. You may need to sign in once. WebKit keeps that visible session, but NeoFreeBird does not read your login, cookies, or reply text.";
+"WEB_REPLY_FALLBACK_KEEP_ENABLED" = "Keep Enabled";
+"WEB_REPLY_FALLBACK_TURN_OFF" = "Turn Off";
+"WEB_REPLY_TITLE" = "Reply";
+"WEB_REPLY_ACCOUNT_PROMPT" = "x.com • Check the signed-in account";
+"WEB_REPLY_BACK" = "Back";
+"WEB_REPLY_FORWARD" = "Forward";
+"WEB_REPLY_RELOAD" = "Reload";
+"WEB_REPLY_RETRY" = "Try Again";
+"WEB_REPLY_LOAD_FAILED" = "The reply page could not be loaded.";
+"WEB_REPLY_BLOCKED_LINK_TITLE" = "Link Not Opened";
+"WEB_REPLY_BLOCKED_LINK_DETAIL" = "For your privacy, this reply screen only opens X and its visible sign-in pages.";
+"WEB_REPLY_OK" = "OK";
+
 "RESTORE_TWEET_LABELS_TITLE" = "Show Tweet source labels";
 "RESTORE_TWEET_LABELS_DETAIL" = "Shows what client Tweets were made from.";
 
