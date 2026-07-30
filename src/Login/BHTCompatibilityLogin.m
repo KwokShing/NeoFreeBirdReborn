@@ -715,7 +715,7 @@ static BOOL BHTSwitchToNativeAccount(id account) {
     }
     Class hostClass =
         NSClassFromString(@"T1HostViewController");
-    id host = BHTSendObject(
+    UIViewController* host = (UIViewController*)BHTSendObject(
         hostClass,
         NSSelectorFromString(@"sharedHostViewController"));
     SEL viewAccount =
