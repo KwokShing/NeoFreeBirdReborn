@@ -177,8 +177,10 @@ change the FFmpeg TLS backend without a demonstrated build need.
   asks again on the next reply. On the iOS 15 deployment target, safely binding
   separate persistent WebKit profiles would require reading or copying session
   data, so NeoFreeBird instead lets the user visibly switch the web account and
-  never reads cookies or stores or exports credentials, account details, raw
-  URLs, or reply text.
+  never reads cookies or stores or exports credentials, page account data, raw
+  URLs, or reply text. A user may save an optional local account label after
+  visually confirming the account. The label is explicitly unverified and is
+  excluded from preference profiles and compatibility reports.
 
 ## Device validation
 
@@ -227,6 +229,12 @@ a settled same-document transition, keeps a visible Done escape hatch for
 alternate successful routes, adds a shared-web-session account review when a
 native account-context change is detected, and reapplies saved sidebar
 visibility after Add Account finishes rebuilding the drawer.
+
+Beta 37 routes account review through the sign-in path that succeeds on X 12.9,
+falls back once to X's official intent shell when a pre-commit WebKit policy
+interruption occurs, and always replaces an unrecoverable opening spinner with
+a retry state. It also adds an optional local **Last confirmed** web-account
+label without reading cookies or exporting the label in profiles or reports.
 
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids

@@ -67,6 +67,11 @@ typedef NS_ENUM(NSUInteger, BHTWebReplyDiagnosticEvent) {
     BHTWebReplyDiagnosticManageWebAccountOpened,
     BHTWebReplyDiagnosticWebViewCloseReceived,
     BHTWebReplyDiagnosticClosed,
+    BHTWebReplyDiagnosticIgnoredNavigationBeforeCommit,
+    BHTWebReplyDiagnosticAccountManagerFallbackStarted,
+    BHTWebReplyDiagnosticAccountManagerFallbackCommitted,
+    BHTWebReplyDiagnosticAccountManagerFallbackFailed,
+    BHTWebReplyDiagnosticPageNavigationWatchdogArmed,
     BHTWebReplyDiagnosticEventCount,
 };
 
@@ -129,6 +134,11 @@ static NSString* const BHTWebReplyDiagnosticNames[] = {
     @"manageWebAccountOpened",
     @"webViewCloseReceived",
     @"closed",
+    @"ignoredNavigationBeforeCommit",
+    @"accountManagerFallbackStarted",
+    @"accountManagerFallbackCommitted",
+    @"accountManagerFallbackFailed",
+    @"pageNavigationWatchdogArmed",
 };
 _Static_assert(
     sizeof(BHTWebReplyDiagnosticNames) /
@@ -153,6 +163,12 @@ static void* BHTWebReplyURLObservationContext =
 // WebKitErrorFrameLoadInterruptedByPolicyChange declaration.
 static NSInteger const
     BHTWebKitFrameLoadInterruptedByPolicyChangeErrorCode = 102;
+static NSString* const BHTWebReplyAccountLabelDefaultsKey =
+    @"bht_web_reply_account_label";
+
+NSNotificationName const
+    BHTWebReplyAccountLabelDidChangeNotification =
+        @"BHTWebReplyAccountLabelDidChangeNotification";
 
 typedef NS_ENUM(NSUInteger, BHTWebReplyScreenMode) {
     BHTWebReplyScreenModeReply = 0,
@@ -176,6 +192,64 @@ static void BHTSetWebReplyTransitionPending(BOOL pending) {
 
 static NSString* BHTWebReplyLocalized(NSString* key) {
     return [[BHTBundle sharedBundle] localizedStringForKey:key];
+}
+
+static NSString* BHTNormalizedWebReplyAccountLabel(
+    NSString* value) {
+    if (![value isKindOfClass:NSString.class]) return nil;
+    NSString* handle = [value
+        stringByTrimmingCharactersInSet:
+            NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    while ([handle hasPrefix:@"@"]) {
+        handle = [handle substringFromIndex:1];
+    }
+    if (handle.length == 0 || handle.length > 15) return nil;
+
+    static NSCharacterSet* invalidHandleCharacters;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSCharacterSet* allowed =
+            [NSCharacterSet
+                characterSetWithCharactersInString:
+                    @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"];
+        invalidHandleCharacters = allowed.invertedSet;
+    });
+    if ([handle rangeOfCharacterFromSet:
+                    invalidHandleCharacters].location !=
+        NSNotFound) {
+        return nil;
+    }
+    return [@"@" stringByAppendingString:handle];
+}
+
+NSString* BHTWebReplyAccountLabel(void) {
+    NSString* stored = [NSUserDefaults.standardUserDefaults
+        stringForKey:BHTWebReplyAccountLabelDefaultsKey];
+    return BHTNormalizedWebReplyAccountLabel(stored);
+}
+
+static void BHTSetWebReplyAccountLabel(NSString* label) {
+    NSUserDefaults* defaults =
+        NSUserDefaults.standardUserDefaults;
+    NSString* normalized =
+        BHTNormalizedWebReplyAccountLabel(label);
+    NSString* previous = BHTWebReplyAccountLabel();
+    if (normalized.length > 0) {
+        [defaults setObject:normalized
+                    forKey:BHTWebReplyAccountLabelDefaultsKey];
+    } else {
+        [defaults
+            removeObjectForKey:
+                BHTWebReplyAccountLabelDefaultsKey];
+    }
+    if ((previous == nil && normalized == nil) ||
+        [previous isEqualToString:normalized]) {
+        return;
+    }
+    [NSNotificationCenter.defaultCenter
+        postNotificationName:
+            BHTWebReplyAccountLabelDidChangeNotification
+                      object:nil];
 }
 
 static const char* BHTSkipObjectiveCTypeQualifiers(
@@ -368,8 +442,22 @@ static NSURL* BHTWebReplySignInURL(void) {
 }
 
 static NSURL* BHTWebReplyAccountURL(void) {
+    // Direct /home loads are interrupted by WebKit policy changes on some
+    // sideloaded X 12.9 installs. Enter through the same supported sign-in
+    // flow that already succeeds for compatibility-reply setup.
+    NSURL* URL = BHTWebReplySignInURL();
+    return [URL.scheme isEqualToString:@"https"] &&
+                   [URL.host isEqualToString:@"x.com"]
+               ? URL
+               : nil;
+}
+
+static NSURL* BHTWebReplyAccountFallbackURL(void) {
+    // The official intent shell is the route users already confirmed loads
+    // successfully. It contains no status identifier or draft and cannot post
+    // without a visible user action.
     NSURL* URL =
-        [NSURL URLWithString:@"https://x.com/home"];
+        [NSURL URLWithString:@"https://x.com/intent/tweet"];
     return [URL.scheme isEqualToString:@"https"] &&
                    [URL.host isEqualToString:@"x.com"]
                ? URL
@@ -539,6 +627,7 @@ static void BHTRecordWebReplyNavigationFailure(
 @property(nonatomic, strong) UIView* setupReadyView;
 @property(nonatomic, strong) UIBarButtonItem* doneItem;
 @property(nonatomic, strong) UIBarButtonItem* moreItem;
+@property(nonatomic, strong) UIBarButtonItem* accountLabelItem;
 @property(nonatomic) BOOL observingProgress;
 @property(nonatomic) BOOL observingURL;
 @property(nonatomic) BOOL didRecordClose;
@@ -553,6 +642,10 @@ static void BHTRecordWebReplyNavigationFailure(
 @property(nonatomic) BOOL setupReady;
 @property(nonatomic) NSUInteger loadAttemptGeneration;
 @property(nonatomic) BOOL loadAttemptComplete;
+@property(nonatomic) BOOL accountManagerFallbackScheduled;
+@property(nonatomic) BOOL accountManagerFallbackAttempted;
+@property(nonatomic) BOOL accountManagerFallbackCommitted;
+@property(nonatomic) BOOL accountManagerFallbackFailureRecorded;
 @property(nonatomic, copy) dispatch_block_t doneCompletion;
 @property(nonatomic) BOOL beginsReplyTransitionOnDone;
 - (instancetype)initWithURL:(NSURL*)URL
@@ -560,8 +653,13 @@ static void BHTRecordWebReplyNavigationFailure(
               loadFailureKey:(NSString*)loadFailureKey
                         mode:(BHTWebReplyScreenMode)mode;
 - (void)loadRequestWithWatchdog:(NSURLRequest*)request;
+- (void)armLoadWatchdogForNavigation:
+    (WKNavigation*)navigation;
 - (void)scheduleUserPopupRequest:(NSURLRequest*)request;
 - (void)showWebAccountManager;
+- (void)editAccountLabel;
+- (BOOL)scheduleAccountManagerFallbackIfNeeded;
+- (void)recordAccountManagerFallbackFailureIfNeeded;
 - (BOOL)settleMainFrameProvisionalNavigationForCallback:
     (WKNavigation*)navigation;
 - (BOOL)finishMainFrameNavigationForCallback:
@@ -654,8 +752,24 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
                action:@selector(moreTapped)];
     self.moreItem.accessibilityLabel =
         BHTWebReplyLocalized(@"WEB_REPLY_MORE");
+    self.accountLabelItem = [[UIBarButtonItem alloc]
+        initWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_ACCOUNT_LABEL_BUTTON")
+                style:UIBarButtonItemStylePlain
+               target:self
+               action:@selector(editAccountLabel)];
+    self.accountLabelItem.accessibilityLabel =
+        BHTWebReplyLocalized(@"WEB_REPLY_ACCOUNT_LABEL_ACTION");
     if (self.screenMode == BHTWebReplyScreenModeReply) {
         self.navigationItem.rightBarButtonItem = self.moreItem;
+    } else if (
+        self.screenMode ==
+        BHTWebReplyScreenModeAccountManagement) {
+        // Keep both the local label action and a Done escape hatch available
+        // even if X interrupts navigation before the first page commits.
+        self.navigationItem.rightBarButtonItems =
+            @[self.doneItem, self.accountLabelItem];
     }
 
     WKWebViewConfiguration* configuration =
@@ -1184,6 +1298,103 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
                      completion:nil];
 }
 
+- (void)editAccountLabel {
+    if (self.presentedViewController) return;
+    UIAlertController* editor = [UIAlertController
+        alertControllerWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_ACCOUNT_LABEL_TITLE")
+                         message:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_ACCOUNT_LABEL_DETAIL")
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [editor addTextFieldWithConfigurationHandler:
+                ^(UITextField* textField) {
+                    NSString* current =
+                        BHTWebReplyAccountLabel();
+                    textField.text =
+                        [current hasPrefix:@"@"]
+                            ? [current substringFromIndex:1]
+                            : current;
+                    textField.placeholder =
+                        BHTWebReplyLocalized(
+                            @"WEB_REPLY_ACCOUNT_LABEL_PLACEHOLDER");
+                    textField.autocapitalizationType =
+                        UITextAutocapitalizationTypeNone;
+                    textField.autocorrectionType =
+                        UITextAutocorrectionTypeNo;
+                    textField.spellCheckingType =
+                        UITextSpellCheckingTypeNo;
+                    textField.clearButtonMode =
+                        UITextFieldViewModeWhileEditing;
+                }];
+    __weak typeof(self) weakSelf = self;
+    __weak UIAlertController* weakEditor = editor;
+    [editor addAction:[UIAlertAction
+        actionWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_ACCOUNT_LABEL_SAVE")
+                  style:UIAlertActionStyleDefault
+                handler:^(__unused UIAlertAction* action) {
+                    NSString* value =
+                        weakEditor.textFields.firstObject.text;
+                    NSString* normalized =
+                        BHTNormalizedWebReplyAccountLabel(
+                            value);
+                    if (normalized.length > 0) {
+                        BHTSetWebReplyAccountLabel(
+                            normalized);
+                        return;
+                    }
+                    BHTPerformWhenWebReplyPresenterIsReady(
+                        weakSelf, 20,
+                        ^(UIViewController* presenter) {
+                            UIAlertController* invalid =
+                                [UIAlertController
+                                    alertControllerWithTitle:
+                                        BHTWebReplyLocalized(
+                                            @"WEB_REPLY_ACCOUNT_LABEL_INVALID_TITLE")
+                                                     message:
+                                        BHTWebReplyLocalized(
+                                            @"WEB_REPLY_ACCOUNT_LABEL_INVALID_DETAIL")
+                                              preferredStyle:
+                                                  UIAlertControllerStyleAlert];
+                            [invalid addAction:
+                                [UIAlertAction
+                                    actionWithTitle:
+                                        BHTWebReplyLocalized(
+                                            @"WEB_REPLY_OK")
+                                              style:
+                                                  UIAlertActionStyleDefault
+                                            handler:nil]];
+                            [presenter
+                                presentViewController:
+                                    invalid
+                                             animated:YES
+                                           completion:nil];
+                        },
+                        nil);
+                }]];
+    if (BHTWebReplyAccountLabel().length > 0) {
+        [editor addAction:[UIAlertAction
+            actionWithTitle:
+                BHTWebReplyLocalized(
+                    @"WEB_REPLY_ACCOUNT_LABEL_FORGET")
+                      style:UIAlertActionStyleDestructive
+                    handler:^(__unused UIAlertAction* action) {
+                        BHTSetWebReplyAccountLabel(nil);
+                    }]];
+    }
+    [editor addAction:[UIAlertAction
+        actionWithTitle:
+            BHTWebReplyLocalized(@"WEB_REPLY_CANCEL")
+                  style:UIAlertActionStyleCancel
+                handler:nil]];
+    [self presentViewController:editor
+                       animated:YES
+                     completion:nil];
+}
+
 - (void)showWebAccountManager {
     if (self.screenMode != BHTWebReplyScreenModeReply ||
         self.presentedViewController ||
@@ -1231,6 +1442,20 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
 
 - (void)retryLoad {
     if (self.setupReady) return;
+    if (self.screenMode ==
+            BHTWebReplyScreenModeAccountManagement &&
+        self.loadAttemptComplete &&
+        !self.hasVisibleCommittedContent) {
+        // A user-requested retry gets one fresh chance at the known-working
+        // fallback route.
+        self.accountManagerFallbackScheduled = NO;
+        self.accountManagerFallbackAttempted = NO;
+        self.accountManagerFallbackCommitted = NO;
+        self.accountManagerFallbackFailureRecorded =
+            NO;
+        self.title =
+            BHTWebReplyLocalized(self.screenTitleKey);
+    }
     self.errorView.hidden = YES;
     [self.loadingView.layer removeAllAnimations];
     self.loadingView.alpha = 1.0;
@@ -1242,14 +1467,67 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
         [NSURLRequest requestWithURL:self.initialURL]];
 }
 
+- (BOOL)scheduleAccountManagerFallbackIfNeeded {
+    if (self.screenMode !=
+            BHTWebReplyScreenModeAccountManagement ||
+        self.accountManagerFallbackScheduled ||
+        self.accountManagerFallbackAttempted ||
+        self.hasVisibleCommittedContent ||
+        self.setupReady) {
+        return NO;
+    }
+    NSURL* fallbackURL =
+        BHTWebReplyAccountFallbackURL();
+    if (!fallbackURL) return NO;
+
+    self.accountManagerFallbackScheduled = YES;
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) strongSelf =
+            weakSelf;
+        if (!strongSelf) return;
+        strongSelf.accountManagerFallbackScheduled = NO;
+        if (!strongSelf.viewIfLoaded.window) {
+            [strongSelf showLoadFailure];
+            return;
+        }
+        if (strongSelf.hasVisibleCommittedContent ||
+            strongSelf.setupReady ||
+            strongSelf
+                .mainFrameProvisionalNavigationInFlight) {
+            return;
+        }
+        strongSelf.accountManagerFallbackAttempted =
+            YES;
+        strongSelf.title =
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_ACCOUNT_SESSION_CHECK");
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAccountManagerFallbackStarted);
+        [strongSelf loadRequestWithWatchdog:
+            [NSURLRequest
+                requestWithURL:fallbackURL]];
+    });
+    return YES;
+}
+
+- (void)recordAccountManagerFallbackFailureIfNeeded {
+    if (!self.accountManagerFallbackAttempted ||
+        self.accountManagerFallbackCommitted ||
+        self.accountManagerFallbackFailureRecorded) {
+        return;
+    }
+    self.accountManagerFallbackFailureRecorded = YES;
+    BHTRecordWebReplyDiagnostic(
+        BHTWebReplyDiagnosticAccountManagerFallbackFailed);
+}
+
 - (void)loadRequestWithWatchdog:
     (NSURLRequest*)request {
     if (!request.URL) {
         [self showLoadFailure];
         return;
     }
-    NSUInteger generation =
-        ++self.loadAttemptGeneration;
     self.loadAttemptComplete = NO;
     self.errorView.hidden = YES;
     [self.loadingView.layer removeAllAnimations];
@@ -1271,7 +1549,17 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
         [self showLoadFailure];
         return;
     }
+    [self
+        armLoadWatchdogForNavigation:
+            requestedNavigation];
+}
 
+- (void)armLoadWatchdogForNavigation:
+    (WKNavigation*)navigation {
+    if (!navigation) return;
+    NSUInteger generation =
+        ++self.loadAttemptGeneration;
+    self.loadAttemptComplete = NO;
     __weak typeof(self) weakSelf = self;
     dispatch_after(
         dispatch_time(
@@ -1285,15 +1573,15 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
                     generation ||
                 strongSelf.loadAttemptComplete ||
                 strongSelf.latestMainFrameNavigation !=
-                    requestedNavigation ||
+                    navigation ||
                 strongSelf.mainFrameProvisionalNavigationInFlight !=
-                    requestedNavigation ||
+                    navigation ||
                 !strongSelf.viewIfLoaded.window) {
                 return;
             }
             strongSelf.loadAttemptComplete = YES;
             if (strongSelf.explicitMainFrameNavigationAwaitingStart ==
-                requestedNavigation) {
+                navigation) {
                 strongSelf.explicitMainFrameNavigationAwaitingStart = nil;
             }
             strongSelf.latestMainFrameNavigation = nil;
@@ -1336,6 +1624,8 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
 
 - (void)showLoadFailure {
     if (self.setupReady) return;
+    [self
+        recordAccountManagerFallbackFailureIfNeeded];
     self.loadAttemptComplete = YES;
     self.loadingView.hidden = YES;
     self.progressView.hidden = YES;
@@ -1441,6 +1731,15 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
 - (void)recoverFromIgnoredNavigationError {
     if (!self.hasVisibleCommittedContent &&
         !self.setupReady) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticIgnoredNavigationBeforeCommit);
+        if ([self
+                scheduleAccountManagerFallbackIfNeeded]) {
+            return;
+        }
+        [self
+            recordAccountManagerFallbackFailureIfNeeded];
+        [self showLoadFailure];
         return;
     }
     self.loadAttemptComplete = YES;
@@ -1493,6 +1792,8 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
         BHTWebReplyDiagnosticNavigationStarted);
     WKNavigation* explicitNavigation =
         self.explicitMainFrameNavigationAwaitingStart;
+    BOOL pageInitiatedNavigation =
+        explicitNavigation == nil;
     if (explicitNavigation &&
         explicitNavigation != navigation) {
         // loadRequest: installs its returned token before WebKit delivers the
@@ -1511,6 +1812,13 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
     self.mainFrameProvisionalNavigationInFlight =
         navigation;
     if (self.setupReady) return;
+    if (pageInitiatedNavigation) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticPageNavigationWatchdogArmed);
+        [self
+            armLoadWatchdogForNavigation:
+                navigation];
+    }
     self.errorView.hidden = YES;
     self.loadingView.hidden =
         self.hasVisibleCommittedContent;
@@ -1528,6 +1836,14 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
     if (self.setupReady) return;
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticNavigationCommitted);
+    if (self.screenMode ==
+            BHTWebReplyScreenModeAccountManagement &&
+        self.accountManagerFallbackAttempted &&
+        !self.accountManagerFallbackCommitted) {
+        self.accountManagerFallbackCommitted = YES;
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAccountManagerFallbackCommitted);
+    }
     self.hasVisibleCommittedContent = YES;
     [self revealCommittedContent];
     if (self.screenMode != BHTWebReplyScreenModeReply &&
@@ -1867,12 +2183,25 @@ static BOOL BHTPresentWebReplyAccountBoundary(
     NSString* detailKey = nativeAccountChanged
         ? @"WEB_REPLY_ACCOUNT_CHANGED_DETAIL"
         : @"WEB_REPLY_ACCOUNT_BOUNDARY_DETAIL";
+    NSString* detail =
+        BHTWebReplyLocalized(detailKey);
+    NSString* accountLabel =
+        BHTWebReplyAccountLabel();
+    if (accountLabel.length > 0) {
+        detail = [detail
+            stringByAppendingFormat:
+                @"\n\n%@",
+                [NSString
+                    stringWithFormat:
+                        BHTWebReplyLocalized(
+                            @"WEB_REPLY_ACCOUNT_LABEL_CONTEXT_FORMAT"),
+                        accountLabel]];
+    }
     UIAlertController* boundary = [UIAlertController
         alertControllerWithTitle:
             BHTWebReplyLocalized(
                 @"WEB_REPLY_ACCOUNT_BOUNDARY_TITLE")
-                         message:
-            BHTWebReplyLocalized(detailKey)
+                         message:detail
                   preferredStyle:UIAlertControllerStyleAlert];
     __weak UIViewController* weakPresenter = presenter;
     __weak id weakNativeAccount = nativeAccount;
@@ -2212,10 +2541,18 @@ NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void) {
         @"supportsManualSetupCompletion": @YES,
         @"guardsAccountBoundaryTransitions": @YES,
         @"usesSingleSharedWebAccountSession": @YES,
+        @"usesLoginFlowForAccountManagement": @YES,
+        @"usesOneShotAccountManagerIntentFallback": @YES,
+        @"precommitPolicyInterruptionsCannotLeaveLoaderVisible": @YES,
         @"warnsWhenNativeAccountObjectChanges": @YES,
         @"rechecksEveryReplyWithoutNativeAccountContext": @YES,
         @"remembersNativeAccountOnlyInProcess": @YES,
         @"persistsNativeAccountAssociation": @NO,
+        @"storesUserConfirmedAccountLabel": @YES,
+        @"automaticallyDetectsWebAccount": @NO,
+        @"accountLabelIsUserProvided": @YES,
+        @"exportsAccountLabelInReports": @NO,
+        @"exportsAccountLabelInPreferenceProfiles": @NO,
         @"knownNativeContextBoundaryAcknowledged":
             @(atomic_load_explicit(
                 &BHTWebReplyAccountBoundaryAcknowledged,

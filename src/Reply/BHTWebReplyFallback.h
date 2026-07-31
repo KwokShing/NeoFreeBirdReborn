@@ -13,9 +13,9 @@ typedef NS_ENUM(NSUInteger, BHTWebReplyRouteResult) {
 // The source object is inspected only while this opt-in route is being
 // evaluated. Native-account context is compared only by process-local object
 // identity so switching X accounts can trigger a visible web-account check.
-// No host model, account identifier, or draft text is persisted or added to
-// diagnostics. The reply URL exists only while the visible composer or its
-// account-boundary prompt is open.
+// No native host model, native account identifier, or draft text is persisted
+// or added to diagnostics. The reply URL exists only while the visible
+// composer or its account-boundary prompt is open.
 BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
     id _Nullable sourceObject,
     id _Nullable nativeAccount,
@@ -27,11 +27,18 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
 BOOL BHTPresentWebReplySignInSetup(
     UIViewController* _Nullable presenter);
 
-// Opens x.com Home in the same visible persistent session so the user can
-// review, add, sign out, or switch the web account without NeoFreeBird reading
-// that account or its cookies.
+// Opens the guarded x.com sign-in/account route in the same visible persistent
+// session so the user can review or switch the web account without NeoFreeBird
+// reading that account or its cookies.
 BOOL BHTPresentWebReplyAccountManager(
     UIViewController* _Nullable presenter);
+
+// Optional, user-confirmed label for the shared web-reply session. NeoFreeBird
+// never derives this from cookies, tokens, or the native X account. The label
+// stays in local preferences and is excluded from profiles and diagnostics.
+FOUNDATION_EXPORT NSNotificationName const
+    BHTWebReplyAccountLabelDidChangeNotification;
+NSString* _Nullable BHTWebReplyAccountLabel(void);
 
 BOOL BHTWebReplyRouteResultConsumesTap(
     BHTWebReplyRouteResult result);
