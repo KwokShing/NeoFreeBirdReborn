@@ -206,4 +206,4 @@ Theacrat's and Orion's NeoFreeBird work,
 [ffmpeg-kit-next](https://github.com/arthenica/ffmpeg-kit-next).
 
 NeoFreeBird is an independent community project and is not affiliated with,
-endorsed by, or sponsored by X Corp., Twitter, Apple, or Apollo.
+endorsed by, or sponsored by X Corp., Twitter, or Apple.
