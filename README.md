@@ -7,7 +7,7 @@ Twitter branding and adds themes, navigation controls, media tools, timeline
 filters, and guarded compatibility options for modified installations.
 
 > **Beta software:** NeoFreeBird is developed and tested for X 12.9. Other X
-> versions are not considered compatible.
+> versions may not be compatible.
 
 NeoFreeBird does not include or distribute the X app. Sideloaded and TrollStore
 builds require a decrypted X 12.9 IPA that you are legally authorized to use.
@@ -116,7 +116,7 @@ can cause startup crashes and inconsistent behavior.
 
 Open **Actions > Build NeoFreeBird > Run workflow**, select the deployment
 format, and optionally choose a commit. Sideloaded and TrollStore builds also
-need a direct URL to a decrypted X 12.9 IPA that you are authorized to use.
+need a direct URL to a decrypted X 12.9 IPA.
 Download the package from the completed run's **Artifacts** section.
 
 ### Local build
