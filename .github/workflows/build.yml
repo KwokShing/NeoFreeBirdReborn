@@ -74,14 +74,21 @@ jobs:
 
     steps:
       - name: Checkout Main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: main
           ref: ${{ github.event.inputs.commit_id || github.ref }}
           submodules: recursive
 
       - name: Install Dependencies
-        run: brew install make dpkg ldid
+        run: |
+          # GitHub's macOS image includes AWS SAM CLI from this third-party
+          # tap, but this build does not use it. Remove it instead of granting
+          # the whole tap trust during formula resolution.
+          if brew tap | grep -qx 'aws/tap'; then
+            brew untap --force aws/tap
+          fi
+          brew install make dpkg ldid
 
       - name: Add GNU Make to PATH
         run: |
@@ -95,7 +102,7 @@ jobs:
           python3 main/branding/smoke_test.py
 
       - name: Download Theos
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: theos/theos
           ref: master
@@ -108,7 +115,7 @@ jobs:
 
       - name: iOS SDK Caching
         id: SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           cache-name: iOS-${{ inputs.sdk_version || '16.5' }}-SDK
         with:
@@ -164,7 +171,7 @@ jobs:
           echo "key=ffmpeg-stack-sdk$(xcrun --sdk iphoneos --show-sdk-version)-${{ hashFiles('main/deps/ffmpeg-kit-next/build-ffmpeg.sh') }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore ffmpeg Stack
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ffmpeg-build
           key: ${{ steps.ffmpeg-key.outputs.key }}
@@ -194,7 +201,7 @@ jobs:
 
       - name: Upload Artifact
         if: ${{ inputs.upload_artifact }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.TWEAK_NAME }}_${{ env.TWEAK_VERSION }}
           path: ${{ github.workspace }}/main/packages/${{ steps.package_name.outputs.package }}

@@ -118,7 +118,8 @@ Status meanings:
 | Profile | `restore_follow_button` | Updated | Keeps genuine active subscriptions intact |
 | Profile | `square_avatars` | Ported | Live avatar/image/shadow restyling |
 | Profile | `full_profile_counts` | Updated | Previously always on; now opt-in |
-| Account access | Compatibility Sign-in | New/runtime check | Explicit X 12.9-only fallback available from signed-out onboarding and Profiles settings; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
+| Account access | Compatibility Sign-in | New/runtime check | Explicit X 12.9-only fallback available from signed-out onboarding, Profiles settings, and Add Account; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
+| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps that opens X's visible Web Intent in a native-themed in-app WebKit shell. Setup and replies share a separate persistent web session, warn that its account may differ from the native account, never capture native draft text or auto-post, and fall through to native behavior when the route cannot be presented |
 | Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; only X 12.9's available canonical-user selector is hooked |
 | Tweets | `enable_edit_tweet` | Updated | Exposes native UI only; server eligibility still applies |
 | Tweets | undo timeout | Ported | Unified timeout picker and old-key migration |
@@ -163,10 +164,15 @@ change the FFmpeg TLS backend without a demonstrated build need.
   BHTwitter settings screen. The X 12.9 audit found the current
   `selectTimelineVariant:shouldRefresh:` path but not a stable enum value; the
   branch does not guess one.
-- Web reply/login replacements, stored cookies, credential/token backups,
+- Hidden web posting, cookie extraction, credential/token backups,
   subscription spoofing, and attestation evasion remain excluded. The guarded
   Compatibility Sign-in fallback is not a web-session replacement and stores
   the resulting account only through X's native account service.
+- The optional Compatibility reply composer is a visible, in-app x.com screen
+  for sideloaded installs where native replies fail. Its persistent WebKit
+  session is separate from X's native account store. NeoFreeBird validates
+  navigation destinations transiently, but does not read its cookies or store
+  or export credentials, account details, raw URLs, or reply text.
 
 ## Device validation
 
@@ -199,6 +205,16 @@ routes two-factor challenges through X's native challenge controller, and
 registers successful accounts only through X's account service. Its
 compatibility diagnostics contain aggregate stages and categories only—never
 credentials, tokens, URLs, response bodies, or account identifiers.
+
+Beta 30 extends Compatibility Sign-in to X's Add Account flow. Beta 31 adds
+privacy-bounded reply workflow diagnostics. Beta 32 introduces the default-off
+Compatibility reply composer as a visible x.com Web Intent with a separate
+persistent WebKit session and an account-mismatch warning. Betas 33 and 34
+harden loading, navigation policy, popup handling, and blank setup recovery.
+Beta 35 recognizes a successful `/home` setup landing, replaces the
+browser-like chrome with a native-themed reply shell, and keeps posting
+entirely inside the visible X web surface without reading cookies, reply text,
+or account data.
 
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids
