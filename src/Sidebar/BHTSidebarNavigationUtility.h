@@ -14,6 +14,11 @@ extern NSString* const BHTSidebarSpacesItemID;
 extern NSString* const BHTSidebarFollowRequestsItemID;
 extern NSString* const BHTSidebarNavigationSettingsDidChangeNotification;
 
+FOUNDATION_EXPORT void BHTRecordSidebarDeferredApplyScheduled(void);
+FOUNDATION_EXPORT void BHTRecordSidebarDeferredApplyExecuted(void);
+FOUNDATION_EXPORT void BHTRecordSidebarDeferredApplyCoalesced(void);
+FOUNDATION_EXPORT void BHTRecordSidebarAddAccountRefreshRequested(void);
+
 @interface BHTSidebarNavigationUtility : NSObject
 
 + (NSArray<NSString*>*)canonicalItemIDs;
@@ -29,6 +34,7 @@ extern NSString* const BHTSidebarNavigationSettingsDidChangeNotification;
 + (void)registerDashContentController:(id)controller;
 + (void)applyConfigurationToDashContentController:(id)controller;
 + (void)refreshRegisteredDashContentControllers;
++ (NSDictionary<NSString*, NSNumber*>*)diagnosticSnapshot;
 
 @end
 

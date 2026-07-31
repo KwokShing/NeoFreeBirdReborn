@@ -11,6 +11,7 @@
 #import "HookHelpers.h"
 #import "Reply/BHTWebReplyFallback.h"
 
+#import <objc/message.h>
 #import <objc/runtime.h>
 
 static BOOL BHTReplyDiagnosticMethodHasShape(
@@ -52,6 +53,52 @@ static BOOL BHTReplyDiagnosticMethodHasObjectArguments(
     return YES;
 }
 
+static BOOL BHTReplyDiagnosticMethodReturnsObjectWithNoArguments(
+    Class cls, SEL selector, BOOL classMethod) {
+    if (!cls || !selector) return NO;
+    Method method = classMethod
+        ? class_getClassMethod(cls, selector)
+        : class_getInstanceMethod(cls, selector);
+    if (!method || method_getNumberOfArguments(method) != 2) {
+        return NO;
+    }
+
+    char returnType[16] = {0};
+    method_getReturnType(method, returnType, sizeof(returnType));
+    const char* type = returnType;
+    while (*type == 'r' || *type == 'n' || *type == 'N' ||
+           *type == 'o' || *type == 'O' || *type == 'R' ||
+           *type == 'V') {
+        type++;
+    }
+    return *type == '@';
+}
+
+static id BHTCurrentNativeAccountForWebReply(void) {
+    Class hostClass = NSClassFromString(@"T1HostViewController");
+    SEL sharedSelector =
+        NSSelectorFromString(@"sharedHostViewController");
+    SEL accountSelector = NSSelectorFromString(@"currentAccount");
+    if (!BHTReplyDiagnosticMethodReturnsObjectWithNoArguments(
+            hostClass, sharedSelector, YES)) {
+        return nil;
+    }
+    @try {
+        id host =
+            ((id (*)(id, SEL))objc_msgSend)(
+                (id)hostClass, sharedSelector);
+        if (!host ||
+            !BHTReplyDiagnosticMethodReturnsObjectWithNoArguments(
+                [host class], accountSelector, NO)) {
+            return nil;
+        }
+        return ((id (*)(id, SEL))objc_msgSend)(
+            host, accountSelector);
+    } @catch (__unused NSException* exception) {
+        return nil;
+    }
+}
+
 %group BHTReplyButtonDiagnosticHooks
 
 %hook TTAStatusInlineReplyButton
@@ -79,7 +126,7 @@ static BOOL BHTReplyDiagnosticMethodHasObjectArguments(
                        originalStatus:(__unsafe_unretained id)originalStatus {
     BHTWebReplyRouteResult routeResult =
         BHTTryPresentWebReplyFallback(
-            originalStatus, topMostController());
+            originalStatus, account, topMostController());
     if (BHTWebReplyRouteResultConsumesTap(routeResult)) {
         BHTRecordReplyWorkflowDiagnostic(
             BHTReplyWorkflowDiagnosticWebFallbackPresented);
@@ -151,7 +198,9 @@ static BOOL BHTReplyDiagnosticMethodHasObjectArguments(
     if ([BHTSettings boolForKey:@"web_reply_fallback"]) {
         BHTWebReplyRouteResult routeResult =
             BHTTryPresentWebReplyFallback(
-                self.statusViewModel, topMostController());
+                self.statusViewModel,
+                BHTCurrentNativeAccountForWebReply(),
+                topMostController());
         if (BHTWebReplyRouteResultConsumesTap(routeResult)) {
             BHTRecordReplyWorkflowDiagnostic(
                 BHTReplyWorkflowDiagnosticWebFallbackPresented);

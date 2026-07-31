@@ -6,6 +6,8 @@
 #import "HookHelpers.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 
+#import <objc/runtime.h>
+
 // While set, the custom-navigation tab gates (below) report their real values,
 // so callers can tell genuinely-held panels from ones only unlocked for the tab
 // pool.
@@ -817,6 +819,41 @@ BOOL panelIsGenuinelyAvailable(long long panelID) {
 // upsell.
 
 static __thread BOOL DashPanelIDQuery = NO;
+static char BHTSidebarDeferredApplyScheduledKey;
+
+static void BHTScheduleSidebarConfigurationReapply(id controller) {
+    if (!controller) return;
+    if ([objc_getAssociatedObject(
+            controller,
+            &BHTSidebarDeferredApplyScheduledKey) boolValue]) {
+        BHTRecordSidebarDeferredApplyCoalesced();
+        return;
+    }
+
+    objc_setAssociatedObject(
+        controller, &BHTSidebarDeferredApplyScheduledKey, @YES,
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    BHTRecordSidebarDeferredApplyScheduled();
+    __weak id weakController = controller;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id strongController = weakController;
+        if (!strongController) return;
+        BHTRecordSidebarDeferredApplyExecuted();
+        @try {
+            // Keep the marker set while the Swift @Published setters notify
+            // observers. A synchronous updateVisiblePanelIDs re-entry must not
+            // enqueue another next-turn apply.
+            [BHTSidebarNavigationUtility
+                applyConfigurationToDashContentController:
+                    strongController];
+        } @finally {
+            objc_setAssociatedObject(
+                strongController,
+                &BHTSidebarDeferredApplyScheduledKey, nil,
+                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    });
+}
 
 %hook T1DashContentController
 
@@ -836,6 +873,10 @@ static __thread BOOL DashPanelIDQuery = NO;
     DashPanelIDQuery = NO;
     [BHTSidebarNavigationUtility
         applyConfigurationToDashContentController:self];
+    // Account and drawer transitions can publish a replacement Swift array
+    // after updateVisiblePanelIDs returns. Reapply on the next main turn
+    // without recursively asking X to rebuild its panels again.
+    BHTScheduleSidebarConfigurationReapply(self);
 }
 
 %end
@@ -851,7 +892,16 @@ static __thread BOOL DashPanelIDQuery = NO;
         registerDashContentController:dashContentController];
     [BHTSidebarNavigationUtility
         applyConfigurationToDashContentController:dashContentController];
-    return %orig(account, dashContentController);
+    id controller =
+        %orig(account, dashContentController);
+    // The factory may repopulate TwitterDash's @Published arrays while
+    // constructing the drawer, so enforce the saved layout after it finishes
+    // as well as before it snapshots the data source.
+    [BHTSidebarNavigationUtility
+        applyConfigurationToDashContentController:dashContentController];
+    BHTScheduleSidebarConfigurationReapply(
+        dashContentController);
+    return controller;
 }
 
 %end

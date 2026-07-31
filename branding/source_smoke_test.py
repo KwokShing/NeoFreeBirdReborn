@@ -500,6 +500,7 @@ def main() -> None:
     require_source_tokens(
         compatibility_login_hook,
         (
+            '#import "Sidebar/BHTSidebarNavigationUtility.h"',
             "%hook T1HostViewController",
             "makeOnboardingViewControllerWithCompletion:",
             "void (^wrappedCompletion)(UIViewController*)",
@@ -513,6 +514,7 @@ def main() -> None:
             'NSClassFromString(@"T1AccountsViewController")',
             "@selector(viewWillAppear:)",
             "@selector(viewDidAppear:)",
+            "refreshRegisteredDashContentControllers",
             "%init(BHTCompatibilityAddAccountHooks);",
         ),
         "native onboarding and add-account entry wrappers",
@@ -534,6 +536,24 @@ def main() -> None:
         raise AssertionError(
             "Compatibility sign-in must decorate and forward X's native "
             "onboarding completion"
+        )
+    add_account_did_appear = source_section(
+        compatibility_login_hook,
+        "- (void)viewDidAppear:(BOOL)animated {",
+        "%end",
+        "add-account post-appearance reconciliation",
+    )
+    if (
+        add_account_did_appear.find(
+            "BHTInstallCompatibilityAddAccountSignInEntry(self);"
+        )
+        > add_account_did_appear.find(
+            "refreshRegisteredDashContentControllers"
+        )
+    ):
+        raise AssertionError(
+            "Add Account must restore its own action before reconciling the "
+            "saved sidebar layout"
         )
 
     password_signature = source_section(
@@ -1488,7 +1508,9 @@ def main() -> None:
             "BHTWebReplyRouteResultPresented",
             "BHTWebReplyRouteResultAlreadyPresented",
             "BHTTryPresentWebReplyFallback(",
+            "id _Nullable nativeAccount",
             "BHTPresentWebReplySignInSetup(",
+            "BHTPresentWebReplyAccountManager(",
             "BHTWebReplyRouteResultConsumesTap(",
             "BHTWebReplyFallbackDiagnosticSnapshot(void)",
         ),
@@ -1505,20 +1527,43 @@ def main() -> None:
             "UIModalPresentationFormSheet",
             "BHTWebReplyScreenModeReply",
             "BHTWebReplyScreenModeSignInSetup",
+            "BHTWebReplyScreenModeAccountManagement",
             "setToolbarHidden:YES",
             "didCommitNavigation:",
             "BHTWebReplyDiagnosticNavigationCommitted",
             "BHTWebReplyDiagnosticLoaderHiddenOnCommit",
             "BHTWebReplyDiagnosticSignInLandingRecognized",
+            "BHTWebReplyDiagnosticSetupCompletedManually",
+            "BHTWebReplyDiagnosticAccountManagerCompleted",
+            "BHTWebReplyDiagnosticNativeAccountChanged",
+            "BHTWebReplyDiagnosticAccountBoundaryWarningShown",
+            "BHTWebReplyDiagnosticAccountBoundaryContinued",
+            "BHTWebReplyDiagnosticAccountBoundaryReviewOpened",
+            "BHTWebReplyDiagnosticAccountBoundaryCancelled",
+            "BHTWebReplyDiagnosticManageWebAccountOpened",
+            "BHTWebReplyDiagnosticTransitionPendingBlocked",
             "BHTWebReplyDiagnosticWebViewCloseReceived",
             "BHTWebReplyURLIsSignedInLanding(",
+            "BHTWebReplyAccountURL(",
             "BHTWebReplyURLObservationContext",
             'forKeyPath:@"URL"',
             "considerSetupLandingURL:",
             "hasVisibleCommittedContent",
-            "(int64_t)(0.65 * NSEC_PER_SEC)",
-            "estimatedProgress >=\n                    0.99",
+            "latestMainFrameNavigation",
+            "mainFrameProvisionalNavigationInFlight",
+            "explicitMainFrameNavigationAwaitingStart",
+            "WKNavigation* requestedNavigation",
+            "settleMainFrameProvisionalNavigationForCallback:",
             "showSetupReady",
+            "doneTapped",
+            "self.doneCompletion = nil;",
+            "BHTPresentWebReplyAccountBoundary(",
+            "BHTAcknowledgeWebReplyAccountBoundary(",
+            "BHTPerformWhenWebReplyPresenterIsReady(",
+            "BHTLastWebReplyNativeAccount",
+            "BHTWebReplyAccountBoundaryAcknowledged",
+            "BHTWebReplyTransitionPending",
+            "if (!nativeAccount) return;",
             "recoverFromIgnoredNavigationError",
             "BHTHostIsExactOrSubdomain(",
             'BHTHostIsExactOrSubdomain(host, @"x.com")',
@@ -1585,6 +1630,16 @@ def main() -> None:
             '@"usesModeSpecificNativeChrome": @YES',
             '@"showsPersistentBrowserToolbar": @NO',
             '@"recognizesSignedInLandingWithoutCookieInspection": @YES',
+            '@"requiresCommittedOrSameDocumentSignedInLanding": @YES',
+            '@"supportsManualSetupCompletion": @YES',
+            '@"guardsAccountBoundaryTransitions": @YES',
+            '@"usesSingleSharedWebAccountSession": @YES',
+            '@"warnsWhenNativeAccountObjectChanges": @YES',
+            '@"rechecksEveryReplyWithoutNativeAccountContext": @YES',
+            '@"remembersNativeAccountOnlyInProcess": @YES',
+            '@"persistsNativeAccountAssociation": @NO',
+            '@"knownNativeContextBoundaryAcknowledged":',
+            '@"accountBoundaryTransitionPending":',
             '@"tweakReadsOrWritesCookies": @NO',
             '@"injectsPageScripts": @NO',
             '@"inspectsRequestBodies": @NO',
@@ -1605,6 +1660,93 @@ def main() -> None:
         raise AssertionError(
             "Compatibility replies must not expose persistent browser chrome"
         )
+    setup_landing_source = source_section(
+        web_reply_source,
+        "- (void)considerSetupLandingURL:",
+        "- (void)showSetupReady",
+        "web reply signed-in landing recognition",
+    )
+    require_source_tokens(
+        setup_landing_source,
+        (
+            "self.hasVisibleCommittedContent",
+            "self.mainFrameProvisionalNavigationInFlight",
+            "BHTWebReplyURLIsSignedInLanding(URL)",
+            "[self showSetupReady];",
+        ),
+        "commit-driven web reply setup completion",
+    )
+    for obsolete_gate in (
+        "setupLandingGeneration",
+        "dispatch_after(",
+        "estimatedProgress",
+    ):
+        if obsolete_gate in setup_landing_source:
+            raise AssertionError(
+                "A committed signed-in landing must not wait on a one-shot "
+                f"progress gate: {obsolete_gate}"
+            )
+    navigation_settlement_source = source_section(
+        web_reply_source,
+        "- (BOOL)settleMainFrameProvisionalNavigationForCallback:",
+        "- (void)webView:(__unused WKWebView*)webView\n"
+        "        didStartProvisionalNavigation:",
+        "web reply navigation-token settlement",
+    )
+    require_source_tokens(
+        navigation_settlement_source,
+        (
+            "WKNavigation* currentNavigation",
+            "currentNavigation != navigation",
+            "return NO;",
+            "currentNavigation == navigation",
+            "self.mainFrameProvisionalNavigationInFlight = nil;",
+            "- (BOOL)finishMainFrameNavigationForCallback:",
+            "self.latestMainFrameNavigation = nil;",
+        ),
+        "navigation-specific setup-ready protection",
+    )
+    load_watchdog_source = source_section(
+        web_reply_source,
+        "- (void)loadRequestWithWatchdog:\n"
+        "    (NSURLRequest*)request {",
+        "- (void)scheduleUserPopupRequest:",
+        "web reply navigation-token watchdog",
+    )
+    require_source_tokens(
+        load_watchdog_source,
+        (
+            "WKNavigation* requestedNavigation",
+            "[self.webView loadRequest:request]",
+            "self.latestMainFrameNavigation =",
+            "self.mainFrameProvisionalNavigationInFlight =",
+            "requestedNavigation",
+            "self.explicitMainFrameNavigationAwaitingStart =",
+            "strongSelf.mainFrameProvisionalNavigationInFlight !=",
+        ),
+        "navigation-specific reply load watchdog",
+    )
+    did_start_source = source_section(
+        web_reply_source,
+        "- (void)webView:(__unused WKWebView*)webView\n"
+        "        didStartProvisionalNavigation:",
+        "- (void)webView:(WKWebView*)webView\n"
+        "        didCommitNavigation:",
+        "web reply explicit-navigation start guard",
+    )
+    require_source_tokens(
+        did_start_source,
+        (
+            "WKNavigation* explicitNavigation",
+            "explicitMainFrameNavigationAwaitingStart",
+            "explicitNavigation != navigation",
+            "return;",
+            "explicitNavigation == navigation",
+            "self.latestMainFrameNavigation =",
+            "self.mainFrameProvisionalNavigationInFlight =",
+        ),
+        "explicit retry navigation identity guard",
+    )
     setup_ready_source = source_section(
         web_reply_source,
         "- (void)showSetupReady",
@@ -1614,6 +1756,44 @@ def main() -> None:
     if "[self.webView stopLoading]" in setup_ready_source:
         raise AssertionError(
             "Setup success must not interrupt X while its session finishes"
+        )
+    done_source = source_section(
+        web_reply_source,
+        "- (void)doneTapped",
+        "- (void)recordCloseIfNeeded",
+        "web reply Done diagnostics",
+    )
+    require_source_tokens(
+        done_source,
+        (
+            "BHTWebReplyScreenModeSignInSetup",
+            "!self.setupReady",
+            "BHTWebReplyDiagnosticSetupCompletedManually",
+            "BHTWebReplyScreenModeAccountManagement",
+            "BHTWebReplyDiagnosticAccountManagerCompleted",
+            "self.doneCompletion = nil;",
+            "self.beginsReplyTransitionOnDone",
+            "BHTSetWebReplyTransitionPending(YES)",
+            "navigation.transitionCoordinator",
+            "animateAlongsideTransition:nil",
+        ),
+        "mode-specific web reply Done behavior",
+    )
+    reply_options_source = source_section(
+        web_reply_source,
+        "- (void)moreTapped",
+        "- (void)showWebAccountManager",
+        "web reply options transition",
+    )
+    if (
+        "BHTPerformWhenWebReplyPresenterIsReady("
+        not in reply_options_source
+        or "(int64_t)(0.25 * NSEC_PER_SEC)"
+        in reply_options_source
+    ):
+        raise AssertionError(
+            "Reply options must wait for actual modal readiness instead of "
+            "assuming a fixed action-sheet dismissal time"
         )
     if "https://x.com/compose/post" in web_reply_source:
         raise AssertionError(
@@ -1666,6 +1846,28 @@ def main() -> None:
         raise AssertionError(
             "The status object must remain opaque while web replies are off"
         )
+    transition_guard_position = web_route_source.find(
+        "&BHTWebReplyTransitionPending"
+    )
+    if (
+        transition_guard_position < 0
+        or transition_guard_position
+        > web_route_source.find("BHTResolveStatusIdentifier(")
+    ):
+        raise AssertionError(
+            "A reply tap during an account-boundary transition must be "
+            "consumed before reading the status object"
+        )
+    require_source_tokens(
+        web_route_source,
+        (
+            "if (!nativeAccount)",
+            "BHTLastWebReplyNativeAccount = nil;",
+            "&BHTWebReplyAccountBoundaryAcknowledged, NO",
+            "!nativeAccount ||",
+        ),
+        "conservative unknown native-account boundary",
+    )
     route_consumption_source = source_section(
         web_reply_source,
         "BOOL BHTWebReplyRouteResultConsumesTap(",
@@ -1692,6 +1894,28 @@ def main() -> None:
                 "A failed web route must preserve X's native reply: "
                 f"{fallback_result}"
             )
+    account_boundary_source = source_section(
+        web_reply_source,
+        "static BOOL BHTPresentWebReplyAccountBoundary(",
+        "BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(",
+        "web reply account boundary",
+    )
+    if (
+        account_boundary_source.count(
+            "BHTPerformWhenWebReplyPresenterIsReady("
+        )
+        < 3
+        or "BHTSetWebReplyTransitionPending(YES)"
+        not in account_boundary_source
+        or "BHTSetWebReplyTransitionPending(NO)"
+        not in account_boundary_source
+        or "(int64_t)(0.35 * NSEC_PER_SEC)"
+        in account_boundary_source
+    ):
+        raise AssertionError(
+            "Account-boundary navigation must follow actual modal readiness "
+            "instead of a fixed dismissal delay"
+        )
 
     require_source_tokens(
         reply_hook_source,
@@ -1700,6 +1924,11 @@ def main() -> None:
             "BHTTryPresentWebReplyFallback(",
             "BHTWebReplyRouteResultConsumesTap(routeResult)",
             "BHTReplyWorkflowDiagnosticWebFallbackPresented",
+            "BHTCurrentNativeAccountForWebReply",
+            'NSSelectorFromString(@"currentAccount")',
+            "class_getClassMethod(cls, selector)",
+            "method_getNumberOfArguments(method) != 2",
+            "@catch (__unused NSException* exception)",
             "%group BHTPersistentReplyActionFallbackHooks",
             "- (void)persistentComposeViewDidTap:",
             'boolForKey:@"web_reply_fallback"',
@@ -1708,6 +1937,20 @@ def main() -> None:
         ),
         "native reply fallback integration",
     )
+    primary_reply_fallback = source_section(
+        reply_hook_source,
+        "- (void)performReplyActionWithAccount:",
+        "%end",
+        "primary reply fallback account context",
+    )
+    if (
+        "originalStatus, account, topMostController()"
+        not in primary_reply_fallback
+    ):
+        raise AssertionError(
+            "The primary reply fallback must forward X's account argument "
+            "with the status object"
+        )
     persistent_fallback = source_section(
         reply_hook_source,
         "- (void)persistentComposeViewDidTap:",
@@ -1748,7 +1991,8 @@ def main() -> None:
             '@"WEB_REPLY_FALLBACK_SIGN_IN_NOW"',
             '@"WEB_REPLY_FALLBACK_NOT_NOW"',
             '@"WEB_REPLY_FALLBACK_TURN_OFF"',
-            "BHTPresentWebReplySignInSetup(self)",
+            "BHTPresentWebReplySignInSetup(",
+            "BHTPresentWebReplyAccountManager(self)",
         ),
         "web reply account-boundary disclosure",
     )
@@ -1763,21 +2007,28 @@ def main() -> None:
             '"WEB_REPLY_SIGN_IN_SETUP_TITLE"',
             '"WEB_REPLY_SIGN_IN_SETUP_DETAIL"',
             '"WEB_REPLY_SIGN_IN_TITLE"',
-            '"WEB_REPLY_SIGN_IN_PROMPT"',
             '"WEB_REPLY_SIGN_IN_LOAD_FAILED"',
-            '"WEB_REPLY_LOADING"',
             '"WEB_REPLY_PREPARING"',
             '"WEB_REPLY_SIGN_IN_LOADING"',
             '"WEB_REPLY_SIGN_IN_READY_TITLE"',
             '"WEB_REPLY_SIGN_IN_READY_DETAIL"',
             '"WEB_REPLY_TITLE"',
-            '"WEB_REPLY_ACCOUNT_PROMPT"',
+            '"WEB_REPLY_MANAGE_ACCOUNT"',
+            '"WEB_REPLY_ACCOUNT_BOUNDARY_TITLE"',
+            '"WEB_REPLY_ACCOUNT_BOUNDARY_DETAIL"',
+            '"WEB_REPLY_ACCOUNT_CHANGED_DETAIL"',
+            '"WEB_REPLY_REVIEW_ACCOUNT"',
+            '"WEB_REPLY_CONTINUE_TO_REPLY"',
             '"WEB_REPLY_DONE"',
             '"WEB_REPLY_MORE"',
             '"WEB_REPLY_ABOUT"',
             '"WEB_REPLY_CANCEL"',
             '"WEB_REPLY_LOAD_FAILED"',
             '"WEB_REPLY_BLOCKED_LINK_DETAIL"',
+            '"All app accounts use the same persistent x.com session',
+            "does not switch with the account selected in X",
+            "after this app launch",
+            "may have changed",
         ),
         "web reply localization",
     )
@@ -1869,11 +2120,12 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.35" not in (
+    if "Version: 6.1.0-beta.36" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The seamless compatibility reply fix must ship as beta.35"
+            "The account-safe compatibility reply and sidebar fix must ship "
+            "as beta.36"
         )
 
     branding_source = (
@@ -2378,6 +2630,167 @@ def main() -> None:
             raise AssertionError(
                 f"Missing live tab-bar theme invariant: {required}"
             )
+
+    feature_switches_source = (
+        ROOT / "src" / "Hooks" / "FeatureSwitches.x"
+    ).read_text(encoding="utf-8")
+    sidebar_utility_header = (
+        ROOT
+        / "src"
+        / "Sidebar"
+        / "BHTSidebarNavigationUtility.h"
+    ).read_text(encoding="utf-8")
+    sidebar_utility_source = (
+        ROOT
+        / "src"
+        / "Sidebar"
+        / "BHTSidebarNavigationUtility.m"
+    ).read_text(encoding="utf-8")
+    sidebar_runtime_source = (
+        ROOT
+        / "src"
+        / "Sidebar"
+        / "BHTSidebarRuntime.swift"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        feature_switches_source,
+        (
+            "BHTScheduleSidebarConfigurationReapply(",
+            "BHTSidebarDeferredApplyScheduledKey",
+            "BHTRecordSidebarDeferredApplyScheduled();",
+            "BHTRecordSidebarDeferredApplyExecuted();",
+            "BHTRecordSidebarDeferredApplyCoalesced();",
+            "objc_getAssociatedObject(",
+            "objc_setAssociatedObject(",
+            "__weak id weakController",
+            "dispatch_async(dispatch_get_main_queue()",
+            "%hook T1DashContentController",
+            "- (void)updateVisiblePanelIDs",
+            "%hook T1DashNavigationViewFactory",
+            "applyConfigurationToDashContentController:dashContentController",
+        ),
+        "late Add Account sidebar reconciliation",
+    )
+    require_source_tokens(
+        sidebar_utility_header + sidebar_utility_source,
+        (
+            "diagnosticSnapshot",
+            "BHTRecordSidebarDeferredApplyScheduled",
+            "BHTRecordSidebarDeferredApplyExecuted",
+            "BHTRecordSidebarDeferredApplyCoalesced",
+            "BHTRecordSidebarAddAccountRefreshRequested",
+            "BHTSidebarRegisterCallCount",
+            "BHTSidebarApplyCallCount",
+            "BHTSidebarControllerApplyHandledCount",
+            "BHTSidebarControllerApplyChangedCount",
+            "BHTSidebarDataSourceFallbackCallCount",
+            "BHTSidebarRefreshRequestCount",
+            "BHTSidebarRefreshControllerUpdateCount",
+            "BHTSidebarDeferredApplyScheduledCount",
+            "BHTSidebarDeferredApplyExecutedCount",
+            "BHTSidebarDeferredApplyCoalescedCount",
+            "BHTSidebarAddAccountRefreshRequestedCount",
+            '@"registeredControllerCount"',
+            '@"controllerAppliesHandled"',
+            '@"dataSourceFallbackAttempts"',
+            '@"refreshRequests"',
+            '@"refreshControllerUpdateAttempts"',
+            '@"deferredApplyScheduled"',
+            '@"deferredApplyExecuted"',
+            '@"deferredApplyCoalesced"',
+            '@"addAccountRefreshRequested"',
+            "atomic_load_explicit(",
+        ),
+        "privacy-safe sidebar reconciliation diagnostics",
+    )
+    require_source_tokens(
+        sidebar_runtime_source + sidebar_utility_source,
+        (
+            "@objc(applyResultForDashContentController:)",
+            "controllerApplyHandled",
+            "controllerApplyChanged",
+            '@"applyResultForDashContentController:"',
+            "BHTSidebarControllerApplyResultHandled",
+            "BHTSidebarControllerApplyResultChanged",
+            "if (controllerHandled)",
+        ),
+        "single-pass idempotent sidebar application",
+    )
+    require_source_tokens(
+        compatibility_login_hook,
+        (
+            "%hook T1AccountsViewController",
+            "- (void)viewDidAppear:(BOOL)animated",
+            "BHTRecordSidebarAddAccountRefreshRequested();",
+            "refreshRegisteredDashContentControllers",
+        ),
+        "Add Account sidebar refresh diagnostics",
+    )
+    require_source_tokens(
+        compatibility_source,
+        (
+            '@"sidebarNavigation":',
+            '@"visibleItems":',
+            '@"runtime":',
+            "[BHTSidebarNavigationUtility diagnosticSnapshot]",
+        ),
+        "sidebar compatibility report diagnostics",
+    )
+    sidebar_deferred_apply = source_section(
+        feature_switches_source,
+        "static void BHTScheduleSidebarConfigurationReapply(",
+        "%hook T1DashContentController",
+        "coalesced sidebar deferred apply",
+    )
+    if (
+        "@selector(updateVisiblePanelIDs)" in sidebar_deferred_apply
+        or " updateVisiblePanelIDs]" in sidebar_deferred_apply
+    ):
+        raise AssertionError(
+            "The deferred sidebar reconciliation must apply the saved arrays "
+            "directly instead of recursively rebuilding native panel IDs"
+        )
+    deferred_marker_clear = sidebar_deferred_apply.find(
+        "&BHTSidebarDeferredApplyScheduledKey, nil"
+    )
+    deferred_configuration_apply = sidebar_deferred_apply.find(
+        "applyConfigurationToDashContentController:"
+    )
+    if (
+        deferred_configuration_apply < 0
+        or deferred_marker_clear < deferred_configuration_apply
+        or "@finally" not in sidebar_deferred_apply
+    ):
+        raise AssertionError(
+            "The sidebar coalescing marker must remain set through the "
+            "deferred Swift array apply"
+        )
+    sidebar_factory = source_section(
+        feature_switches_source,
+        "+ (id)buildDashViewControllerForAccount:",
+        "%end",
+        "sidebar factory reconciliation",
+    )
+    original_factory_call = sidebar_factory.find(
+        "%orig(account, dashContentController)"
+    )
+    post_factory_apply = sidebar_factory.rfind(
+        "applyConfigurationToDashContentController:dashContentController"
+    )
+    deferred_factory_apply = sidebar_factory.find(
+        "BHTScheduleSidebarConfigurationReapply("
+    )
+    if (
+        original_factory_call < 0
+        or post_factory_apply < original_factory_call
+        or deferred_factory_apply < post_factory_apply
+        or "return %orig(account, dashContentController);" in sidebar_factory
+    ):
+        raise AssertionError(
+            "The saved sidebar layout must be reapplied after X finishes "
+            "rebuilding its drawer and once more on the next main turn"
+        )
+
     tab_chrome_source = theme_source.split(
         "// MARK: - Theme tab items without defeating X's native collapse",
         1,

@@ -71,7 +71,7 @@ Status meanings:
 | Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; nine built-in choices include Native Blue plus Apollo-inspired, classic Twitter, Midnight OLED, Evergreen, Rose Quartz, Solarized Coast, Amethyst, and Cinder. A native visual builder creates, previews, saves, applies, edits, duplicates, and deletes strictly validated personal light/dark themes with mode-specific accents, readability warnings, and profile portability. Themes attach to the validated active, Twitter, and TFNUI palette providers. A narrow public named-color bridge covers only matching neutral assets from `XColorEngine_XColorEngine.bundle`, which keeps both Objective-C XDS and Swift Following/detail surfaces themed while preserving destructive, media-overlay, and other context-sensitive native colors. NeoFreeBird uses X's guarded native palette apply and observes—never synthesizes—its private dynamic-colors-did-reload event. A coalesced, bounded loaded-view-tree refresh runs only when that native event is absent or a replacement provider is attached after its synchronous observers, so changes apply without a force quit and never add scrolling-path work. Immutable per-provider generation/dark snapshots prevent mixed or stale colors while keeping hot palette reads cheap, and weak tracking clears every still-live provider when Native Blue is restored. Sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
 | Settings | search and preference profiles | New | Localized global search covers every page, title, detail, subsection, and category; result routing waits for X's search dismissal and destination layout, then visibly spotlights the exact row or opens the requested theme, navigation item, Likes waterfall selector, sidebar item, media action, or For You filter list without changing a toggle. Versioned JSON export/import lives in a separate Backup & restore page, uses a strict NeoFreeBird-only preference allow-list, and never includes Twitter account state |
 | Appearance | custom navigation | Combined | Captures/reorders native tab entries; Grok remains native while opt-in Likes is an independent movable entry; selected editor tiles and the preview row both support drag reordering |
-| Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows |
+| Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows. A coalesced post-factory reapply also covers the late drawer rebuild triggered by Add Account |
 | Appearance | `tab_bar_theming` | Ported | Native selected/unselected colors |
 | Appearance | `restore_tab_labels` | Updated | Current `T1TabView` title path; the Likes carrier is relabeled before its first selection |
 | Appearance | `restore_launch_animation` | Updated | No longer forced on; replaces the animated X with the bundled Twitter bird and removes only the X-shaped reveal mask |
@@ -119,7 +119,7 @@ Status meanings:
 | Profile | `square_avatars` | Ported | Live avatar/image/shadow restyling |
 | Profile | `full_profile_counts` | Updated | Previously always on; now opt-in |
 | Account access | Compatibility Sign-in | New/runtime check | Explicit X 12.9-only fallback available from signed-out onboarding, Profiles settings, and Add Account; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
-| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps that opens X's visible Web Intent in a native-themed in-app WebKit shell. Setup and replies share a separate persistent web session, warn that its account may differ from the native account, never capture native draft text or auto-post, and fall through to native behavior when the route cannot be presented |
+| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps that opens X's visible Web Intent in a native-themed in-app WebKit shell. Setup and replies use the same app-wide persistent x.com WebKit session, warn when its active account may differ from the native account, never capture native draft text or auto-post, and fall through to native behavior when the route cannot be presented |
 | Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; only X 12.9's available canonical-user selector is hooked |
 | Tweets | `enable_edit_tweet` | Updated | Exposes native UI only; server eligibility still applies |
 | Tweets | undo timeout | Ported | Unified timeout picker and old-key migration |
@@ -169,10 +169,16 @@ change the FFmpeg TLS backend without a demonstrated build need.
   Compatibility Sign-in fallback is not a web-session replacement and stores
   the resulting account only through X's native account service.
 - The optional Compatibility reply composer is a visible, in-app x.com screen
-  for sideloaded installs where native replies fail. Its persistent WebKit
-  session is separate from X's native account store. NeoFreeBird validates
-  navigation destinations transiently, but does not read its cookies or store
-  or export credentials, account details, raw URLs, or reply text.
+  for sideloaded installs where native replies fail. One persistent WebKit
+  session is shared by all native app accounts and remains separate from X's
+  native account store. The first reply after launch and each process-local
+  native-account context change that NeoFreeBird detects displays an explicit
+  review/continue boundary. A missing account context remains conservative and
+  asks again on the next reply. On the iOS 15 deployment target, safely binding
+  separate persistent WebKit profiles would require reading or copying session
+  data, so NeoFreeBird instead lets the user visibly switch the web account and
+  never reads cookies or stores or exports credentials, account details, raw
+  URLs, or reply text.
 
 ## Device validation
 
@@ -215,6 +221,12 @@ Beta 35 recognizes a successful `/home` setup landing, replaces the
 browser-like chrome with a native-themed reply shell, and keeps posting
 entirely inside the visible X web surface without reading cookies, reply text,
 or account data.
+
+Beta 36 completes setup as soon as signed-in `/home` commits or arrives through
+a settled same-document transition, keeps a visible Done escape hatch for
+alternate successful routes, adds a shared-web-session account review when a
+native account-context change is detected, and reapplies saved sidebar
+visibility after Add Account finishes rebuilding the drawer.
 
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids

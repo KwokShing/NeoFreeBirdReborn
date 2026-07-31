@@ -45,8 +45,8 @@
                             DISPATCH_TIME_NOW,
                             (int64_t)(0.35 * NSEC_PER_SEC)),
                         dispatch_get_main_queue(), ^{
-                            [weakSelf
-                                showWebReplySignInSetup:nil];
+                            BHTPresentWebReplySignInSetup(
+                                weakSelf);
                         });
                 }]];
     [disclosure addAction:[UIAlertAction
@@ -81,7 +81,7 @@
 
 - (void)showWebReplySignInSetup:
     (__unused NSDictionary*)data {
-    BHTPresentWebReplySignInSetup(self);
+    BHTPresentWebReplyAccountManager(self);
 }
 
 - (UITableViewCell*)tableView:(UITableView*)tableView
