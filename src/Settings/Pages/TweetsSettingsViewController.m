@@ -14,6 +14,35 @@
 
 @implementation TweetsSettingsViewController
 
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [NSNotificationCenter.defaultCenter
+        addObserver:self
+           selector:
+               @selector(webReplyAccountLabelDidChange:)
+               name:
+                   BHTWebReplyAccountLabelDidChangeNotification
+             object:nil];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self.tableView reloadData];
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter
+        removeObserver:self
+                  name:
+                      BHTWebReplyAccountLabelDidChangeNotification
+                object:nil];
+}
+
+- (void)webReplyAccountLabelDidChange:
+    (__unused NSNotification*)notification {
+    [self.tableView reloadData];
+}
+
 - (NSString*)pageKey {
     return @"tweets";
 }
@@ -87,6 +116,19 @@
 - (UITableViewCell*)tableView:(UITableView*)tableView
         cellForRowAtIndexPath:(NSIndexPath*)indexPath {
     NSDictionary* settingData = [self settingAtIndexPath:indexPath];
+    if ([settingData[@"key"]
+            isEqualToString:@"web_reply_sign_in_setup"]) {
+        ModernSettingsCompactButtonCell* cell =
+            [tableView dequeueReusableCellWithIdentifier:@"CompactButtonCell"
+                                            forIndexPath:indexPath];
+        NSString* title = [[BHTBundle sharedBundle]
+            localizedStringForKey:
+                settingData[@"titleKey"]];
+        [cell configureWithTitle:title
+                       subtitle:
+                           [self webReplyAccountSubtitle]];
+        return cell;
+    }
     if ([settingData[@"key"] isEqualToString:@"undo_tweet_timeout"]) {
         ModernSettingsCompactButtonCell* cell =
             [tableView dequeueReusableCellWithIdentifier:@"CompactButtonCell"
@@ -96,6 +138,21 @@
         return cell;
     }
     return [super tableView:tableView cellForRowAtIndexPath:indexPath];
+}
+
+- (NSString*)webReplyAccountSubtitle {
+    BHTBundle* bundle = BHTBundle.sharedBundle;
+    NSString* label = BHTWebReplyAccountLabel();
+    if (label.length == 0) {
+        return [bundle
+            localizedStringForKey:
+                @"WEB_REPLY_ACCOUNT_LABEL_NONE"];
+    }
+    return [NSString
+        stringWithFormat:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_ACCOUNT_LABEL_FORMAT"],
+            label];
 }
 
 // A timeout of 0 reads as "Off"; any positive value shows its seconds.

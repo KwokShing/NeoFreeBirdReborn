@@ -83,8 +83,11 @@ every native app account use the same persistent x.com session, which does not
 switch with the account selected inside X. NeoFreeBird asks you to review that
 session before the first compatibility reply after each launch and when it
 detects a native-account context change. NeoFreeBird does not read or export
-web credentials, cookies, account details, or reply text, and it cannot match
-the web account to the account selected in X.
+web credentials, cookies, page account data, or reply text, and it cannot match
+the web account to the account selected in X. After visually checking X, you
+can optionally save a local **Last confirmed: @handle** label. That
+user-provided label is not verified and is excluded from preference profiles
+and compatibility reports.
 
 ## Where to find things
 
@@ -178,6 +181,8 @@ method, and reproduction steps.
 - It does not harvest passwords, cookies, session tokens, or account data.
 - Reports exclude credentials, account identifiers, post/reply text, raw URLs,
   response bodies, and web-session contents.
+- Optional web-reply account labels are user-provided, local only, and never
+  included in reports or shared preference profiles.
 - Compatibility sign-in stores successful accounts only through X's native
   account service.
 - Missing private methods fall back to native behavior or a visible unavailable

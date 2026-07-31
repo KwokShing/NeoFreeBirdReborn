@@ -1511,6 +1511,8 @@ def main() -> None:
             "id _Nullable nativeAccount",
             "BHTPresentWebReplySignInSetup(",
             "BHTPresentWebReplyAccountManager(",
+            "BHTWebReplyAccountLabelDidChangeNotification",
+            "BHTWebReplyAccountLabel(void)",
             "BHTWebReplyRouteResultConsumesTap(",
             "BHTWebReplyFallbackDiagnosticSnapshot(void)",
         ),
@@ -1541,10 +1543,19 @@ def main() -> None:
             "BHTWebReplyDiagnosticAccountBoundaryReviewOpened",
             "BHTWebReplyDiagnosticAccountBoundaryCancelled",
             "BHTWebReplyDiagnosticManageWebAccountOpened",
+            "BHTWebReplyDiagnosticIgnoredNavigationBeforeCommit",
+            "BHTWebReplyDiagnosticAccountManagerFallbackStarted",
+            "BHTWebReplyDiagnosticAccountManagerFallbackCommitted",
+            "BHTWebReplyDiagnosticAccountManagerFallbackFailed",
+            "BHTWebReplyDiagnosticPageNavigationWatchdogArmed",
             "BHTWebReplyDiagnosticTransitionPendingBlocked",
             "BHTWebReplyDiagnosticWebViewCloseReceived",
             "BHTWebReplyURLIsSignedInLanding(",
             "BHTWebReplyAccountURL(",
+            "BHTWebReplyAccountFallbackURL(",
+            "BHTNormalizedWebReplyAccountLabel(",
+            "BHTSetWebReplyAccountLabel(",
+            "BHTWebReplyAccountLabelDefaultsKey",
             "BHTWebReplyURLObservationContext",
             'forKeyPath:@"URL"',
             "considerSetupLandingURL:",
@@ -1565,6 +1576,13 @@ def main() -> None:
             "BHTWebReplyTransitionPending",
             "if (!nativeAccount) return;",
             "recoverFromIgnoredNavigationError",
+            "scheduleAccountManagerFallbackIfNeeded",
+            "recordAccountManagerFallbackFailureIfNeeded",
+            "accountManagerFallbackScheduled",
+            "accountManagerFallbackAttempted",
+            "accountManagerFallbackCommitted",
+            "accountManagerFallbackFailureRecorded",
+            "armLoadWatchdogForNavigation:",
             "BHTHostIsExactOrSubdomain(",
             'BHTHostIsExactOrSubdomain(host, @"x.com")',
             'BHTHostIsExactOrSubdomain(host, @"twitter.com")',
@@ -1634,10 +1652,18 @@ def main() -> None:
             '@"supportsManualSetupCompletion": @YES',
             '@"guardsAccountBoundaryTransitions": @YES',
             '@"usesSingleSharedWebAccountSession": @YES',
+            '@"usesLoginFlowForAccountManagement": @YES',
+            '@"usesOneShotAccountManagerIntentFallback": @YES',
+            '@"precommitPolicyInterruptionsCannotLeaveLoaderVisible": @YES',
             '@"warnsWhenNativeAccountObjectChanges": @YES',
             '@"rechecksEveryReplyWithoutNativeAccountContext": @YES',
             '@"remembersNativeAccountOnlyInProcess": @YES',
             '@"persistsNativeAccountAssociation": @NO',
+            '@"storesUserConfirmedAccountLabel": @YES',
+            '@"automaticallyDetectsWebAccount": @NO',
+            '@"accountLabelIsUserProvided": @YES',
+            '@"exportsAccountLabelInReports": @NO',
+            '@"exportsAccountLabelInPreferenceProfiles": @NO',
             '@"knownNativeContextBoundaryAcknowledged":',
             '@"accountBoundaryTransitionPending":',
             '@"tweakReadsOrWritesCookies": @NO',
@@ -1744,8 +1770,11 @@ def main() -> None:
             "explicitNavigation == navigation",
             "self.latestMainFrameNavigation =",
             "self.mainFrameProvisionalNavigationInFlight =",
+            "pageInitiatedNavigation",
+            "BHTWebReplyDiagnosticPageNavigationWatchdogArmed",
+            "armLoadWatchdogForNavigation:",
         ),
-        "explicit retry navigation identity guard",
+        "explicit and page-initiated navigation watchdog guard",
     )
     setup_ready_source = source_section(
         web_reply_source,
@@ -1756,6 +1785,46 @@ def main() -> None:
     if "[self.webView stopLoading]" in setup_ready_source:
         raise AssertionError(
             "Setup success must not interrupt X while its session finishes"
+        )
+    ignored_navigation_recovery = source_section(
+        web_reply_source,
+        "- (void)recoverFromIgnoredNavigationError",
+        "- (BOOL)settleMainFrameProvisionalNavigationForCallback:",
+        "pre-commit ignored-navigation recovery",
+    )
+    require_source_tokens(
+        ignored_navigation_recovery,
+        (
+            "!self.hasVisibleCommittedContent",
+            "BHTWebReplyDiagnosticIgnoredNavigationBeforeCommit",
+            "scheduleAccountManagerFallbackIfNeeded",
+            "recordAccountManagerFallbackFailureIfNeeded",
+            "[self showLoadFailure];",
+        ),
+        "terminal pre-commit ignored-navigation recovery",
+    )
+    account_routes_source = source_section(
+        web_reply_source,
+        "static NSURL* BHTWebReplyAccountURL(void)",
+        "static BOOL BHTHostIsExactOrSubdomain(",
+        "web reply account routes",
+    )
+    require_source_tokens(
+        account_routes_source,
+        (
+            "BHTWebReplySignInURL()",
+            "BHTWebReplyAccountFallbackURL(void)",
+            '@"https://x.com/intent/tweet"',
+        ),
+        "supported account-management entry and fallback routes",
+    )
+    if (
+        '[NSURL URLWithString:@"https://x.com/home"]'
+        in account_routes_source
+    ):
+        raise AssertionError(
+            "Account management must not directly reopen the /home route "
+            "that report 27 showed being interrupted before commit"
         )
     done_source = source_section(
         web_reply_source,
@@ -1820,6 +1889,49 @@ def main() -> None:
             raise AssertionError(
                 "The compatibility composer must not inspect or seed web "
                 f"session data: {forbidden}"
+            )
+    account_label_source = source_section(
+        web_reply_source,
+        "static NSString* BHTNormalizedWebReplyAccountLabel(",
+        "static NSURL* BHTWebReplyURL(",
+        "local web-reply account label",
+    )
+    require_source_tokens(
+        account_label_source,
+        (
+            "handle.length == 0 || handle.length > 15",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_",
+            "BHTWebReplyAccountLabelDefaultsKey",
+            "removeObjectForKey:",
+            "BHTWebReplyAccountLabelDidChangeNotification",
+        ),
+        "strict local-only user-confirmed account label",
+    )
+    if "bht_web_reply_account_label" in settings_source:
+        raise AssertionError(
+            "The optional web-account label must not enter the exportable "
+            "settings/profile index"
+        )
+    web_reply_diagnostic = source_section(
+        web_reply_source,
+        "NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void)",
+        "\n}",
+        "web reply diagnostic snapshot",
+    )
+    for private_label_value in (
+        '@"accountLabel":',
+        '@"accountLabelPresent":',
+        "accountLabelSaved",
+        "accountLabelCleared",
+        "BHTWebReplyAccountLabel()",
+        "BHTWebReplyAccountLabelDefaultsKey",
+        "stringForKey:",
+    ):
+        if private_label_value in web_reply_diagnostic:
+            raise AssertionError(
+                "Compatibility reports must not expose local account-label "
+                "state or values: "
+                f"{private_label_value}"
             )
     if (
         'hasSuffix:[@"." stringByAppendingString:' not in web_reply_source
@@ -1993,6 +2105,11 @@ def main() -> None:
             '@"WEB_REPLY_FALLBACK_TURN_OFF"',
             "BHTPresentWebReplySignInSetup(",
             "BHTPresentWebReplyAccountManager(self)",
+            'isEqualToString:@"web_reply_sign_in_setup"',
+            "BHTWebReplyAccountLabel()",
+            '@"WEB_REPLY_ACCOUNT_LABEL_NONE"',
+            '@"WEB_REPLY_ACCOUNT_LABEL_FORMAT"',
+            "BHTWebReplyAccountLabelDidChangeNotification",
         ),
         "web reply account-boundary disclosure",
     )
@@ -2014,6 +2131,19 @@ def main() -> None:
             '"WEB_REPLY_SIGN_IN_READY_DETAIL"',
             '"WEB_REPLY_TITLE"',
             '"WEB_REPLY_MANAGE_ACCOUNT"',
+            '"WEB_REPLY_ACCOUNT_SESSION_CHECK"',
+            '"WEB_REPLY_ACCOUNT_LABEL_BUTTON"',
+            '"WEB_REPLY_ACCOUNT_LABEL_ACTION"',
+            '"WEB_REPLY_ACCOUNT_LABEL_TITLE"',
+            '"WEB_REPLY_ACCOUNT_LABEL_DETAIL"',
+            '"WEB_REPLY_ACCOUNT_LABEL_PLACEHOLDER"',
+            '"WEB_REPLY_ACCOUNT_LABEL_SAVE"',
+            '"WEB_REPLY_ACCOUNT_LABEL_FORGET"',
+            '"WEB_REPLY_ACCOUNT_LABEL_INVALID_TITLE"',
+            '"WEB_REPLY_ACCOUNT_LABEL_INVALID_DETAIL"',
+            '"WEB_REPLY_ACCOUNT_LABEL_NONE"',
+            '"WEB_REPLY_ACCOUNT_LABEL_FORMAT"',
+            '"WEB_REPLY_ACCOUNT_LABEL_CONTEXT_FORMAT"',
             '"WEB_REPLY_ACCOUNT_BOUNDARY_TITLE"',
             '"WEB_REPLY_ACCOUNT_BOUNDARY_DETAIL"',
             '"WEB_REPLY_ACCOUNT_CHANGED_DETAIL"',
@@ -2120,12 +2250,12 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.36" not in (
+    if "Version: 6.1.0-beta.37" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The account-safe compatibility reply and sidebar fix must ship "
-            "as beta.36"
+            "The account-manager recovery and local label fix must ship "
+            "as beta.37"
         )
 
     branding_source = (
