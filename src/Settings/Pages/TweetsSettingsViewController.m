@@ -9,12 +9,79 @@
 #import "Core/BHTBundle.h"
 #import "Core/BHTSettings.h"
 #import "Headers/TWHeaders.h"
+#import "Reply/BHTWebReplyFallback.h"
 #import "Settings/ModernSettingsCells.h"
 
 @implementation TweetsSettingsViewController
 
 - (NSString*)pageKey {
     return @"tweets";
+}
+
+- (void)switchChanged:(UISwitch*)sender {
+    NSString* key = BHTSettingsKeyForSwitch(sender);
+    BOOL enablingWebReply =
+        [key isEqualToString:@"web_reply_fallback"] && sender.isOn;
+    [super switchChanged:sender];
+    if (!enablingWebReply) return;
+
+    BHTBundle* bundle = BHTBundle.sharedBundle;
+    UIAlertController* disclosure = [UIAlertController
+        alertControllerWithTitle:
+            [bundle localizedStringForKey:@"WEB_REPLY_FALLBACK_TITLE"]
+                         message:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_DISCLOSURE"]
+                  preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
+    [disclosure addAction:[UIAlertAction
+        actionWithTitle:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_SIGN_IN_NOW"]
+                  style:UIAlertActionStyleDefault
+                handler:^(__unused UIAlertAction* action) {
+                    dispatch_after(
+                        dispatch_time(
+                            DISPATCH_TIME_NOW,
+                            (int64_t)(0.35 * NSEC_PER_SEC)),
+                        dispatch_get_main_queue(), ^{
+                            [weakSelf
+                                showWebReplySignInSetup:nil];
+                        });
+                }]];
+    [disclosure addAction:[UIAlertAction
+        actionWithTitle:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_NOT_NOW"]
+                  style:UIAlertActionStyleCancel
+                handler:nil]];
+
+    __weak UISwitch* weakSender = sender;
+    [disclosure addAction:[UIAlertAction
+        actionWithTitle:
+            [bundle localizedStringForKey:
+                        @"WEB_REPLY_FALLBACK_TURN_OFF"]
+                  style:UIAlertActionStyleDestructive
+                handler:^(__unused UIAlertAction* action) {
+                    UISwitch* strongSender = weakSender;
+                    if (!strongSender) {
+                        [NSUserDefaults.standardUserDefaults
+                            setBool:NO
+                             forKey:@"web_reply_fallback"];
+                        [weakSelf.tableView reloadData];
+                        return;
+                    }
+                    strongSender.on = NO;
+                    [weakSelf switchChanged:strongSender];
+                }]];
+    [self presentViewController:disclosure
+                       animated:YES
+                     completion:nil];
+}
+
+- (void)showWebReplySignInSetup:
+    (__unused NSDictionary*)data {
+    BHTPresentWebReplySignInSetup(self);
 }
 
 - (UITableViewCell*)tableView:(UITableView*)tableView

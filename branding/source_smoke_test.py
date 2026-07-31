@@ -1209,6 +1209,673 @@ def main() -> None:
         "redacted compatibility sign-in report integration",
     )
 
+    reply_header_source = (
+        ROOT / "src" / "Compatibility" / "BHTCompatibilityReporter.h"
+    ).read_text(encoding="utf-8")
+    reply_hook_source = (
+        ROOT / "src" / "Hooks" / "ReplyDiagnostics.x"
+    ).read_text(encoding="utf-8")
+    confirmations_source = (
+        ROOT / "src" / "Hooks" / "Confirmations.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        reply_header_source,
+        (
+            "BHTReplyWorkflowDiagnosticReplyActionTapped",
+            "BHTReplyWorkflowDiagnosticReplyActionForwarded",
+            "BHTReplyWorkflowDiagnosticWebFallbackPresented",
+            "BHTReplyWorkflowDiagnosticPersistentComposerPresented",
+            "BHTReplyWorkflowDiagnosticComposerPresented",
+            "BHTReplyWorkflowDiagnosticComposerDisappeared",
+            "BHTReplyWorkflowDiagnosticComposerClosed",
+            "BHTReplyWorkflowDiagnosticSendButtonTapped",
+            "BHTReplyWorkflowDiagnosticSendForwardedToX",
+            "BHTReplyWorkflowDiagnosticOutboxQueued",
+            "BHTReplyWorkflowDiagnosticOutboxProcessing",
+            "BHTReplyWorkflowDiagnosticOutboxProcessed",
+            "BHTReplyWorkflowDiagnosticSendCompleted",
+            "BHTReplyWorkflowDiagnosticOutboxProcessFailed",
+            "BHTReplyWorkflowDiagnosticCompositionSendFailed",
+            "BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented",
+            "BHTRecordReplyWorkflowDiagnostic(",
+            "BHTInstallReplyWorkflowDiagnosticObservers(void)",
+        ),
+        "privacy-preserving reply workflow diagnostic API",
+    )
+    require_source_tokens(
+        compatibility_source,
+        (
+            "BHTReplyWorkflowDiagnosticCounters",
+            "BHTReplyWorkflowLastStage",
+            "BHTReplyWorkflowLastOutcome",
+            "BHTReplyNotificationObserverSpecs",
+            'dlsym(RTLD_DEFAULT, symbol)',
+            "dladdr(address, &symbolInfo)",
+            "dladdr((void*)candidateBits, &candidateInfo)",
+            "_Static_assert(",
+            "TFNTwitterCompositionOutboxDidAddCompositionNotification",
+            "TFNTwitterCompositionOutboxWillProcessCompositionNotification",
+            "TFNTwitterCompositionOutboxDidProcessCompositionNotification",
+            "TFNTwitterCompositionDidSendNotification",
+            "TFNTwitterCompositionOutboxDidFailProcessCompositionNotification",
+            "TFNTwitterCompositionSendDidFailNotification",
+            "__unused NSNotification* notification",
+            '@"replyWorkflow":',
+            "BHTReplyWorkflowDiagnosticSnapshot()",
+            '@"capturesTweetOrReplyText": @NO',
+            '@"capturesUsersOrAccountData": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesNotificationPayloads": @NO',
+            '@"capturesRawErrors": @NO',
+            '@"correlation":',
+            '@"process_level_temporal_heuristic"',
+            '@"diagnosticWindowSeconds":',
+            '@"runtimeShapeContainsPrivateAPIMetadata": @YES',
+        ),
+        "redacted reply workflow report integration",
+    )
+    reply_observer_source = source_section(
+        compatibility_source,
+        "void BHTInstallReplyWorkflowDiagnosticObservers(void)",
+        "static BOOL BHTReplySelectorIsSafeAndRelevant(",
+        "reply notification observers",
+    )
+    for private_value in (
+        "notification.userInfo",
+        "notification.object",
+        "[notification ",
+        "NSLog",
+        "localizedDescription",
+        "absoluteString",
+        "statusID",
+        "userID",
+        "fromUserName",
+        "password",
+        "authToken",
+    ):
+        if private_value in reply_observer_source:
+            raise AssertionError(
+                "Reply observers must count fixed stages without reading "
+                f"notification or account data: {private_value}"
+            )
+    require_source_tokens(
+        reply_hook_source,
+        (
+            "BHTReplyDiagnosticMethodHasShape(",
+            "BHTReplyDiagnosticMethodHasObjectArguments(",
+            'isEqualToString:@"12.9"',
+            "method_getNumberOfArguments(method)",
+            "if (*type != '@') return NO;",
+            "BHTInstallReplyWorkflowDiagnosticObservers();",
+            "%hook TTAStatusInlineReplyButton",
+            "BHTReplyWorkflowDiagnosticReplyActionTapped",
+            "%hook T1StatusViewInlineActionTapEventHandler",
+            "BHTReplyWorkflowDiagnosticReplyActionForwarded",
+            "%hook T1TweetComposeViewController",
+            "BHTReplyWorkflowDiagnosticComposerPresented",
+            "BHTReplyWorkflowDiagnosticComposerDisappeared",
+            "BHTReplyWorkflowDiagnosticComposerClosed",
+            "%hook T1PersistentComposeViewController",
+            "BHTReplyWorkflowDiagnosticPersistentComposerPresented",
+        ),
+        "guarded X 12.9 reply workflow hooks",
+    )
+    reply_forwarding_body = source_section(
+        reply_hook_source,
+        "originalStatus:(__unsafe_unretained id)originalStatus {",
+        "%end",
+        "opaque reply-action forwarding hook",
+    )
+    for private_value in (
+        "[account ",
+        "[event ",
+        "[controller ",
+        "[scribeContext ",
+        "[scribeElement ",
+        "[parameters ",
+        "[originalStatus ",
+        "objc_getAssociatedObject",
+        "NSLog",
+    ):
+        if private_value in reply_forwarding_body:
+            raise AssertionError(
+                "Reply-action diagnostics must forward opaque arguments "
+                f"without inspecting them: {private_value}"
+            )
+    if reply_forwarding_body.count("%orig(") != 1:
+        raise AssertionError(
+            "The reply-action diagnostic must forward to X exactly once"
+        )
+    reply_recorder_source = source_section(
+        compatibility_source,
+        "void BHTRecordReplyWorkflowDiagnostic(",
+        "typedef struct {",
+        "reply workflow state recorder",
+    )
+    persistent_case = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticPersistentComposerPresented:",
+        "case BHTReplyWorkflowDiagnosticComposerPresented:",
+        "persistent-composer attribution",
+    )
+    if (
+        "BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented"
+        not in persistent_case
+        or "BHTStartReplyWorkflowSessionLocked" in persistent_case
+    ):
+        raise AssertionError(
+            "Persistent composer appearance must not start a reply session"
+        )
+    failure_cases = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticOutboxProcessFailed:",
+        "case BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented:",
+        "terminal reply failure handling",
+    )
+    for required in (
+        "BHTReplyWorkflowSessionActive = NO;",
+        "BHTReplyWorkflowSendForwarded = NO;",
+        "BHTReplyWorkflowAwaitingComposerClose =",
+        "BHTReplyWorkflowExpiresAt = 0;",
+    ):
+        if required not in failure_cases:
+            raise AssertionError(
+                "A terminal reply failure must close temporal attribution: "
+                f"{required}"
+            )
+    notification_gate = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticOutboxQueued:",
+        "case BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented:",
+        "reply notification attribution gate",
+    )
+    if notification_gate.count(
+        "BHTReplyWorkflowSessionActive &&"
+    ) < 3 or notification_gate.count(
+        "BHTReplyWorkflowSendForwarded"
+    ) < 3:
+        raise AssertionError(
+            "Outbox, completion, and failure notifications must require "
+            "both an active reply attempt and a completed send handoff"
+        )
+    retry_case = source_section(
+        reply_recorder_source,
+        "case BHTReplyWorkflowDiagnosticSendButtonTapped:",
+        "case BHTReplyWorkflowDiagnosticSendForwardedToX:",
+        "failed-reply retry attribution",
+    )
+    for required in (
+        "retryingFailedReply",
+        '@"outbox_process_failed"',
+        '@"composition_send_failed"',
+        "BHTStartReplyWorkflowSessionLocked();",
+    ):
+        if required not in retry_case:
+            raise AssertionError(
+                "A retry from the same failed reply composer must start a "
+                f"new diagnostic attempt: {required}"
+            )
+    reply_snapshot_source = source_section(
+        compatibility_source,
+        "static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void)",
+        "static NSDictionary* BHTForYouControllerRuntimeShape(void)",
+        "reply workflow snapshot",
+    )
+    if reply_snapshot_source.find(
+        "@synchronized(BHTObservationLock())"
+    ) > reply_snapshot_source.find(
+        "atomic_load_explicit("
+    ):
+        raise AssertionError(
+            "Reply counters and state must be captured under the same lock"
+        )
+    send_confirmation_source = source_section(
+        confirmations_source,
+        "- (void)_t1_didTapSendButton:",
+        "%end",
+        "composer send confirmation hook",
+    )
+    if (
+        send_confirmation_source.count(
+            "BHTReplyWorkflowDiagnosticSendButtonTapped"
+        )
+        != 1
+        or send_confirmation_source.count(
+            "BHTReplyWorkflowDiagnosticSendForwardedToX"
+        )
+        != 2
+        or send_confirmation_source.count("%orig;") != 2
+    ):
+        raise AssertionError(
+            "Both confirmed and unconfirmed sends must record handoff and "
+            "forward to X exactly once"
+        )
+    send_hook_occurrences = sum(
+        hook.read_text(encoding="utf-8").count(
+            "- (void)_t1_didTapSendButton:"
+        )
+        for hook in (ROOT / "src" / "Hooks").glob("*.x")
+    )
+    if send_hook_occurrences != 1:
+        raise AssertionError(
+            "Reply diagnostics must instrument the existing send hook "
+            "instead of installing a competing hook"
+        )
+
+    web_reply_header = (
+        ROOT / "src" / "Reply" / "BHTWebReplyFallback.h"
+    ).read_text(encoding="utf-8")
+    web_reply_source = (
+        ROOT / "src" / "Reply" / "BHTWebReplyFallback.m"
+    ).read_text(encoding="utf-8")
+    tweets_settings_source = (
+        ROOT
+        / "src"
+        / "Settings"
+        / "Pages"
+        / "TweetsSettingsViewController.m"
+    ).read_text(encoding="utf-8")
+    settings_source = SETTINGS.read_text(encoding="utf-8")
+    english_source = ENGLISH.read_text(encoding="utf-8")
+
+    require_source_tokens(
+        web_reply_header,
+        (
+            "BHTWebReplyRouteResultDisabled",
+            "BHTWebReplyRouteResultMissingOrInvalidStatus",
+            "BHTWebReplyRouteResultOffMainThread",
+            "BHTWebReplyRouteResultPresentationUnavailable",
+            "BHTWebReplyRouteResultPresented",
+            "BHTWebReplyRouteResultAlreadyPresented",
+            "BHTTryPresentWebReplyFallback(",
+            "BHTPresentWebReplySignInSetup(",
+            "BHTWebReplyRouteResultConsumesTap(",
+            "BHTWebReplyFallbackDiagnosticSnapshot(void)",
+        ),
+        "web reply fallback API",
+    )
+    require_source_tokens(
+        web_reply_source,
+        (
+            "WKWebsiteDataStore.defaultDataStore",
+            "preferredContentMode = WKContentModeMobile",
+            "allowsContentJavaScript = YES",
+            "UIModalPresentationFullScreen",
+            "UIModalPresentationPageSheet",
+            "UIModalPresentationFormSheet",
+            "BHTWebReplyScreenModeReply",
+            "BHTWebReplyScreenModeSignInSetup",
+            "setToolbarHidden:YES",
+            "didCommitNavigation:",
+            "BHTWebReplyDiagnosticNavigationCommitted",
+            "BHTWebReplyDiagnosticLoaderHiddenOnCommit",
+            "BHTWebReplyDiagnosticSignInLandingRecognized",
+            "BHTWebReplyDiagnosticWebViewCloseReceived",
+            "BHTWebReplyURLIsSignedInLanding(",
+            "BHTWebReplyURLObservationContext",
+            'forKeyPath:@"URL"',
+            "considerSetupLandingURL:",
+            "hasVisibleCommittedContent",
+            "(int64_t)(0.65 * NSEC_PER_SEC)",
+            "estimatedProgress >=\n                    0.99",
+            "showSetupReady",
+            "recoverFromIgnoredNavigationError",
+            "BHTHostIsExactOrSubdomain(",
+            'BHTHostIsExactOrSubdomain(host, @"x.com")',
+            'BHTHostIsExactOrSubdomain(host, @"twitter.com")',
+            '[host isEqualToString:@"accounts.google.com"]',
+            '[host isEqualToString:@"appleid.apple.com"]',
+            'componentsWithString:\n                @"https://x.com/intent/tweet"',
+            'queryItemWithName:@"in_reply_to"',
+            'componentsWithString:\n'
+                '                @"https://x.com/i/flow/login"',
+            'queryItemWithName:@"redirect_after_login"',
+            "BHTWebReplyIsExpectedAppHandoffURL(",
+            '[scheme isEqualToString:@"x"]',
+            '[scheme isEqualToString:@"twitter"]',
+            "BHTWebKitFrameLoadInterruptedByPolicyChangeErrorCode = 102",
+            "BHTWebReplyIsWebKitErrorDomain(",
+            '[domain isEqualToString:@"WebKitErrorDomain"]',
+            "BHTWebReplyDiagnosticPolicyInterruptionIgnored",
+            "BHTWebReplyDiagnosticAppHandoffIgnored",
+            "BHTWebReplyDiagnosticAutomaticPopupIgnored",
+            "BHTWebReplyDiagnosticBlankPopupIgnored",
+            "BHTWebReplyDiagnosticBlankMainFramePrevented",
+            "BHTWebReplyDiagnosticBlankMainFrameFinished",
+            "BHTWebReplyDiagnosticUserPopupRerouted",
+            "BHTWebReplyDiagnosticMainFrameHTTPClientError",
+            "BHTWebReplyDiagnosticMainFrameHTTPServerError",
+            "BHTWebReplyDiagnosticMainFrameEmptyResponse",
+            "BHTWebReplyDiagnosticMainFrameUnsupportedMIMEType",
+            "BHTWebReplyDiagnosticLoadWatchdogExpired",
+            "BHTWebReplyDiagnosticNavigationBlockedUserInitiated",
+            "BHTWebReplyDiagnosticNavigationBlockedAutomatic",
+            "BHTWebReplyNavigationIsUserInitiated(",
+            "BOOL opensNewWindow =",
+            "if (opensNewWindow && !userInitiated)",
+            "BHTWebReplyURLIsAboutBlank(",
+            "scheduleUserPopupRequest:",
+            "loadRequestWithWatchdog:",
+            "(int64_t)(20.0 * NSEC_PER_SEC)",
+            "decidePolicyForNavigationResponse:",
+            "BHTRecordWebReplyNavigationFailure(error, YES)",
+            "BHTRecordWebReplyNavigationFailure(error, NO)",
+            "BHTWebReplyDiagnosticFailureOfflineOrCannotConnect",
+            "BHTWebReplyDiagnosticFailureDNS",
+            "BHTWebReplyDiagnosticFailureTLS",
+            "BHTWebReplyDiagnosticFailureTimedOut",
+            "BHTWebReplyDiagnosticFailureUnsupportedURL",
+            "BHTPresentWebReplyScreen(",
+            '@"WEB_REPLY_SIGN_IN_TITLE"',
+            '@"WEB_REPLY_SIGN_IN_LOAD_FAILED"',
+            '@"WEB_REPLY_PREPARING"',
+            '@"WEB_REPLY_SIGN_IN_LOADING"',
+            "class_getInstanceMethod(object_getClass(object), selector)",
+            "method_getNumberOfArguments(method) == 2",
+            "@catch (__unused NSException* exception)",
+            "const NSUInteger maximumObjects = 24;",
+            "const NSUInteger maximumDepth = 4;",
+            "BHTActiveWebReplyNavigationController",
+            "BOOL presentationAccepted =",
+            "presenter.presentedViewController == navigation",
+            '@"usesOfficialWebIntent": @YES',
+            '@"usesDefaultWebsiteDataStore": @YES',
+            '@"offersVisiblePersistentSignInSetup": @YES',
+            '@"revealsContentOnFirstMainFrameCommit": @YES',
+            '@"usesModeSpecificNativeChrome": @YES',
+            '@"showsPersistentBrowserToolbar": @NO',
+            '@"recognizesSignedInLandingWithoutCookieInspection": @YES',
+            '@"tweakReadsOrWritesCookies": @NO',
+            '@"injectsPageScripts": @NO',
+            '@"inspectsRequestBodies": @NO',
+            '@"capturesReplyText": @NO',
+            '@"capturesStatusIdentifiers": @NO',
+            '@"capturesAccountData": @NO',
+            '@"observesSendCompletion": @NO',
+            '@"postsThroughHiddenWebView": @NO',
+            '@"verifiesWebAccountMatchesAppAccount": @NO',
+            '@"capturesRawErrors": @NO',
+        ),
+        "privacy-safe native-style web reply composer",
+    )
+    if (
+        "self.navigationItem.prompt =" in web_reply_source
+        or "setToolbarHidden:NO" in web_reply_source
+    ):
+        raise AssertionError(
+            "Compatibility replies must not expose persistent browser chrome"
+        )
+    setup_ready_source = source_section(
+        web_reply_source,
+        "- (void)showSetupReady",
+        "- (void)recoverFromIgnoredNavigationError",
+        "web reply setup-ready transition",
+    )
+    if "[self.webView stopLoading]" in setup_ready_source:
+        raise AssertionError(
+            "Setup success must not interrupt X while its session finishes"
+        )
+    if "https://x.com/compose/post" in web_reply_source:
+        raise AssertionError(
+            "Compatibility replies must use X's supported Web Intent route"
+        )
+    for forbidden in (
+        "httpCookieStore",
+        "NSHTTPCookieStorage",
+        "WKUserScript",
+        "evaluateJavaScript",
+        "addScriptMessageHandler",
+        "document.cookie",
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "Authorization",
+        "auth_token",
+        '"ct0"',
+        '"Bearer',
+        "NSURLSession",
+        "NSLog",
+        "localizedDescription",
+    ):
+        if forbidden in web_reply_source:
+            raise AssertionError(
+                "The compatibility composer must not inspect or seed web "
+                f"session data: {forbidden}"
+            )
+    if (
+        'hasSuffix:[@"." stringByAppendingString:' not in web_reply_source
+        or "containsString" in source_section(
+            web_reply_source,
+            "static BOOL BHTHostIsExactOrSubdomain(",
+            "static BOOL BHTWebReplyAllowsTopLevelURL(",
+            "web reply host boundary check",
+        )
+    ):
+        raise AssertionError(
+            "Web reply navigation must use a suffix-boundary host check"
+        )
+
+    web_route_source = source_section(
+        web_reply_source,
+        "BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(",
+        "BOOL BHTWebReplyRouteResultConsumesTap(",
+        "web reply route",
+    )
+    if web_route_source.find(
+        'boolForKey:@"web_reply_fallback"'
+    ) > web_route_source.find("BHTResolveStatusIdentifier("):
+        raise AssertionError(
+            "The status object must remain opaque while web replies are off"
+        )
+    route_consumption_source = source_section(
+        web_reply_source,
+        "BOOL BHTWebReplyRouteResultConsumesTap(",
+        "NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void)",
+        "web reply tap-consumption rule",
+    )
+    if (
+        "BHTWebReplyRouteResultPresented" not in route_consumption_source
+        or "BHTWebReplyRouteResultAlreadyPresented"
+        not in route_consumption_source
+    ):
+        raise AssertionError(
+            "Only a presented or already-visible web composer may consume "
+            "the native reply tap"
+        )
+    for fallback_result in (
+        "BHTWebReplyRouteResultDisabled",
+        "BHTWebReplyRouteResultMissingOrInvalidStatus",
+        "BHTWebReplyRouteResultOffMainThread",
+        "BHTWebReplyRouteResultPresentationUnavailable",
+    ):
+        if fallback_result in route_consumption_source:
+            raise AssertionError(
+                "A failed web route must preserve X's native reply: "
+                f"{fallback_result}"
+            )
+
+    require_source_tokens(
+        reply_hook_source,
+        (
+            '#import "Reply/BHTWebReplyFallback.h"',
+            "BHTTryPresentWebReplyFallback(",
+            "BHTWebReplyRouteResultConsumesTap(routeResult)",
+            "BHTReplyWorkflowDiagnosticWebFallbackPresented",
+            "%group BHTPersistentReplyActionFallbackHooks",
+            "- (void)persistentComposeViewDidTap:",
+            'boolForKey:@"web_reply_fallback"',
+            "self.statusViewModel",
+            'NSSelectorFromString(@"persistentComposeViewDidTap:")',
+        ),
+        "native reply fallback integration",
+    )
+    persistent_fallback = source_section(
+        reply_hook_source,
+        "- (void)persistentComposeViewDidTap:",
+        "%end",
+        "persistent composer web fallback",
+    )
+    if persistent_fallback.count("%orig(sender);") != 1:
+        raise AssertionError(
+            "The persistent reply tap must forward to X exactly once when "
+            "the web composer is unavailable"
+        )
+    if persistent_fallback.find(
+        'boolForKey:@"web_reply_fallback"'
+    ) > persistent_fallback.find("self.statusViewModel"):
+        raise AssertionError(
+            "Persistent reply metadata must not be read while web replies "
+            "are disabled"
+        )
+
+    require_source_tokens(
+        settings_source,
+        (
+            '@"key": @"web_reply_fallback"',
+            '@"default": @NO',
+            '@"excludeFromProfile": @YES',
+            '@"key": @"web_reply_sign_in_setup"',
+            '@"action": @"showWebReplySignInSetup:"',
+            '@"parentKey": @"web_reply_fallback"',
+            '![setting[@"excludeFromProfile"] boolValue]',
+        ),
+        "opt-in non-exportable web reply preference",
+    )
+    require_source_tokens(
+        tweets_settings_source,
+        (
+            'isEqualToString:@"web_reply_fallback"',
+            '@"WEB_REPLY_FALLBACK_DISCLOSURE"',
+            '@"WEB_REPLY_FALLBACK_SIGN_IN_NOW"',
+            '@"WEB_REPLY_FALLBACK_NOT_NOW"',
+            '@"WEB_REPLY_FALLBACK_TURN_OFF"',
+            "BHTPresentWebReplySignInSetup(self)",
+        ),
+        "web reply account-boundary disclosure",
+    )
+    require_source_tokens(
+        english_source,
+        (
+            '"WEB_REPLY_FALLBACK_TITLE"',
+            '"WEB_REPLY_FALLBACK_DETAIL"',
+            '"WEB_REPLY_FALLBACK_DISCLOSURE"',
+            '"WEB_REPLY_FALLBACK_SIGN_IN_NOW"',
+            '"WEB_REPLY_FALLBACK_NOT_NOW"',
+            '"WEB_REPLY_SIGN_IN_SETUP_TITLE"',
+            '"WEB_REPLY_SIGN_IN_SETUP_DETAIL"',
+            '"WEB_REPLY_SIGN_IN_TITLE"',
+            '"WEB_REPLY_SIGN_IN_PROMPT"',
+            '"WEB_REPLY_SIGN_IN_LOAD_FAILED"',
+            '"WEB_REPLY_LOADING"',
+            '"WEB_REPLY_PREPARING"',
+            '"WEB_REPLY_SIGN_IN_LOADING"',
+            '"WEB_REPLY_SIGN_IN_READY_TITLE"',
+            '"WEB_REPLY_SIGN_IN_READY_DETAIL"',
+            '"WEB_REPLY_TITLE"',
+            '"WEB_REPLY_ACCOUNT_PROMPT"',
+            '"WEB_REPLY_DONE"',
+            '"WEB_REPLY_MORE"',
+            '"WEB_REPLY_ABOUT"',
+            '"WEB_REPLY_CANCEL"',
+            '"WEB_REPLY_LOAD_FAILED"',
+            '"WEB_REPLY_BLOCKED_LINK_DETAIL"',
+        ),
+        "web reply localization",
+    )
+    require_source_tokens(
+        compatibility_source,
+        (
+            '#import "Reply/BHTWebReplyFallback.h"',
+            '@"webReplyFallback":',
+            "BHTWebReplyFallbackDiagnosticSnapshot()",
+            '@"web_reply_fallback"',
+        ),
+        "redacted web reply compatibility report",
+    )
+    popup_policy_source = source_section(
+        web_reply_source,
+        "decidePolicyForNavigationAction:",
+        "createWebViewWithConfiguration:",
+        "web reply popup policy",
+    )
+    automatic_popup_guard = popup_policy_source.find(
+        "if (opensNewWindow && !userInitiated)"
+    )
+    blank_popup_guard = popup_policy_source.find(
+        "BHTWebReplyURLIsAboutBlank(destination)"
+    )
+    allowed_new_window_branch = popup_policy_source.find(
+        "if (opensNewWindow) {\n"
+        "        decisionHandler(WKNavigationActionPolicyAllow);"
+    )
+    if (
+        automatic_popup_guard < 0
+        or blank_popup_guard < 0
+        or allowed_new_window_branch < 0
+        or automatic_popup_guard > allowed_new_window_branch
+        or blank_popup_guard > allowed_new_window_branch
+        or "[webView loadRequest:" in popup_policy_source
+        or "scheduleUserPopupRequest:" in popup_policy_source
+    ):
+        raise AssertionError(
+            "Navigation policy must reject automatic/blank popups and "
+            "leave permitted user popup loading to WKUIDelegate"
+        )
+
+    popup_creation_source = source_section(
+        web_reply_source,
+        "createWebViewWithConfiguration:",
+        "@end",
+        "web reply popup creation",
+    )
+    popup_creation_guard = popup_creation_source.find(
+        "if (!userInitiated)"
+    )
+    popup_creation_blank_guard = popup_creation_source.find(
+        "if (BHTWebReplyURLIsAboutBlank(destination))"
+    )
+    popup_creation_load = popup_creation_source.find(
+        "[self scheduleUserPopupRequest:"
+    )
+    if (
+        popup_creation_guard < 0
+        or popup_creation_blank_guard < 0
+        or popup_creation_load < 0
+        or popup_creation_guard > popup_creation_load
+        or popup_creation_blank_guard > popup_creation_load
+    ):
+        raise AssertionError(
+            "WKUIDelegate must ignore automatic and about:blank popups "
+            "before scheduling their request in the main WebView"
+        )
+
+    popup_schedule_source = source_section(
+        web_reply_source,
+        "- (void)scheduleUserPopupRequest:",
+        "- (void)showLoadFailure",
+        "asynchronous popup reroute",
+    )
+    if (
+        "dispatch_async(dispatch_get_main_queue()" not in
+            popup_schedule_source
+        or popup_schedule_source.find(
+            "dispatch_async(dispatch_get_main_queue()"
+        )
+        > popup_schedule_source.find(
+            "loadRequestWithWatchdog:requestCopy"
+        )
+    ):
+        raise AssertionError(
+            "A user popup must be rerouted after returning from WebKit's "
+            "navigation delegate"
+        )
+
+    if "Version: 6.1.0-beta.35" not in (
+        ROOT / "control"
+    ).read_text(encoding="utf-8"):
+        raise AssertionError(
+            "The seamless compatibility reply fix must ship as beta.35"
+        )
+
     branding_source = (
         ROOT / "src" / "Branding" / "BHTBranding.m"
     ).read_text(encoding="utf-8")

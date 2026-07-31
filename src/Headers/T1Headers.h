@@ -170,10 +170,22 @@
 
 @interface TTAStatusInlineReplyButton : UIView
 @property (nonatomic) __weak id<T1StatusInlineActionButtonDelegate> delegate;
+- (void)didTap;
+@end
+
+@interface T1StatusViewInlineActionTapEventHandler : NSObject
+- (void)performReplyActionWithAccount:(__unsafe_unretained id)account
+                                event:(__unsafe_unretained id)event
+                           controller:(__unsafe_unretained id)controller
+                        scribeContext:(__unsafe_unretained id)scribeContext
+                        scribeElement:(__unsafe_unretained id)scribeElement
+                           parameters:(__unsafe_unretained id)parameters
+                       originalStatus:(__unsafe_unretained id)originalStatus;
 @end
 
 @interface T1PersistentComposeViewController : UIViewController
 @property (readonly, nonatomic) id statusViewModel;
+- (void)persistentComposeViewDidTap:(id)sender;
 @end
 
 @protocol TTACoreStatusViewEventHandler <NSObject>

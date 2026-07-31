@@ -388,6 +388,24 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                         @"sectionKey": @"SETTINGS_SECTION_COMPOSING"
                     },
                     @{
+                        @"key": @"web_reply_fallback",
+                        @"default": @NO,
+                        @"type": @"toggle",
+                        // Reply routing can select a different signed-in web
+                        // account, so a shared profile must never enable it.
+                        @"excludeFromProfile": @YES,
+                        @"sectionKey": @"SETTINGS_SECTION_COMPOSING"
+                    },
+                    @{
+                        @"type": @"compactButton",
+                        @"key": @"web_reply_sign_in_setup",
+                        @"titleKey": @"WEB_REPLY_SIGN_IN_SETUP_TITLE",
+                        @"action": @"showWebReplySignInSetup:",
+                        @"parentKey": @"web_reply_fallback",
+                        @"searchAutoOpen": @YES,
+                        @"sectionKey": @"SETTINGS_SECTION_COMPOSING"
+                    },
+                    @{
                         @"type": @"compactButton",
                         @"key": @"undo_tweet_timeout",
                         @"default": @10,
@@ -878,7 +896,8 @@ static BOOL BHTIsValidKeywordArray(id value, BOOL usernameKeywords) {
         for (NSDictionary* setting in BHTSettingsIndex().allValues) {
             // Entries without defaults are navigation buttons or font-picker
             // affordances, not actual preferences.
-            if (setting[@"default"] != nil && setting[@"key"] != nil) {
+            if (setting[@"default"] != nil && setting[@"key"] != nil &&
+                ![setting[@"excludeFromProfile"] boolValue]) {
                 [allowList addObject:setting[@"key"]];
             }
         }

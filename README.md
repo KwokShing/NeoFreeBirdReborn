@@ -1,156 +1,140 @@
-# NeoFreeBird for X 12.9
+# NeoFreeBird
 
-This fork combines BHTwitter's X 12.9 compatibility work with NeoFreeBird's
-newer modular architecture. It is currently a beta intended for testing against
-X 12.9.
+[![Build NeoFreeBird](https://github.com/Vicitiniman/NeoFreeBirdReborn/actions/workflows/build.yml/badge.svg)](https://github.com/Vicitiniman/NeoFreeBirdReborn/actions/workflows/build.yml)
 
-## Highlights
+NeoFreeBird is a modular enhancement tweak for X 12.9. It restores familiar
+Twitter branding and adds themes, navigation controls, media tools, timeline
+filters, and guarded compatibility options for modified installations.
 
-- Layered ad blocking for Home, profiles, search, conversations, Explore,
-  cards, articles, and video ad paths.
-- Highest-quality photo loading, optional full-frame timeline media, and a
-  highest-video preference.
-- Modern video/GIF downloads across X 12.9's timeline, carousel, player-menu,
-  overflow-menu, and supported Direct Message paths.
-- Native photo/video/GIF menus with working Download and temporary-file Share
-  actions, plus separate tap-to-hide and drag-to-reorder editors for each media
-  type.
-- Native tab reordering plus an independent, movable **My Likes** bottom
-  destination that can sit alongside Grok, with normal in-tab navigation and
-  swipe-back. Its native Bookmarks carrier is relabeled before the first tap.
-- Appearance editors for the bottom bar, the Likes section, and X 12.9's
-  sidebar, with tap-to-hide tiles and drag reordering. The iPad rail retains
-  X's adaptive expanded layout instead of using the iPhone collapse clamp.
-- A Posts/Media view for Likes with a pinch-adjustable waterfall gallery,
-  newest-first loading, continuous pagination, original-quality photo viewing,
-  highest-available MP4 playback, Apple-style contextual previews and actions
-  for photos, videos, and GIFs in both views, a window-level edge-to-edge viewer
-  on iPhone and iPad, interactive swipe-down dismissal, and
-  coalesced/prefetched image loading to avoid duplicate iPad work.
-- Sideloaded and TrollStore builds install with the **Twitter** display name and
-  include the supplied classic bird as a selectable app icon. The blue Home
-  title logo, iPad navigation rail, and classic launch animation can also use
-  the bird instead of the X glyph.
-- Updated profile, search, Grok, timeline, confirmation, appearance, branding,
-  custom-font, and accessibility-related features.
-- Separate username/display-name and post-text keyword lists can hide matching
-  posts from For You only. Following is positively excluded rather than inferred
-  from X's shared Home timeline label.
-- Settings are grouped into named subsections for navigation, ads, media,
-  privacy, profiles, tweets, and links. Global localized search now indexes
-  every settings page plus theme, navigation, Likes-waterfall, sidebar, and
-  media-action editors, then opens or highlights the exact result.
-- Apollo-inspired and classic Twitter presets coordinate light/dark timeline,
-  tweet, navigation, settings, surface, text, separator, and accent colors.
-  Midnight OLED, Evergreen, Rose Quartz, Solarized Coast, Amethyst, and Cinder
-  add six more contrast-checked palettes. A visual theme builder can create,
-  preview, save, apply, edit, duplicate, and delete personal light/dark themes;
-  saved themes travel with preference-profile exports.
-  Native Blue restores X's original surface behavior. Allow-listed JSON
-  preference profile export/import excludes account credentials and host-app
-  data.
-- A runtime compatibility report that can be shared from the Debug settings.
+> **Beta software:** NeoFreeBird is developed and tested for X 12.9. Other X
+> versions are not considered compatible.
 
-Beta 26 makes settings-search navigation wait for X's search dismissal and
-table layout before opening and visibly spotlighting the exact destination.
-It also adds two cached literal keyword filters for For You—one for usernames
-and display names, one for post text—with a native add/edit/delete screen,
-direct search destinations, preference-profile support, and strict
-model-provenance gating so Following and unknown timeline states fail open.
-Beta 25 consolidates the former overlapping theme screens into
-`Appearance > Themes`, with built-in themes, personal themes, the theme
-builder, and Accent Only in one library. Preference profiles now live under a
-clear `Backup & restore` page. Settings search reaches nested editors and the
-exact requested row, while the Likes-native navigation root now preserves
-Profile, History, Lists, and other destinations opened from X's side drawer.
-The Likes waterfall consumes the same ad-filtered section snapshot as its
-native timeline regardless of hook order. Beta 24 fixes the beta 23 startup
-stack overflow by resolving the theme accent
-from the provider's already-known Light/Dark appearance instead of recursively
-asking X for its current palette during hook installation. Beta 23 adds six
-built-in palettes and a native visual theme builder with
-separate light/dark colors, live previews, exact hex entry, native color
-pickers, contrast warnings, a persistent custom-theme library, and versioned
-profile export/import. Beta 22 preserves X's own bottom-tab background and transparency while
-theming its icons and labels, so the bar collapses completely with the controls
-instead of leaving an opaque themed strip over the timeline. Beta 21 keeps the
-Likes Posts/Media selector at a native minimum height after
-theme repainting, instead of letting one-pixel custom artwork collapse its
-navigation-title layout. Its compatibility report now records the selector and
-navigation-bar geometry. Beta 20 covers X 12.9's direct XDS and Swift-package
-color paths so Following,
-Tweet Details, and reused timeline posts keep the selected palette after
-navigation. It also reattaches the retained Posts/Media selector whenever the
-native Likes navigation controller rebuilds its title area. Beta 19 attaches
-full themes to X 12.9's active, Twitter, and TFNUI color providers so repost
-actions, the For You/Following strip, and the lower Home/Explore/Likes chrome
-share the selected palette. The custom Likes screen now repaints all of its
-chrome live, while its media view uses decoded image dimensions, variable
-masonry heights, and multi-column landscape tiles to show complete media
-without fixed black bars. Beta 18 applies preset changes through
-X 12.9's guarded native palette refresh,
-using a bounded loaded-view refresh only when X emits no dynamic-color reload
-or when a replacement provider must be attached after that synchronous signal.
-Generation-cached palette hooks keep timeline reads light and clear every
-still-live palette when Native Blue is restored. It also covers additional
-timeline, tweet, card, and tab surfaces and shows complete waterfall thumbnails
-instead of cropping their edges. Beta 17
-targets the actual iPad rail-header image even though X 12.9 exposes no logo
-property, expands Apollo-inspired and Classic Twitter into coordinated
-app-wide light/dark palettes, and forces waterfall close-ups into the full app
-window on iPhone and iPad. Beta 16 removed the pre-injection launch X from
-sideloaded/TrollStore packages, added global settings search and portable
-preference profiles, and upgraded the Likes viewer with Apple-style contextual
-menus plus coalesced image requests. Beta 15 added the waterfall viewer's
-fluid percent-driven dismissal and bounded/downsampled image cache. Beta 14 fixes iPad rail
-sizing, removes the first-frame Bookmarks label from My
-Likes, replaces the blue X Home title with the classic Twitter bird, organizes
-the settings pages, isolates temporary media cleanup to NeoFreeBird-owned
-files, and hardens settings, app-lock, photo-save, and compatibility-report
-paths. Beta 13 connected the customizable Download and Share File actions to X
-12.9's actual Home-timeline photo/video/GIF preview menu.
+NeoFreeBird does not include or distribute the X app. Sideloaded and TrollStore
+builds require a decrypted X 12.9 IPA that you are legally authorized to use.
 
-Every new X 12.9 behavior has a setting; custom navigation is controlled from
-its editor. Compatibility shims preserve native behavior when their option is
-off.
+## Compatibility
 
-Built-in and personal themes are under
-`Settings > NeoFreeBird > Appearance > Themes`; portable profiles are under
-`Settings > NeoFreeBird > Backup & restore`. Profile JSON is versioned and
-allow-listed: it includes NeoFreeBird preferences, personal themes, and layout
-order, but not X account data, credentials, cookies, or cached media.
+| Component | Supported target |
+| --- | --- |
+| Host app | X 12.9 |
+| Audited build | X 12.9 build 10 |
+| Minimum iOS | iOS 15.0 |
+| Architecture | arm64 |
+| Packages | Sideloaded IPA, TrollStore TIPA, rootless DEB, rootful DEB |
 
-The full per-feature review is in
-[`docs/X12_9_FEATURE_AUDIT.md`](docs/X12_9_FEATURE_AUDIT.md).
+NeoFreeBird checks version-specific app interfaces before using them. Missing
+capabilities are recorded in the compatibility report, and native behavior is
+preserved where possible.
 
-## Important login note
+## Features
 
-X may reject modified clients through server/app attestation. This project does
-not bypass attestation, harvest cookies or web sessions, back up credentials,
-or spoof subscription state. X 12.9 builds include an explicit
-**Compatibility Sign-in** fallback for cases where the normal X flow does not
-finish. Native sign-in remains the default. The fallback calls X 12.9's own
-password command, challenge UI, account registration, and credential storage;
-it fails closed if any required private method is missing. Because this relies
-on version-specific private APIs, use it only on X 12.9. The diagnostic entry
-remains visible on exact X 12.9 even if a required component is unavailable;
-in that case credential fields stay disabled and **Share Report** identifies
-the missing capability without including credentials or raw authentication
-data.
+### Appearance and navigation
 
-## Build locally
+- Nine coordinated presets, including Apollo-inspired blue, Classic Twitter,
+  Midnight OLED, and Native X Blue.
+- A visual theme builder with separate light and dark palettes, live previews,
+  contrast checks, exact color entry, and a personal theme library.
+- Theming across supported timelines, tweet details, settings, navigation
+  chrome, and the custom Likes experience.
+- Reorderable bottom navigation and sidebar items, including an independent
+  **Likes** destination with normal navigation and swipe-back.
+- Twitter bird branding for the Home title, compatible iPad rail, classic
+  launch animation, display name, and alternate app icon.
 
-Install [Theos](https://github.com/theos/theos) and
-[cyan](https://github.com/asdfzxcvbn/pyzule-rw) for IPA/TrollStore output, then:
+### Timeline, Likes, and media
+
+- Layered promoted-content filtering across timelines, profiles, search,
+  Explore, cards, articles, and supported video paths.
+- Separate **For You** filters for usernames/display names and post text,
+  including `@mentions`. Following is never filtered by these lists.
+- A Posts/Media selector in Likes with an adaptive, pinch-adjustable waterfall
+  that respects each item's aspect ratio.
+- Full-window photo and video viewing on iPhone and iPad, original-quality
+  photos, highest-available MP4 playback, zoom, paging, and swipe-down dismiss.
+- Native-style photo, video, and GIF menus with configurable download and share
+  actions.
+- Coalesced and downsampled image loading to reduce duplicate work and memory
+  pressure, especially on iPad.
+
+### Settings and portability
+
+- Organized settings with global search that opens or highlights the matching
+  setting and supported nested editors.
+- Exportable preference profiles for validated NeoFreeBird settings, layouts,
+  keyword filters, and personal themes.
+- Runtime compatibility reports for device-specific troubleshooting.
+
+Profiles never include X accounts, credentials, cookies, cached media, or
+compatibility-reply session data.
+
+## Account compatibility
+
+Native X sign-in and native replies remain the defaults.
+
+**Compatibility Sign-in** is an explicit X 12.9 fallback for installations
+where the normal account flow does not finish. It uses X's own guarded
+password, challenge, account-registration, and credential-storage services.
+The same option is available when adding another account.
+
+The default-off **Compatibility reply composer** is available when sideloaded
+builds reject native replies. It opens X's official reply page in a visible,
+in-app web surface and never posts automatically. Its web account can differ
+from the account selected in the app, so check the displayed account before
+posting. NeoFreeBird does not export its credentials, cookies, account details,
+or reply text.
+
+## Where to find things
+
+| Feature | Location |
+| --- | --- |
+| Themes and theme builder | **Settings > NeoFreeBird > Appearance > Themes** |
+| Preference profiles | **Settings > NeoFreeBird > Backup & restore** |
+| Compatibility report | **Settings > NeoFreeBird > Debug** |
+| Signed-out report | **Compatibility Sign-in > Share Report** |
+
+## Build and install
+
+Choose the package for your installation method:
+
+| Method | Output |
+| --- | --- |
+| Sideloading | `.ipa` |
+| TrollStore | `.tipa` |
+| Rootless jailbreak | `.deb` |
+| Rootful jailbreak | `.deb` |
+
+Avoid injecting multiple X/Twitter tweaks into the same app. Overlapping hooks
+can cause startup crashes and inconsistent behavior.
+
+### GitHub Actions
+
+Open **Actions > Build NeoFreeBird > Run workflow**, select the deployment
+format, and optionally choose a commit. Sideloaded and TrollStore builds also
+need a direct URL to a decrypted X 12.9 IPA that you are authorized to use.
+Download the package from the completed run's **Artifacts** section.
+
+### Local build
+
+Requirements:
+
+- [Theos](https://github.com/theos/theos) with an iOS 16.5 SDK
+- GNU Make, `dpkg`, `ldid`, and Python 3
+- [cyan](https://github.com/asdfzxcvbn/pyzule-rw) for IPA/TrollStore output
+- A legally obtained decrypted X 12.9 IPA for IPA/TrollStore builds
 
 ```bash
-git clone --recursive https://github.com/Vicitiniman/NeoFreeBird.git
-cd NeoFreeBird
-chmod +x build.sh
+git clone --recursive https://github.com/Vicitiniman/NeoFreeBirdReborn.git
+cd NeoFreeBirdReborn
+chmod +x build.sh rebrand.sh deps/ffmpeg-kit-next/build-ffmpeg.sh
 ```
 
-Place a decrypted IPA at `packages/com.atebits.Tweetie2.ipa` for IPA builds and
-run one of:
+For a sideloaded or TrollStore build, place the IPA at:
+
+```text
+packages/com.atebits.Tweetie2.ipa
+```
+
+Then run one build command:
 
 ```bash
 ./build.sh --sideloaded
@@ -159,38 +143,67 @@ run one of:
 ./build.sh --rootfull
 ```
 
-The FFmpeg stack is built from source on first use and reused afterward. macOS
-uses `sips` to generate alternate-icon sizes; Linux IPA builds need
+The first build takes longer because the FFmpeg stack is compiled and cached.
+macOS uses `sips` for alternate-icon sizing; Linux IPA builds require
 ImageMagick's `magick` or `convert` command.
-Sideloaded/TrollStore output is branded during packaging; reinstall or update
-the app before judging the new display name or alternate icon list.
 
-## Build with GitHub Actions
+## Troubleshooting
 
-Run **Build NeoFreeBird** from the Actions tab. Select a deployment format and,
-for sideloaded/TrollStore builds, provide a direct URL to a decrypted IPA you
-are authorized to use. The workflow checks out the selected branch/commit and
-its submodules, so fork changes are included in the build.
+First confirm that the host app is X 12.9 and remove any other injected
+X/Twitter tweak.
 
-## Test logs
+To export a report while signed out:
 
-While signed out on X 12.9:
+1. Open **Compatibility Sign-in** from X's login screen.
+2. Tap **Share Report**.
+3. Save the generated JSON.
 
-1. Open **Compatibility Sign-in** from X's login page.
-2. Tap **Share Report** in the top-right corner.
-3. Save or share the generated JSON.
+After signing in, use **Settings > NeoFreeBird > Debug > Export compatibility
+report**. A copy is also stored inside the app container at:
 
-After signing in, the same report remains available from NeoFreeBird:
+```text
+Library/Caches/BHTwitter-X12.9-Compatibility.json
+```
 
-1. Open `Settings > NeoFreeBird > Debug`.
-2. Tap **Export compatibility report**.
-3. Attach the resulting JSON to the GitHub issue or pull request.
+For startup crashes, also attach the newest `.ips` report and include the
+NeoFreeBird version, X version/build, iOS version, device model, installation
+method, and reproduction steps.
 
-The same report is stored inside the app container at
-`Library/Caches/BHTwitter-X12.9-Compatibility.json`. It contains app/build and
-hook-availability information, not account credentials.
+## Privacy and safety
+
+- NeoFreeBird does not bypass app attestation or spoof subscriptions.
+- It does not harvest passwords, cookies, session tokens, or account data.
+- Reports exclude credentials, account identifiers, post/reply text, raw URLs,
+  response bodies, and web-session contents.
+- Compatibility sign-in stores successful accounts only through X's native
+  account service.
+- Missing private methods fall back to native behavior or a visible unavailable
+  state.
+
+## Contributing
+
+Pull requests and device reports are welcome. Guard private classes and
+selectors, preserve native behavior when a capability is unavailable, keep
+sensitive data out of diagnostics, and never commit decrypted IPAs or generated
+FFmpeg libraries.
+
+Check formatting before opening a pull request:
+
+```bash
+./format.sh --check
+```
+
+Detailed implementation notes and release history are in
+[`docs/X12_9_FEATURE_AUDIT.md`](docs/X12_9_FEATURE_AUDIT.md).
 
 ## Credits
 
-Built on the work of BHTwitter and NeoFreeBird contributors, with selected
-targeted improvements reviewed from Theacrat's and Orion's NeoFreeBird branches.
+NeoFreeBird builds on
+[BHTwitter](https://github.com/BandarHL/BHTwitter), NeoFreeBird contributors,
+Theacrat's and Orion's NeoFreeBird work,
+[FLEX](https://github.com/FLEXTool/FLEX),
+[zxPluginsInject](https://github.com/asdfzxcvbn/zxPluginsInject), and
+[ffmpeg-kit-next](https://github.com/arthenica/ffmpeg-kit-next).
+
+NeoFreeBird is an independent community project and is not affiliated with,
+endorsed by, or sponsored by X Corp., Twitter, Apple, or Apollo.
