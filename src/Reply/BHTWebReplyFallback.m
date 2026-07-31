@@ -18,6 +18,7 @@ typedef NS_ENUM(NSUInteger, BHTWebReplyDiagnosticEvent) {
     BHTWebReplyDiagnosticPresentationUnavailable,
     BHTWebReplyDiagnosticPresented,
     BHTWebReplyDiagnosticAlreadyPresented,
+    BHTWebReplyDiagnosticTransitionPendingBlocked,
     BHTWebReplyDiagnosticNavigationStarted,
     BHTWebReplyDiagnosticNavigationCommitted,
     BHTWebReplyDiagnosticNavigationFinished,
@@ -54,6 +55,16 @@ typedef NS_ENUM(NSUInteger, BHTWebReplyDiagnosticEvent) {
     BHTWebReplyDiagnosticSignInSetupPresented,
     BHTWebReplyDiagnosticSignInSetupUnavailable,
     BHTWebReplyDiagnosticSignInLandingRecognized,
+    BHTWebReplyDiagnosticSetupCompletedManually,
+    BHTWebReplyDiagnosticAccountManagerCompleted,
+    BHTWebReplyDiagnosticNativeAccountContextAvailable,
+    BHTWebReplyDiagnosticNativeAccountContextUnavailable,
+    BHTWebReplyDiagnosticNativeAccountChanged,
+    BHTWebReplyDiagnosticAccountBoundaryWarningShown,
+    BHTWebReplyDiagnosticAccountBoundaryContinued,
+    BHTWebReplyDiagnosticAccountBoundaryReviewOpened,
+    BHTWebReplyDiagnosticAccountBoundaryCancelled,
+    BHTWebReplyDiagnosticManageWebAccountOpened,
     BHTWebReplyDiagnosticWebViewCloseReceived,
     BHTWebReplyDiagnosticClosed,
     BHTWebReplyDiagnosticEventCount,
@@ -69,6 +80,7 @@ static NSString* const BHTWebReplyDiagnosticNames[] = {
     @"presentationUnavailable",
     @"presented",
     @"alreadyPresented",
+    @"transitionPendingBlocked",
     @"navigationStarted",
     @"navigationCommitted",
     @"navigationFinished",
@@ -105,6 +117,16 @@ static NSString* const BHTWebReplyDiagnosticNames[] = {
     @"signInSetupPresented",
     @"signInSetupUnavailable",
     @"signInLandingRecognized",
+    @"setupCompletedManually",
+    @"accountManagerCompleted",
+    @"nativeAccountContextAvailable",
+    @"nativeAccountContextUnavailable",
+    @"nativeAccountChanged",
+    @"accountBoundaryWarningShown",
+    @"accountBoundaryContinued",
+    @"accountBoundaryReviewOpened",
+    @"accountBoundaryCancelled",
+    @"manageWebAccountOpened",
     @"webViewCloseReceived",
     @"closed",
 };
@@ -116,6 +138,12 @@ _Static_assert(
 
 static __weak UINavigationController*
     BHTActiveWebReplyNavigationController;
+static __weak UIAlertController*
+    BHTActiveWebReplyBoundaryAlert;
+static __weak id BHTLastWebReplyNativeAccount;
+static atomic_bool
+    BHTWebReplyAccountBoundaryAcknowledged;
+static atomic_bool BHTWebReplyTransitionPending;
 static void* BHTWebReplyProgressObservationContext =
     &BHTWebReplyProgressObservationContext;
 static void* BHTWebReplyURLObservationContext =
@@ -129,6 +157,7 @@ static NSInteger const
 typedef NS_ENUM(NSUInteger, BHTWebReplyScreenMode) {
     BHTWebReplyScreenModeReply = 0,
     BHTWebReplyScreenModeSignInSetup,
+    BHTWebReplyScreenModeAccountManagement,
 };
 
 static void BHTRecordWebReplyDiagnostic(
@@ -136,6 +165,12 @@ static void BHTRecordWebReplyDiagnostic(
     if (event >= BHTWebReplyDiagnosticEventCount) return;
     atomic_fetch_add_explicit(
         &BHTWebReplyDiagnosticCounters[event], 1,
+        memory_order_relaxed);
+}
+
+static void BHTSetWebReplyTransitionPending(BOOL pending) {
+    atomic_store_explicit(
+        &BHTWebReplyTransitionPending, pending,
         memory_order_relaxed);
 }
 
@@ -332,6 +367,15 @@ static NSURL* BHTWebReplySignInURL(void) {
                : nil;
 }
 
+static NSURL* BHTWebReplyAccountURL(void) {
+    NSURL* URL =
+        [NSURL URLWithString:@"https://x.com/home"];
+    return [URL.scheme isEqualToString:@"https"] &&
+                   [URL.host isEqualToString:@"x.com"]
+               ? URL
+               : nil;
+}
+
 static BOOL BHTHostIsExactOrSubdomain(
     NSString* host, NSString* domain) {
     NSString* normalizedHost = host.lowercaseString;
@@ -500,17 +544,75 @@ static void BHTRecordWebReplyNavigationFailure(
 @property(nonatomic) BOOL didRecordClose;
 @property(nonatomic) BOOL blockedAlertVisible;
 @property(nonatomic) BOOL hasVisibleCommittedContent;
+@property(nonatomic, strong) WKNavigation*
+    latestMainFrameNavigation;
+@property(nonatomic, strong) WKNavigation*
+    mainFrameProvisionalNavigationInFlight;
+@property(nonatomic, strong) WKNavigation*
+    explicitMainFrameNavigationAwaitingStart;
 @property(nonatomic) BOOL setupReady;
-@property(nonatomic) NSUInteger setupLandingGeneration;
 @property(nonatomic) NSUInteger loadAttemptGeneration;
 @property(nonatomic) BOOL loadAttemptComplete;
+@property(nonatomic, copy) dispatch_block_t doneCompletion;
+@property(nonatomic) BOOL beginsReplyTransitionOnDone;
 - (instancetype)initWithURL:(NSURL*)URL
                     titleKey:(NSString*)titleKey
               loadFailureKey:(NSString*)loadFailureKey
                         mode:(BHTWebReplyScreenMode)mode;
 - (void)loadRequestWithWatchdog:(NSURLRequest*)request;
 - (void)scheduleUserPopupRequest:(NSURLRequest*)request;
+- (void)showWebAccountManager;
+- (BOOL)settleMainFrameProvisionalNavigationForCallback:
+    (WKNavigation*)navigation;
+- (BOOL)finishMainFrameNavigationForCallback:
+    (WKNavigation*)navigation;
 @end
+
+typedef void (^BHTWebReplyPresenterReadyAction)(
+    UIViewController* presenter);
+
+static void BHTPerformWhenWebReplyPresenterIsReady(
+    UIViewController* presenter,
+    NSUInteger retriesRemaining,
+    BHTWebReplyPresenterReadyAction action,
+    dispatch_block_t failure) {
+    if (!action) return;
+    __weak UIViewController* weakPresenter = presenter;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController* strongPresenter = weakPresenter;
+        if (!strongPresenter) {
+            BHTRecordWebReplyDiagnostic(
+                BHTWebReplyDiagnosticPresentationUnavailable);
+            if (failure) failure();
+            return;
+        }
+        BOOL ready =
+            strongPresenter.viewIfLoaded.window &&
+            !strongPresenter.isBeingDismissed &&
+            strongPresenter.presentedViewController == nil;
+        if (ready) {
+            action(strongPresenter);
+            return;
+        }
+        if (retriesRemaining == 0) {
+            BHTRecordWebReplyDiagnostic(
+                BHTWebReplyDiagnosticPresentationUnavailable);
+            if (failure) failure();
+            return;
+        }
+        dispatch_after(
+            dispatch_time(
+                DISPATCH_TIME_NOW,
+                (int64_t)(0.05 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                BHTPerformWhenWebReplyPresenterIsReady(
+                    weakPresenter,
+                    retriesRemaining - 1,
+                    action,
+                    failure);
+            });
+    });
+}
 
 @implementation BHTWebReplyViewController
 
@@ -544,7 +646,7 @@ static void BHTRecordWebReplyNavigationFailure(
         initWithTitle:BHTWebReplyLocalized(@"WEB_REPLY_DONE")
                 style:UIBarButtonItemStyleDone
                target:self
-               action:@selector(closeTapped)];
+               action:@selector(doneTapped)];
     self.moreItem = [[UIBarButtonItem alloc]
         initWithImage:[UIImage systemImageNamed:@"ellipsis.circle"]
                 style:UIBarButtonItemStylePlain
@@ -678,8 +780,8 @@ static void BHTRecordWebReplyNavigationFailure(
     UILabel* label = [UILabel new];
     label.text =
         BHTWebReplyLocalized(
-            self.screenMode ==
-                    BHTWebReplyScreenModeSignInSetup
+            self.screenMode !=
+                    BHTWebReplyScreenModeReply
                 ? @"WEB_REPLY_SIGN_IN_LOADING"
                 : @"WEB_REPLY_PREPARING");
     label.textColor =
@@ -829,7 +931,7 @@ static void BHTRecordWebReplyNavigationFailure(
     [done setTitleColor:UIColor.whiteColor
                forState:UIControlStateNormal];
     [done addTarget:self
-             action:@selector(closeTapped)
+             action:@selector(doneTapped)
    forControlEvents:UIControlEventTouchUpInside];
 
     UIStackView* stack = [[UIStackView alloc]
@@ -943,9 +1045,65 @@ static void BHTRecordWebReplyNavigationFailure(
 }
 
 - (void)closeTapped {
+    // A boundary-review controller may retain a continuation that references
+    // its presenter. Dropping it before either pop or dismissal prevents the
+    // visible presentation chain from keeping itself alive after cancellation.
+    self.doneCompletion = nil;
+    if (self.navigationController.viewControllers.firstObject !=
+        self) {
+        [self.navigationController
+            popViewControllerAnimated:YES];
+        return;
+    }
     [self recordCloseIfNeeded];
     [self.navigationController
         dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)doneTapped {
+    if (self.screenMode ==
+            BHTWebReplyScreenModeSignInSetup &&
+        !self.setupReady) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticSetupCompletedManually);
+    } else if (
+        self.screenMode ==
+        BHTWebReplyScreenModeAccountManagement) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAccountManagerCompleted);
+    }
+    dispatch_block_t completion = [self.doneCompletion copy];
+    self.doneCompletion = nil;
+    if (self.beginsReplyTransitionOnDone && completion) {
+        BHTSetWebReplyTransitionPending(YES);
+    }
+    if (self.navigationController.viewControllers.firstObject !=
+        self) {
+        UINavigationController* navigation =
+            self.navigationController;
+        [navigation popViewControllerAnimated:YES];
+        if (completion) {
+            id<UIViewControllerTransitionCoordinator> coordinator =
+                navigation.transitionCoordinator;
+            BOOL scheduled = coordinator &&
+                [coordinator
+                    animateAlongsideTransition:nil
+                                    completion:
+                        ^(__unused id<UIViewControllerTransitionCoordinatorContext>
+                              context) {
+                            completion();
+                        }];
+            if (!scheduled) {
+                dispatch_async(
+                    dispatch_get_main_queue(), completion);
+            }
+        }
+        return;
+    }
+    [self recordCloseIfNeeded];
+    [self.navigationController
+        dismissViewControllerAnimated:YES
+                           completion:completion];
 }
 
 - (void)recordCloseIfNeeded {
@@ -974,6 +1132,24 @@ static void BHTRecordWebReplyNavigationFailure(
                   preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
     [options addAction:[UIAlertAction
+        actionWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_MANAGE_ACCOUNT")
+                  style:UIAlertActionStyleDefault
+                handler:^(__unused UIAlertAction* action) {
+                    BHTPerformWhenWebReplyPresenterIsReady(
+                        weakSelf, 20,
+                        ^(UIViewController* presenter) {
+                            BHTWebReplyViewController*
+                                replyController =
+                                    (BHTWebReplyViewController*)
+                                        presenter;
+                            [replyController
+                                showWebAccountManager];
+                        },
+                        nil);
+                }]];
+    [options addAction:[UIAlertAction
         actionWithTitle:BHTWebReplyLocalized(@"WEB_REPLY_RELOAD")
                   style:UIAlertActionStyleDefault
                 handler:^(__unused UIAlertAction* action) {
@@ -984,14 +1160,17 @@ static void BHTRecordWebReplyNavigationFailure(
             BHTWebReplyLocalized(@"WEB_REPLY_ABOUT")
                   style:UIAlertActionStyleDefault
                 handler:^(__unused UIAlertAction* action) {
-                    dispatch_after(
-                        dispatch_time(
-                            DISPATCH_TIME_NOW,
-                            (int64_t)(0.25 * NSEC_PER_SEC)),
-                        dispatch_get_main_queue(), ^{
-                            [weakSelf
+                    BHTPerformWhenWebReplyPresenterIsReady(
+                        weakSelf, 20,
+                        ^(UIViewController* presenter) {
+                            BHTWebReplyViewController*
+                                replyController =
+                                    (BHTWebReplyViewController*)
+                                        presenter;
+                            [replyController
                                 showCompatibilityInfo];
-                        });
+                        },
+                        nil);
                 }]];
     [options addAction:[UIAlertAction
         actionWithTitle:
@@ -1003,6 +1182,33 @@ static void BHTRecordWebReplyNavigationFailure(
     [self presentViewController:options
                        animated:YES
                      completion:nil];
+}
+
+- (void)showWebAccountManager {
+    if (self.screenMode != BHTWebReplyScreenModeReply ||
+        self.presentedViewController ||
+        self.navigationController.topViewController != self) {
+        return;
+    }
+    NSURL* accountURL = BHTWebReplyAccountURL();
+    if (!accountURL) return;
+
+    BHTRecordWebReplyDiagnostic(
+        BHTWebReplyDiagnosticManageWebAccountOpened);
+    BHTWebReplyViewController* manager =
+        [[BHTWebReplyViewController alloc]
+            initWithURL:accountURL
+               titleKey:@"WEB_REPLY_MANAGE_ACCOUNT"
+         loadFailureKey:@"WEB_REPLY_SIGN_IN_LOAD_FAILED"
+                   mode:
+                       BHTWebReplyScreenModeAccountManagement];
+    __weak typeof(self) weakSelf = self;
+    manager.doneCompletion = ^{
+        [weakSelf retryLoad];
+    };
+    [self.navigationController
+        pushViewController:manager
+                  animated:YES];
 }
 
 - (void)showCompatibilityInfo {
@@ -1052,7 +1258,19 @@ static void BHTRecordWebReplyNavigationFailure(
     self.loadingView.hidden =
         self.hasVisibleCommittedContent;
     self.progressView.hidden = NO;
-    [self.webView loadRequest:request];
+    WKNavigation* requestedNavigation =
+        [self.webView loadRequest:request];
+    self.latestMainFrameNavigation =
+        requestedNavigation;
+    self.mainFrameProvisionalNavigationInFlight =
+        requestedNavigation;
+    self.explicitMainFrameNavigationAwaitingStart =
+        requestedNavigation;
+    if (!requestedNavigation) {
+        self.loadAttemptComplete = YES;
+        [self showLoadFailure];
+        return;
+    }
 
     __weak typeof(self) weakSelf = self;
     dispatch_after(
@@ -1066,10 +1284,20 @@ static void BHTRecordWebReplyNavigationFailure(
                 strongSelf.loadAttemptGeneration !=
                     generation ||
                 strongSelf.loadAttemptComplete ||
+                strongSelf.latestMainFrameNavigation !=
+                    requestedNavigation ||
+                strongSelf.mainFrameProvisionalNavigationInFlight !=
+                    requestedNavigation ||
                 !strongSelf.viewIfLoaded.window) {
                 return;
             }
             strongSelf.loadAttemptComplete = YES;
+            if (strongSelf.explicitMainFrameNavigationAwaitingStart ==
+                requestedNavigation) {
+                strongSelf.explicitMainFrameNavigationAwaitingStart = nil;
+            }
+            strongSelf.latestMainFrameNavigation = nil;
+            strongSelf.mainFrameProvisionalNavigationInFlight = nil;
             BHTRecordWebReplyDiagnostic(
                 BHTWebReplyDiagnosticLoadWatchdogExpired);
             [strongSelf.webView stopLoading];
@@ -1081,8 +1309,6 @@ static void BHTRecordWebReplyNavigationFailure(
                 strongSelf.loadingView.hidden = YES;
                 strongSelf.progressView.hidden = YES;
                 strongSelf.errorView.hidden = YES;
-                [strongSelf considerSetupLandingURL:
-                    strongSelf.webView.URL];
                 return;
             }
             [strongSelf showLoadFailure];
@@ -1174,47 +1400,24 @@ static void BHTRecordWebReplyNavigationFailure(
 - (void)considerSetupLandingURL:(NSURL*)URL {
     if (self.screenMode !=
             BHTWebReplyScreenModeSignInSetup ||
+        self.mainFrameProvisionalNavigationInFlight ||
         self.setupReady) {
         return;
     }
-    if (!BHTWebReplyURLIsSignedInLanding(URL)) {
-        self.setupLandingGeneration++;
-        return;
+    // A committed /home document is enough to prove that X accepted the
+    // visible sign-in flow. Waiting for a later 99%-progress callback can hang
+    // forever when X finishes with a same-document SPA transition.
+    if (self.hasVisibleCommittedContent &&
+        BHTWebReplyURLIsSignedInLanding(URL)) {
+        [self showSetupReady];
     }
-    NSUInteger generation =
-        ++self.setupLandingGeneration;
-    __weak typeof(self) weakSelf = self;
-    dispatch_after(
-        dispatch_time(
-            DISPATCH_TIME_NOW,
-            (int64_t)(0.65 * NSEC_PER_SEC)),
-        dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) strongSelf =
-                weakSelf;
-            if (!strongSelf ||
-                strongSelf.setupReady ||
-                strongSelf.setupLandingGeneration !=
-                    generation ||
-                !strongSelf.viewIfLoaded.window ||
-                !strongSelf.hasVisibleCommittedContent ||
-                !BHTWebReplyURLIsSignedInLanding(
-                    strongSelf.webView.URL)) {
-                return;
-            }
-            BOOL pageSettled =
-                !strongSelf.webView.loading ||
-                strongSelf.webView.estimatedProgress >=
-                    0.99;
-            if (pageSettled) {
-                [strongSelf showSetupReady];
-            }
-        });
 }
 
 - (void)showSetupReady {
     if (self.setupReady ||
         self.screenMode !=
             BHTWebReplyScreenModeSignInSetup ||
+        self.mainFrameProvisionalNavigationInFlight ||
         !self.hasVisibleCommittedContent ||
         !BHTWebReplyURLIsSignedInLanding(
             self.webView.URL)) {
@@ -1249,11 +1452,64 @@ static void BHTRecordWebReplyNavigationFailure(
     self.errorView.hidden = YES;
 }
 
+- (BOOL)settleMainFrameProvisionalNavigationForCallback:
+    (WKNavigation*)navigation {
+    WKNavigation* currentNavigation =
+        self.latestMainFrameNavigation;
+    if (!navigation ||
+        currentNavigation != navigation) {
+        // A newer load has already replaced this navigation. Its late commit,
+        // finish, or failure must not make the newer provisional URL look
+        // settled to the setup URL observer.
+        return NO;
+    }
+    if (currentNavigation == navigation &&
+        self.mainFrameProvisionalNavigationInFlight ==
+            navigation) {
+        self.mainFrameProvisionalNavigationInFlight = nil;
+    }
+    if (self.explicitMainFrameNavigationAwaitingStart ==
+        navigation) {
+        self.explicitMainFrameNavigationAwaitingStart = nil;
+    }
+    return YES;
+}
+
+- (BOOL)finishMainFrameNavigationForCallback:
+    (WKNavigation*)navigation {
+    if (![self
+            settleMainFrameProvisionalNavigationForCallback:
+                navigation]) {
+        return NO;
+    }
+    self.latestMainFrameNavigation = nil;
+    return YES;
+}
+
 - (void)webView:(__unused WKWebView*)webView
         didStartProvisionalNavigation:
-            (__unused WKNavigation*)navigation {
+            (WKNavigation*)navigation {
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticNavigationStarted);
+    WKNavigation* explicitNavigation =
+        self.explicitMainFrameNavigationAwaitingStart;
+    if (explicitNavigation &&
+        explicitNavigation != navigation) {
+        // loadRequest: installs its returned token before WebKit delivers the
+        // corresponding start callback. Ignore an older delayed start while
+        // that explicit retry is pending; otherwise it could replace the retry
+        // token and let its own later failure settle the newer navigation.
+        return;
+    }
+    if (explicitNavigation == navigation) {
+        self.explicitMainFrameNavigationAwaitingStart = nil;
+    }
+    // With no explicit start pending, the newest delivered token is
+    // authoritative. This keeps page-initiated main-frame navigations tracked.
+    self.latestMainFrameNavigation =
+        navigation;
+    self.mainFrameProvisionalNavigationInFlight =
+        navigation;
     if (self.setupReady) return;
     self.errorView.hidden = YES;
     self.loadingView.hidden =
@@ -1263,18 +1519,34 @@ static void BHTRecordWebReplyNavigationFailure(
 
 - (void)webView:(WKWebView*)webView
         didCommitNavigation:
-            (__unused WKNavigation*)navigation {
+            (WKNavigation*)navigation {
+    if (![self
+            settleMainFrameProvisionalNavigationForCallback:
+                navigation]) {
+        return;
+    }
     if (self.setupReady) return;
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticNavigationCommitted);
     self.hasVisibleCommittedContent = YES;
     [self revealCommittedContent];
+    if (self.screenMode != BHTWebReplyScreenModeReply &&
+        !self.navigationItem.rightBarButtonItem) {
+        // Keep setup usable even if X completes sign-in through a route that
+        // does not produce the expected /home callback.
+        self.navigationItem.rightBarButtonItem = self.doneItem;
+    }
     [self considerSetupLandingURL:webView.URL];
 }
 
 - (void)webView:(WKWebView*)webView
         didFinishNavigation:
-            (__unused WKNavigation*)navigation {
+            (WKNavigation*)navigation {
+    if (![self
+            finishMainFrameNavigationForCallback:
+                navigation]) {
+        return;
+    }
     if (self.setupReady) return;
     if (BHTWebReplyURLIsAboutBlank(webView.URL)) {
         self.loadAttemptComplete = YES;
@@ -1294,12 +1566,16 @@ static void BHTRecordWebReplyNavigationFailure(
 
 - (void)webView:(__unused WKWebView*)webView
         didFailProvisionalNavigation:
-            (__unused WKNavigation*)navigation
+            (WKNavigation*)navigation
                        withError:
             (NSError*)error {
+    if (![self
+            finishMainFrameNavigationForCallback:
+                navigation]) {
+        return;
+    }
     if (BHTWebReplyShouldIgnoreNavigationError(error)) {
         [self recoverFromIgnoredNavigationError];
-        [self considerSetupLandingURL:self.webView.URL];
         return;
     }
     self.loadAttemptComplete = YES;
@@ -1309,8 +1585,13 @@ static void BHTRecordWebReplyNavigationFailure(
 
 - (void)webView:(__unused WKWebView*)webView
         didFailNavigation:
-            (__unused WKNavigation*)navigation
+            (WKNavigation*)navigation
                  withError:(NSError*)error {
+    if (![self
+            finishMainFrameNavigationForCallback:
+                navigation]) {
+        return;
+    }
     if (BHTWebReplyShouldIgnoreNavigationError(error)) {
         [self recoverFromIgnoredNavigationError];
         [self considerSetupLandingURL:self.webView.URL];
@@ -1324,6 +1605,9 @@ static void BHTRecordWebReplyNavigationFailure(
 - (void)webViewWebContentProcessDidTerminate:
     (__unused WKWebView*)webView {
     self.loadAttemptComplete = YES;
+    self.explicitMainFrameNavigationAwaitingStart = nil;
+    self.latestMainFrameNavigation = nil;
+    self.mainFrameProvisionalNavigationInFlight = nil;
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticWebProcessTerminated);
     [self showLoadFailure];
@@ -1500,7 +1784,8 @@ static BOOL BHTPresentWebReplyScreen(
     NSURL* URL,
     NSString* titleKey,
     NSString* loadFailureKey,
-    BHTWebReplyScreenMode mode) {
+    BHTWebReplyScreenMode mode,
+    dispatch_block_t doneCompletion) {
     BOOL presenterUnavailable =
         !presenter || !presenter.viewIfLoaded.window ||
         presenter.isBeingDismissed ||
@@ -1511,8 +1796,12 @@ static BOOL BHTPresentWebReplyScreen(
         [[BHTWebReplyViewController alloc]
             initWithURL:URL
                titleKey:titleKey
-         loadFailureKey:loadFailureKey
-                   mode:mode];
+             loadFailureKey:loadFailureKey
+                        mode:mode];
+    screen.doneCompletion = doneCompletion;
+    screen.beginsReplyTransitionOnDone =
+        mode == BHTWebReplyScreenModeAccountManagement &&
+        doneCompletion != nil;
     UINavigationController* navigation =
         [[UINavigationController alloc]
             initWithRootViewController:screen];
@@ -1552,8 +1841,179 @@ static BOOL BHTPresentWebReplyScreen(
     return YES;
 }
 
+static void BHTAcknowledgeWebReplyAccountBoundary(
+    id nativeAccount) {
+    // A missing context cannot prove that the native account stayed the same.
+    // Keep warning on each such reply instead of silently losing switch
+    // detection for the rest of the process.
+    if (!nativeAccount) return;
+    BHTLastWebReplyNativeAccount = nativeAccount;
+    atomic_store_explicit(
+        &BHTWebReplyAccountBoundaryAcknowledged, YES,
+        memory_order_relaxed);
+}
+
+static BOOL BHTPresentWebReplyAccountBoundary(
+    UIViewController* presenter,
+    NSURL* replyURL,
+    id nativeAccount,
+    BOOL nativeAccountChanged) {
+    BOOL presenterUnavailable =
+        !presenter || !presenter.viewIfLoaded.window ||
+        presenter.isBeingDismissed ||
+        presenter.presentedViewController != nil;
+    if (presenterUnavailable || !replyURL) return NO;
+
+    NSString* detailKey = nativeAccountChanged
+        ? @"WEB_REPLY_ACCOUNT_CHANGED_DETAIL"
+        : @"WEB_REPLY_ACCOUNT_BOUNDARY_DETAIL";
+    UIAlertController* boundary = [UIAlertController
+        alertControllerWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_ACCOUNT_BOUNDARY_TITLE")
+                         message:
+            BHTWebReplyLocalized(detailKey)
+                  preferredStyle:UIAlertControllerStyleAlert];
+    __weak UIViewController* weakPresenter = presenter;
+    __weak id weakNativeAccount = nativeAccount;
+
+    [boundary addAction:[UIAlertAction
+        actionWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_REVIEW_ACCOUNT")
+                  style:UIAlertActionStyleDefault
+                handler:^(__unused UIAlertAction* action) {
+                    BHTActiveWebReplyBoundaryAlert = nil;
+                    BHTSetWebReplyTransitionPending(YES);
+                    BHTPerformWhenWebReplyPresenterIsReady(
+                        weakPresenter, 20,
+                        ^(UIViewController* readyPresenter) {
+                            __weak UIViewController*
+                                weakReadyPresenter =
+                                    readyPresenter;
+                            dispatch_block_t continueToReply = ^{
+                                BHTPerformWhenWebReplyPresenterIsReady(
+                                    weakReadyPresenter, 20,
+                                    ^(UIViewController*
+                                          replyPresenter) {
+                                        if (BHTPresentWebReplyScreen(
+                                                replyPresenter,
+                                                replyURL,
+                                                @"WEB_REPLY_TITLE",
+                                                @"WEB_REPLY_LOAD_FAILED",
+                                                BHTWebReplyScreenModeReply,
+                                                nil)) {
+                                            BHTAcknowledgeWebReplyAccountBoundary(
+                                                weakNativeAccount);
+                                            BHTRecordWebReplyDiagnostic(
+                                                BHTWebReplyDiagnosticPresented);
+                                        } else {
+                                            BHTRecordWebReplyDiagnostic(
+                                                BHTWebReplyDiagnosticPresentationUnavailable);
+                                        }
+                                        BHTSetWebReplyTransitionPending(
+                                            NO);
+                                    },
+                                    ^{
+                                        BHTSetWebReplyTransitionPending(
+                                            NO);
+                                    });
+                            };
+                            if (BHTPresentWebReplyScreen(
+                                    readyPresenter,
+                                    BHTWebReplyAccountURL(),
+                                    @"WEB_REPLY_MANAGE_ACCOUNT",
+                                    @"WEB_REPLY_SIGN_IN_LOAD_FAILED",
+                                    BHTWebReplyScreenModeAccountManagement,
+                                    continueToReply)) {
+                                BHTRecordWebReplyDiagnostic(
+                                    BHTWebReplyDiagnosticAccountBoundaryReviewOpened);
+                            } else {
+                                BHTRecordWebReplyDiagnostic(
+                                    BHTWebReplyDiagnosticPresentationUnavailable);
+                            }
+                            BHTSetWebReplyTransitionPending(NO);
+                        },
+                        ^{
+                            BHTSetWebReplyTransitionPending(NO);
+                        });
+                }]];
+    [boundary addAction:[UIAlertAction
+        actionWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_CONTINUE_TO_REPLY")
+                  style:UIAlertActionStyleDefault
+                handler:^(__unused UIAlertAction* action) {
+                    BHTActiveWebReplyBoundaryAlert = nil;
+                    BHTSetWebReplyTransitionPending(YES);
+                    BHTRecordWebReplyDiagnostic(
+                        BHTWebReplyDiagnosticAccountBoundaryContinued);
+                    BHTPerformWhenWebReplyPresenterIsReady(
+                        weakPresenter, 20,
+                        ^(UIViewController* readyPresenter) {
+                            if (BHTPresentWebReplyScreen(
+                                    readyPresenter,
+                                    replyURL,
+                                    @"WEB_REPLY_TITLE",
+                                    @"WEB_REPLY_LOAD_FAILED",
+                                    BHTWebReplyScreenModeReply,
+                                    nil)) {
+                                BHTAcknowledgeWebReplyAccountBoundary(
+                                    weakNativeAccount);
+                                BHTRecordWebReplyDiagnostic(
+                                    BHTWebReplyDiagnosticPresented);
+                            } else {
+                                BHTRecordWebReplyDiagnostic(
+                                    BHTWebReplyDiagnosticPresentationUnavailable);
+                            }
+                            BHTSetWebReplyTransitionPending(NO);
+                        },
+                        ^{
+                            BHTSetWebReplyTransitionPending(NO);
+                        });
+                }]];
+    [boundary addAction:[UIAlertAction
+        actionWithTitle:
+            BHTWebReplyLocalized(@"WEB_REPLY_CANCEL")
+                  style:UIAlertActionStyleCancel
+                handler:^(__unused UIAlertAction* action) {
+                    BHTActiveWebReplyBoundaryAlert = nil;
+                    BHTSetWebReplyTransitionPending(YES);
+                    BHTRecordWebReplyDiagnostic(
+                        BHTWebReplyDiagnosticAccountBoundaryCancelled);
+                    BHTPerformWhenWebReplyPresenterIsReady(
+                        weakPresenter, 20,
+                        ^(__unused UIViewController*
+                              readyPresenter) {
+                            BHTSetWebReplyTransitionPending(NO);
+                        },
+                        ^{
+                            BHTSetWebReplyTransitionPending(NO);
+                        });
+                }]];
+
+    @try {
+        [presenter presentViewController:boundary
+                               animated:YES
+                             completion:nil];
+        BOOL accepted =
+            presenter.presentedViewController == boundary ||
+            boundary.presentingViewController == presenter;
+        if (!accepted) return NO;
+        BHTActiveWebReplyBoundaryAlert = boundary;
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAccountBoundaryWarningShown);
+        return YES;
+    } @catch (__unused NSException* exception) {
+        BHTActiveWebReplyBoundaryAlert = nil;
+        return NO;
+    }
+}
+
 BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
-    id sourceObject, UIViewController* presenter) {
+    id sourceObject,
+    id nativeAccount,
+    UIViewController* presenter) {
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticRouteAttempt);
     if (![BHTSettings boolForKey:@"web_reply_fallback"]) {
@@ -1566,6 +2026,26 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
             BHTWebReplyDiagnosticOffMainThread);
         return BHTWebReplyRouteResultOffMainThread;
     }
+
+    if (atomic_load_explicit(
+            &BHTWebReplyTransitionPending,
+            memory_order_relaxed)) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticTransitionPendingBlocked);
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAlreadyPresented);
+        return BHTWebReplyRouteResultAlreadyPresented;
+    }
+
+    UIAlertController* boundary =
+        BHTActiveWebReplyBoundaryAlert;
+    if (boundary && boundary.viewIfLoaded.window &&
+        !boundary.isBeingDismissed) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticAlreadyPresented);
+        return BHTWebReplyRouteResultAlreadyPresented;
+    }
+    BHTActiveWebReplyBoundaryAlert = nil;
 
     UINavigationController* active =
         BHTActiveWebReplyNavigationController;
@@ -1592,11 +2072,47 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
         return BHTWebReplyRouteResultMissingOrInvalidStatus;
     }
 
+    BHTRecordWebReplyDiagnostic(
+        nativeAccount
+            ? BHTWebReplyDiagnosticNativeAccountContextAvailable
+            : BHTWebReplyDiagnosticNativeAccountContextUnavailable);
+    if (!nativeAccount) {
+        BHTLastWebReplyNativeAccount = nil;
+        atomic_store_explicit(
+            &BHTWebReplyAccountBoundaryAcknowledged, NO,
+            memory_order_relaxed);
+    }
+    BOOL accountBoundaryAcknowledged =
+        atomic_load_explicit(
+            &BHTWebReplyAccountBoundaryAcknowledged,
+            memory_order_relaxed);
+    BOOL nativeAccountChanged =
+        accountBoundaryAcknowledged &&
+        nativeAccount &&
+        BHTLastWebReplyNativeAccount != nativeAccount;
+    if (nativeAccountChanged) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticNativeAccountChanged);
+    }
+    if (!accountBoundaryAcknowledged ||
+        !nativeAccount ||
+        nativeAccountChanged) {
+        if (BHTPresentWebReplyAccountBoundary(
+                presenter, replyURL, nativeAccount,
+                nativeAccountChanged)) {
+            return BHTWebReplyRouteResultPresented;
+        }
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticPresentationUnavailable);
+        return BHTWebReplyRouteResultPresentationUnavailable;
+    }
+
     if (!BHTPresentWebReplyScreen(
             presenter, replyURL,
             @"WEB_REPLY_TITLE",
             @"WEB_REPLY_LOAD_FAILED",
-            BHTWebReplyScreenModeReply)) {
+            BHTWebReplyScreenModeReply,
+            nil)) {
         BHTRecordWebReplyDiagnostic(
             BHTWebReplyDiagnosticPresentationUnavailable);
         return BHTWebReplyRouteResultPresentationUnavailable;
@@ -1629,11 +2145,37 @@ BOOL BHTPresentWebReplySignInSetup(
         presenter, BHTWebReplySignInURL(),
         @"WEB_REPLY_SIGN_IN_TITLE",
         @"WEB_REPLY_SIGN_IN_LOAD_FAILED",
-        BHTWebReplyScreenModeSignInSetup);
+        BHTWebReplyScreenModeSignInSetup,
+        nil);
     BHTRecordWebReplyDiagnostic(
         presented
             ? BHTWebReplyDiagnosticSignInSetupPresented
             : BHTWebReplyDiagnosticSignInSetupUnavailable);
+    return presented;
+}
+
+BOOL BHTPresentWebReplyAccountManager(
+    UIViewController* presenter) {
+    if (!NSThread.isMainThread) return NO;
+
+    UINavigationController* active =
+        BHTActiveWebReplyNavigationController;
+    if (active && active.viewIfLoaded.window &&
+        !active.isBeingDismissed) {
+        return YES;
+    }
+    BHTActiveWebReplyNavigationController = nil;
+
+    BOOL presented = BHTPresentWebReplyScreen(
+        presenter, BHTWebReplyAccountURL(),
+        @"WEB_REPLY_MANAGE_ACCOUNT",
+        @"WEB_REPLY_SIGN_IN_LOAD_FAILED",
+        BHTWebReplyScreenModeAccountManagement,
+        nil);
+    if (presented) {
+        BHTRecordWebReplyDiagnostic(
+            BHTWebReplyDiagnosticManageWebAccountOpened);
+    }
     return presented;
 }
 
@@ -1666,6 +2208,22 @@ NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void) {
         @"usesModeSpecificNativeChrome": @YES,
         @"showsPersistentBrowserToolbar": @NO,
         @"recognizesSignedInLandingWithoutCookieInspection": @YES,
+        @"requiresCommittedOrSameDocumentSignedInLanding": @YES,
+        @"supportsManualSetupCompletion": @YES,
+        @"guardsAccountBoundaryTransitions": @YES,
+        @"usesSingleSharedWebAccountSession": @YES,
+        @"warnsWhenNativeAccountObjectChanges": @YES,
+        @"rechecksEveryReplyWithoutNativeAccountContext": @YES,
+        @"remembersNativeAccountOnlyInProcess": @YES,
+        @"persistsNativeAccountAssociation": @NO,
+        @"knownNativeContextBoundaryAcknowledged":
+            @(atomic_load_explicit(
+                &BHTWebReplyAccountBoundaryAcknowledged,
+                memory_order_relaxed)),
+        @"accountBoundaryTransitionPending":
+            @(atomic_load_explicit(
+                &BHTWebReplyTransitionPending,
+                memory_order_relaxed)),
         @"usesPrivateStatusIdentifierTransiently": @YES,
         @"retainsReplyURLOnlyWhilePresented": @YES,
         @"tweakReadsOrWritesCookies": @NO,

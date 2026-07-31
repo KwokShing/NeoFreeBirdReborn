@@ -1,4 +1,5 @@
 #import "Login/BHTCompatibilityLogin.h"
+#import "Sidebar/BHTSidebarNavigationUtility.h"
 
 // X creates its signed-out onboarding controller asynchronously. Wrap the
 // completion only to attach an explicit alternate-sign-in entry; the native
@@ -43,6 +44,12 @@
     // Reconcile once more after X finishes configuring its navigation
     // items so a late native update cannot hide the compatibility action.
     BHTInstallCompatibilityAddAccountSignInEntry(self);
+    // X also republishes its TwitterDash rows as the account manager settles.
+    // Rebuild the registered drawers once, then let the sidebar hook reapply
+    // the saved hidden/order configuration after that native transition.
+    BHTRecordSidebarAddAccountRefreshRequested();
+    [BHTSidebarNavigationUtility
+        refreshRegisteredDashContentControllers];
 }
 
 %end

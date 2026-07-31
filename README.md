@@ -78,10 +78,13 @@ The same option is available when adding another account.
 
 The default-off **Compatibility reply composer** is available when sideloaded
 builds reject native replies. It opens X's official reply page in a visible,
-in-app web surface and never posts automatically. Its web account can differ
-from the account selected in the app, so check the displayed account before
-posting. NeoFreeBird does not export its credentials, cookies, account details,
-or reply text.
+in-app web surface and never posts automatically. Compatibility replies for
+every native app account use the same persistent x.com session, which does not
+switch with the account selected inside X. NeoFreeBird asks you to review that
+session before the first compatibility reply after each launch and when it
+detects a native-account context change. NeoFreeBird does not read or export
+web credentials, cookies, account details, or reply text, and it cannot match
+the web account to the account selected in X.
 
 ## Where to find things
 

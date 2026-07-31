@@ -2,6 +2,7 @@
 
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <stdatomic.h>
 
 #import "Core/BHTBundle.h"
 #import "CustomTabBar/CustomTabBarUtility.h"
@@ -41,6 +42,47 @@ NSString* const BHTSidebarNavigationSettingsDidChangeNotification =
 
 static NSString* const kBHTSidebarVisibleItemsKey =
     @"bht_sidebar_navigation_visible";
+
+static atomic_ulong BHTSidebarRegisterCallCount;
+static atomic_ulong BHTSidebarApplyCallCount;
+static atomic_ulong BHTSidebarControllerApplyHandledCount;
+static atomic_ulong BHTSidebarControllerApplyChangedCount;
+static atomic_ulong BHTSidebarDataSourceFallbackCallCount;
+static atomic_ulong BHTSidebarRefreshRequestCount;
+static atomic_ulong BHTSidebarRefreshControllerUpdateCount;
+static atomic_ulong BHTSidebarDeferredApplyScheduledCount;
+static atomic_ulong BHTSidebarDeferredApplyExecutedCount;
+static atomic_ulong BHTSidebarDeferredApplyCoalescedCount;
+static atomic_ulong BHTSidebarAddAccountRefreshRequestedCount;
+
+static NSInteger const
+    BHTSidebarControllerApplyResultHandled = 1 << 0;
+static NSInteger const
+    BHTSidebarControllerApplyResultChanged = 1 << 1;
+
+void BHTRecordSidebarDeferredApplyScheduled(void) {
+    atomic_fetch_add_explicit(
+        &BHTSidebarDeferredApplyScheduledCount, 1,
+        memory_order_relaxed);
+}
+
+void BHTRecordSidebarDeferredApplyExecuted(void) {
+    atomic_fetch_add_explicit(
+        &BHTSidebarDeferredApplyExecutedCount, 1,
+        memory_order_relaxed);
+}
+
+void BHTRecordSidebarDeferredApplyCoalesced(void) {
+    atomic_fetch_add_explicit(
+        &BHTSidebarDeferredApplyCoalescedCount, 1,
+        memory_order_relaxed);
+}
+
+void BHTRecordSidebarAddAccountRefreshRequested(void) {
+    atomic_fetch_add_explicit(
+        &BHTSidebarAddAccountRefreshRequestedCount, 1,
+        memory_order_relaxed);
+}
 
 @implementation BHTSidebarNavigationUtility
 
@@ -188,6 +230,9 @@ static NSString* const kBHTSidebarVisibleItemsKey =
 
 + (void)registerDashContentController:(id)controller {
     if (!controller) return;
+    atomic_fetch_add_explicit(
+        &BHTSidebarRegisterCallCount, 1,
+        memory_order_relaxed);
     @synchronized([self registeredDashContentControllers]) {
         [[self registeredDashContentControllers] addObject:controller];
     }
@@ -204,23 +249,60 @@ static NSString* const kBHTSidebarVisibleItemsKey =
 }
 
 + (void)applyConfigurationToDashContentController:(id)controller {
+    atomic_fetch_add_explicit(
+        &BHTSidebarApplyCallCount, 1,
+        memory_order_relaxed);
     Class runtime = NSClassFromString(@"BHTSidebarRuntime");
-    SEL controllerSelector =
-        NSSelectorFromString(@"applyToDashContentController:");
-    if (controller && [runtime respondsToSelector:controllerSelector]) {
-        BOOL applied =
-            ((BOOL (*)(id, SEL, id))objc_msgSend)(
-                runtime, controllerSelector, controller);
-        if (applied) return;
+    BOOL controllerHandled = NO;
+    BOOL controllerChanged = NO;
+    SEL resultSelector = NSSelectorFromString(
+        @"applyResultForDashContentController:");
+    if (controller && [runtime respondsToSelector:resultSelector]) {
+        NSInteger result =
+            ((NSInteger (*)(id, SEL, id))objc_msgSend)(
+                runtime, resultSelector, controller);
+        controllerHandled =
+            (result & BHTSidebarControllerApplyResultHandled) != 0;
+        controllerChanged =
+            (result & BHTSidebarControllerApplyResultChanged) != 0;
+    } else {
+        // Retain compatibility with a runtime built before the richer result
+        // selector. That selector returned YES only when it changed an array.
+        SEL controllerSelector =
+            NSSelectorFromString(@"applyToDashContentController:");
+        if (controller &&
+            [runtime respondsToSelector:controllerSelector]) {
+            controllerHandled =
+                ((BOOL (*)(id, SEL, id))objc_msgSend)(
+                    runtime, controllerSelector, controller);
+            controllerChanged = controllerHandled;
+        }
+    }
+    if (controllerHandled) {
+        atomic_fetch_add_explicit(
+            &BHTSidebarControllerApplyHandledCount, 1,
+            memory_order_relaxed);
+        if (controllerChanged) {
+            atomic_fetch_add_explicit(
+                &BHTSidebarControllerApplyChangedCount, 1,
+                memory_order_relaxed);
+        }
+        return;
     }
 
     id dataSource = [self dataSourceForDashContentController:controller];
     SEL selector = NSSelectorFromString(@"applyToDataSource:");
     if (!dataSource || ![runtime respondsToSelector:selector]) return;
+    atomic_fetch_add_explicit(
+        &BHTSidebarDataSourceFallbackCallCount, 1,
+        memory_order_relaxed);
     ((void (*)(id, SEL, id))objc_msgSend)(runtime, selector, dataSource);
 }
 
 + (void)refreshRegisteredDashContentControllers {
+    atomic_fetch_add_explicit(
+        &BHTSidebarRefreshRequestCount, 1,
+        memory_order_relaxed);
     NSArray* controllers;
     @synchronized([self registeredDashContentControllers]) {
         controllers =
@@ -230,11 +312,73 @@ static NSString* const kBHTSidebarVisibleItemsKey =
         for (id controller in controllers) {
             if ([controller
                     respondsToSelector:@selector(updateVisiblePanelIDs)]) {
+                atomic_fetch_add_explicit(
+                    &BHTSidebarRefreshControllerUpdateCount, 1,
+                    memory_order_relaxed);
                 ((void (*)(id, SEL))objc_msgSend)(
                     controller, @selector(updateVisiblePanelIDs));
             }
         }
     });
+}
+
++ (NSDictionary<NSString*, NSNumber*>*)diagnosticSnapshot {
+    NSUInteger registeredControllerCount;
+    @synchronized([self registeredDashContentControllers]) {
+        NSArray* registeredControllers =
+            [[self registeredDashContentControllers]
+                allObjects];
+        registeredControllerCount =
+            registeredControllers.count;
+    }
+    return @{
+        @"registeredControllerCount":
+            @(registeredControllerCount),
+        @"registerCalls":
+            @(atomic_load_explicit(
+                &BHTSidebarRegisterCallCount,
+                memory_order_relaxed)),
+        @"applyCalls":
+            @(atomic_load_explicit(
+                &BHTSidebarApplyCallCount,
+                memory_order_relaxed)),
+        @"controllerAppliesHandled":
+            @(atomic_load_explicit(
+                &BHTSidebarControllerApplyHandledCount,
+                memory_order_relaxed)),
+        @"controllerAppliesChanged":
+            @(atomic_load_explicit(
+                &BHTSidebarControllerApplyChangedCount,
+                memory_order_relaxed)),
+        @"dataSourceFallbackAttempts":
+            @(atomic_load_explicit(
+                &BHTSidebarDataSourceFallbackCallCount,
+                memory_order_relaxed)),
+        @"refreshRequests":
+            @(atomic_load_explicit(
+                &BHTSidebarRefreshRequestCount,
+                memory_order_relaxed)),
+        @"refreshControllerUpdateAttempts":
+            @(atomic_load_explicit(
+                &BHTSidebarRefreshControllerUpdateCount,
+                memory_order_relaxed)),
+        @"deferredApplyScheduled":
+            @(atomic_load_explicit(
+                &BHTSidebarDeferredApplyScheduledCount,
+                memory_order_relaxed)),
+        @"deferredApplyExecuted":
+            @(atomic_load_explicit(
+                &BHTSidebarDeferredApplyExecutedCount,
+                memory_order_relaxed)),
+        @"deferredApplyCoalesced":
+            @(atomic_load_explicit(
+                &BHTSidebarDeferredApplyCoalescedCount,
+                memory_order_relaxed)),
+        @"addAccountRefreshRequested":
+            @(atomic_load_explicit(
+                &BHTSidebarAddAccountRefreshRequestedCount,
+                memory_order_relaxed))
+    };
 }
 
 @end

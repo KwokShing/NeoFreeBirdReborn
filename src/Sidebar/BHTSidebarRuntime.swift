@@ -45,6 +45,8 @@ public final class BHTSidebarRuntime: NSObject {
     private static let cacheLock = NSLock()
     private static var originalItemsCache:
         [ObjectIdentifier: BHTSidebarDataSourceCache] = [:]
+    private static let controllerApplyHandled = 1 << 0
+    private static let controllerApplyChanged = 1 << 1
 
     @objc(applyToDataSource:)
     public static func apply(to dataSource: AnyObject) {
@@ -59,10 +61,27 @@ public final class BHTSidebarRuntime: NSObject {
     public static func apply(
         toDashContentController controller: AnyObject
     ) -> Bool {
+        return (
+            applyResult(
+                forDashContentController: controller
+            ) & controllerApplyHandled
+        ) != 0
+    }
+
+    // The Objective-C bridge needs to distinguish "the controller resolved"
+    // from "the saved ordering changed an array." A plain Bool previously
+    // conflated those states, causing every idempotent apply to fall back
+    // through KVC and perform a second reflection pass.
+    @objc(applyResultForDashContentController:)
+    public static func applyResult(
+        forDashContentController controller: AnyObject
+    ) -> Int {
         guard let dataSource = findDataSource(in: controller) else {
-            return false
+            return 0
         }
-        return applyConfiguration(to: dataSource)
+        let changed = applyConfiguration(to: dataSource)
+        return controllerApplyHandled |
+            (changed ? controllerApplyChanged : 0)
     }
 
     @discardableResult

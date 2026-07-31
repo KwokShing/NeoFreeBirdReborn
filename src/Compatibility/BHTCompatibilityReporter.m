@@ -1465,7 +1465,9 @@ static NSURL* BHTWriteCompatibilityReportNow(void) {
         @"likesRuntime": BHTLikesDiagnosticsSnapshot(),
         @"sidebarNavigation": @{
             @"visibleItems":
-                [BHTSidebarNavigationUtility visibleItemIDsInOrder]
+                [BHTSidebarNavigationUtility visibleItemIDsInOrder],
+            @"runtime":
+                [BHTSidebarNavigationUtility diagnosticSnapshot]
         },
         @"navigationEntryClasses": BHTNavigationEntryClassSnapshot(),
         @"navigationMethods": BHTNavigationMethodSnapshot(),
