@@ -47,7 +47,18 @@ typedef NS_ENUM(NSUInteger, BHTCompatibilityLoginEvent) {
     BHTCompatibilityLoginEventAttempted,
     BHTCompatibilityLoginEventMetricsResolved,
     BHTCompatibilityLoginEventMetricsTimedOut,
+    BHTCompatibilityLoginEventMetricsCollectorAttached,
+    BHTCompatibilityLoginEventMetricsResolvedFromNavigation,
+    BHTCompatibilityLoginEventMetricsResolvedFromScript,
     BHTCompatibilityLoginEventCommandStarted,
+    BHTCompatibilityLoginEventCommandCompletedSuccessfully,
+    BHTCompatibilityLoginEventCommandCompletedUnsuccessfully,
+    BHTCompatibilityLoginEventCommandPayloadPresent,
+    BHTCompatibilityLoginEventCommandFailureObjectPresent,
+    BHTCompatibilityLoginEventChallengeRecoveredFromFailedCompletion,
+    BHTCompatibilityLoginEventChallengeRecoveredFromFailureObject,
+    BHTCompatibilityLoginEventRejectionWithoutPayload,
+    BHTCompatibilityLoginEventIdentifierNormalized,
     BHTCompatibilityLoginEventAuthenticated,
     BHTCompatibilityLoginEventChallengeRequired,
     BHTCompatibilityLoginEventChallengePresented,
@@ -65,6 +76,13 @@ static atomic_ulong BHTCompatibilityAccountHandoffDispatched;
 static atomic_ulong BHTCompatibilityAccountHandoffFailed;
 static NSString* BHTCompatibilityLoginLastStage = @"idle";
 static NSString* BHTCompatibilityLoginLastFailure = @"none";
+static BOOL BHTCompatibilityLastCommandSucceeded;
+static BOOL BHTCompatibilityLastCommandPayloadPresent;
+static BOOL BHTCompatibilityLastCommandFailureObjectPresent;
+static NSString* BHTCompatibilityLastCommandPayloadClass = @"none";
+static NSString* BHTCompatibilityLastCommandFailureClass = @"none";
+static NSString* BHTCompatibilityLastCommandFailureDomain = @"none";
+static NSInteger BHTCompatibilityLastCommandFailureCode;
 static __weak UIViewController*
     BHTCompatibilityPresentedSignInController;
 static char BHTCompatibilityEntryButtonKey;
@@ -102,6 +120,102 @@ static void BHTCompatibilityRecord(
                 [failureCategory copy];
         }
     }
+}
+
+static NSString* BHTCompatibilityDiagnosticClassName(id value) {
+    if (!value) return @"none";
+    Class cls = object_getClass(value);
+    const char* name = cls ? class_getName(cls) : NULL;
+    if (!name) return @"unknown";
+    NSString* result = [NSString stringWithUTF8String:name];
+    if (result.length == 0) return @"unknown";
+    return result.length <= 128
+               ? result
+               : [result substringToIndex:128];
+}
+
+static NSString* BHTCompatibilityBoundedFailureDomain(id failure) {
+    if (![failure isKindOfClass:NSError.class]) return @"none";
+    NSString* domain = ((NSError*)failure).domain;
+    if (domain.length == 0) return @"none";
+    return domain.length <= 128
+               ? domain
+               : [domain substringToIndex:128];
+}
+
+static NSInteger BHTCompatibilityFailureCode(id failure) {
+    return [failure isKindOfClass:NSError.class]
+               ? ((NSError*)failure).code
+               : 0;
+}
+
+static void BHTCompatibilityRecordCommandCompletion(
+    BOOL success, id payload, id failure) {
+    BHTCompatibilityRecord(
+        success
+            ? BHTCompatibilityLoginEventCommandCompletedSuccessfully
+            : BHTCompatibilityLoginEventCommandCompletedUnsuccessfully,
+        success ? @"command_completed" : @"command_rejected", nil);
+    if (payload) {
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventCommandPayloadPresent,
+            nil, nil);
+    }
+    if (failure) {
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventCommandFailureObjectPresent,
+            nil, nil);
+    }
+    @synchronized(BHTCompatibilityLoginLock()) {
+        BHTCompatibilityLastCommandSucceeded = success;
+        BHTCompatibilityLastCommandPayloadPresent = payload != nil;
+        BHTCompatibilityLastCommandFailureObjectPresent = failure != nil;
+        BHTCompatibilityLastCommandPayloadClass =
+            BHTCompatibilityDiagnosticClassName(payload);
+        BHTCompatibilityLastCommandFailureClass =
+            BHTCompatibilityDiagnosticClassName(failure);
+        BHTCompatibilityLastCommandFailureDomain =
+            BHTCompatibilityBoundedFailureDomain(failure);
+        BHTCompatibilityLastCommandFailureCode =
+            BHTCompatibilityFailureCode(failure);
+    }
+}
+
+static NSString* BHTCompatibilityFailureCategory(
+    id failure, BOOL payloadPresent) {
+    if ([failure isKindOfClass:NSError.class] &&
+        [((NSError*)failure).domain isEqualToString:NSURLErrorDomain]) {
+        return @"network_failure";
+    }
+    return payloadPresent
+               ? @"authentication_rejected_with_payload"
+               : @"authentication_rejected";
+}
+
+static NSString* BHTNormalizedCompatibilityIdentifier(
+    NSString* identifier, BOOL* didNormalize) {
+    if (didNormalize) *didNormalize = NO;
+    NSString* normalized = [identifier
+        stringByTrimmingCharactersInSet:
+            NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (![normalized hasPrefix:@"@"] || normalized.length <= 1) {
+        return normalized;
+    }
+    NSString* candidate = [normalized substringFromIndex:1];
+    static NSCharacterSet* invalidHandleCharacters;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        invalidHandleCharacters = [[NSCharacterSet
+            characterSetWithCharactersInString:
+                @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"]
+            invertedSet];
+    });
+    if ([candidate rangeOfCharacterFromSet:
+                       invalidHandleCharacters].location != NSNotFound) {
+        return normalized;
+    }
+    if (didNormalize) *didNormalize = YES;
+    return candidate;
 }
 
 static NSString* BHTAppVersion(void) {
@@ -549,18 +663,58 @@ static UIViewController* BHTActiveViewController(void) {
     return BHTTopViewController(activeWindow.rootViewController);
 }
 
+static BOOL BHTCompatibilityMetricsURLIsAllowed(NSURL* URL) {
+    if (!URL ||
+        ![URL.scheme.lowercaseString isEqualToString:@"https"]) {
+        return NO;
+    }
+    NSString* host = URL.host.lowercaseString;
+    return [host isEqualToString:@"x.com"] ||
+           [host hasSuffix:@".x.com"] ||
+           [host isEqualToString:@"twitter.com"] ||
+           [host hasSuffix:@".twitter.com"];
+}
+
 @interface BHTCompatibilityMetricsCollector
-    : NSObject <WKScriptMessageHandler>
+    : NSObject <WKScriptMessageHandler, WKNavigationDelegate>
 @property(nonatomic, strong) WKWebView* webView;
+@property(nonatomic, weak) UIView* hostView;
 @property(nonatomic, copy)
     void (^completion)(NSString* _Nullable metrics);
 @property(nonatomic) BOOL finished;
 - (void)startWithCompletion:
     (void (^)(NSString* _Nullable metrics))completion;
+- (BOOL)consumeURL:(NSURL*)URL;
+- (void)finishWithMetrics:(NSString*)metrics;
 - (void)cancel;
 @end
 
 @implementation BHTCompatibilityMetricsCollector
+
+- (BOOL)consumeURL:(NSURL*)URL {
+    if (self.finished ||
+        !BHTCompatibilityMetricsURLIsAllowed(URL)) {
+        return NO;
+    }
+    NSURLComponents* components = [NSURLComponents
+        componentsWithURL:URL resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem* item in components.queryItems ?: @[]) {
+        if (![item.name isEqualToString:@"result"]) continue;
+        NSString* metrics = item.value;
+        if (metrics.length == 0 || metrics.length > 65536) {
+            continue;
+        }
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventMetricsResolved,
+            @"metrics_resolved", nil);
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventMetricsResolvedFromNavigation,
+            nil, nil);
+        [self finishWithMetrics:metrics];
+        return YES;
+    }
+    return NO;
+}
 
 - (void)startWithCompletion:
     (void (^)(NSString* _Nullable metrics))completion {
@@ -590,7 +744,7 @@ static UIViewController* BHTActiveViewController(void) {
     WKUserScript* script = [[WKUserScript alloc]
         initWithSource:source
          injectionTime:WKUserScriptInjectionTimeAtDocumentStart
-      forMainFrameOnly:YES];
+      forMainFrameOnly:NO];
     [contentController addUserScript:script];
     [contentController addScriptMessageHandler:self
                                           name:BHTMetricsHandlerName];
@@ -599,6 +753,20 @@ static UIViewController* BHTActiveViewController(void) {
     self.webView =
         [[WKWebView alloc] initWithFrame:CGRectZero
                            configuration:configuration];
+    self.webView.navigationDelegate = self;
+    self.webView.alpha = 0.0;
+    self.webView.userInteractionEnabled = NO;
+    self.webView.accessibilityElementsHidden = YES;
+    if (self.hostView) {
+        self.webView.frame = self.hostView.bounds;
+        self.webView.autoresizingMask =
+            UIViewAutoresizingFlexibleWidth |
+            UIViewAutoresizingFlexibleHeight;
+        [self.hostView addSubview:self.webView];
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventMetricsCollectorAttached,
+            nil, nil);
+    }
     NSURL* endpoint =
         [NSURL URLWithString:@"https://x.com/i/js_inst?native=true"];
     if (!endpoint) {
@@ -629,7 +797,9 @@ static UIViewController* BHTActiveViewController(void) {
       didReceiveScriptMessage:(WKScriptMessage*)message {
     if (self.finished ||
         ![message.name isEqualToString:BHTMetricsHandlerName] ||
-        ![message.body isKindOfClass:NSString.class]) {
+        ![message.body isKindOfClass:NSString.class] ||
+        !BHTCompatibilityMetricsURLIsAllowed(
+            message.frameInfo.request.URL)) {
         return;
     }
 
@@ -638,14 +808,50 @@ static UIViewController* BHTActiveViewController(void) {
         BHTCompatibilityRecord(
             BHTCompatibilityLoginEventMetricsResolved,
             @"metrics_resolved", nil);
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventMetricsResolvedFromScript,
+            nil, nil);
         [self finishWithMetrics:metrics];
     }
+}
+
+- (void)webView:(__unused WKWebView*)webView
+    decidePolicyForNavigationAction:(WKNavigationAction*)navigationAction
+                    decisionHandler:
+                        (void (^)(WKNavigationActionPolicy))decisionHandler {
+    BOOL consumed = [self consumeURL:navigationAction.request.URL];
+    decisionHandler(consumed
+                        ? WKNavigationActionPolicyCancel
+                        : WKNavigationActionPolicyAllow);
+}
+
+- (void)webView:(__unused WKWebView*)webView
+    decidePolicyForNavigationResponse:(WKNavigationResponse*)navigationResponse
+                    decisionHandler:
+                        (void (^)(WKNavigationResponsePolicy))decisionHandler {
+    BOOL consumed = [self consumeURL:navigationResponse.response.URL];
+    decisionHandler(consumed
+                        ? WKNavigationResponsePolicyCancel
+                        : WKNavigationResponsePolicyAllow);
+}
+
+- (void)webView:(WKWebView*)webView
+    didReceiveServerRedirectForProvisionalNavigation:
+        (__unused WKNavigation*)navigation {
+    [self consumeURL:webView.URL];
+}
+
+- (void)webView:(WKWebView*)webView
+    didFinishNavigation:(__unused WKNavigation*)navigation {
+    [self consumeURL:webView.URL];
 }
 
 - (void)cancel {
     if (self.finished) return;
     self.finished = YES;
     [self.webView stopLoading];
+    self.webView.navigationDelegate = nil;
+    [self.webView removeFromSuperview];
     [self.webView.configuration.userContentController
         removeScriptMessageHandlerForName:BHTMetricsHandlerName];
     self.webView = nil;
@@ -656,6 +862,8 @@ static UIViewController* BHTActiveViewController(void) {
     if (self.finished) return;
     self.finished = YES;
     [self.webView stopLoading];
+    self.webView.navigationDelegate = nil;
+    [self.webView removeFromSuperview];
     [self.webView.configuration.userContentController
         removeScriptMessageHandlerForName:BHTMetricsHandlerName];
     self.webView = nil;
@@ -666,6 +874,8 @@ static UIViewController* BHTActiveViewController(void) {
 }
 
 - (void)dealloc {
+    self.webView.navigationDelegate = nil;
+    [self.webView removeFromSuperview];
     [self.webView.configuration.userContentController
         removeScriptMessageHandlerForName:BHTMetricsHandlerName];
 }
@@ -1429,6 +1639,18 @@ static BOOL BHTPresentNativeLoginChallenge(
     }
 }
 
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    BOOL dismissed = self.isBeingDismissed ||
+        self.navigationController.isBeingDismissed;
+    if (dismissed && !self.requestStarted) {
+        self.cancelled = YES;
+        [self.metricsCollector cancel];
+        self.metricsCollector = nil;
+        self.passwordField.text = @"";
+    }
+}
+
 - (void)shareLoginReport:(UIBarButtonItem*)sender {
     if (self.sharingReport || self.requestStarted ||
         self.metricsCollector || self.presentedViewController) {
@@ -1538,6 +1760,7 @@ static BOOL BHTPresentNativeLoginChallenge(
         !self.requestStarted;
     self.navigationItem.rightBarButtonItem.enabled =
         !busy && !self.sharingReport;
+    self.navigationController.modalInPresentation = busy;
     if (busy) {
         [self.activity startAnimating];
     } else {
@@ -1560,6 +1783,15 @@ static BOOL BHTPresentNativeLoginChallenge(
     if ([category isEqualToString:@"authentication_rejected"]) {
         return BHTCompatibilityLocalized(
             @"COMPATIBILITY_SIGN_IN_REJECTED_ERROR");
+    }
+    if ([category
+            isEqualToString:@"authentication_rejected_with_payload"]) {
+        return BHTCompatibilityLocalized(
+            @"COMPATIBILITY_SIGN_IN_REJECTED_ERROR");
+    }
+    if ([category isEqualToString:@"network_failure"]) {
+        return BHTCompatibilityLocalized(
+            @"COMPATIBILITY_SIGN_IN_NETWORK_ERROR");
     }
     return BHTCompatibilityLocalized(
         @"COMPATIBILITY_SIGN_IN_GENERIC_ERROR");
@@ -1594,11 +1826,74 @@ static BOOL BHTPresentNativeLoginChallenge(
 - (void)handlePasswordResponse:
             (BOOL)success
                         response:(id)response
-                           error:(__unused id)error
+                           error:(id)error
                 fallbackUsername:(NSString*)fallbackUsername {
+    BHTCompatibilityRecordCommandCompletion(
+        success, response, error);
+
+    SEL requestIDSelector =
+        NSSelectorFromString(@"loginVerificationRequestId");
+    SEL challengeURLSelector =
+        NSSelectorFromString(@"challengeURLString");
+    id challengePayload = response;
+    id requestID = BHTSendObject(
+        challengePayload, requestIDSelector);
+    id challengeURL = BHTSendObject(
+        challengePayload, challengeURLSelector);
+    if ((!requestID || !challengeURL) && error) {
+        id failureRequestID = BHTSendObject(error, requestIDSelector);
+        id failureChallengeURL =
+            BHTSendObject(error, challengeURLSelector);
+        if (failureRequestID && failureChallengeURL) {
+            challengePayload = error;
+            requestID = failureRequestID;
+            challengeURL = failureChallengeURL;
+            BHTCompatibilityRecord(
+                BHTCompatibilityLoginEventChallengeRecoveredFromFailureObject,
+                nil, nil);
+        }
+    }
+    if (requestID && challengeURL) {
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventChallengeRequired,
+            @"challenge_required", nil);
+        if (!success) {
+            BHTCompatibilityRecord(
+                BHTCompatibilityLoginEventChallengeRecoveredFromFailedCompletion,
+                nil, nil);
+        }
+        __weak typeof(self) weakSelf = self;
+        BOOL handled = NO;
+        @try {
+            handled = BHTPresentNativeLoginChallenge(
+                challengePayload, fallbackUsername, self,
+                self.addAccountController,
+                ^(BOOL challengeSuccess,
+                  NSString* challengeFailure) {
+                    dispatch_async(
+                        dispatch_get_main_queue(), ^{
+                            [weakSelf
+                                finishWithSuccess:challengeSuccess
+                                 failureCategory:challengeFailure];
+                        });
+                });
+        } @catch (__unused NSException* exception) {
+            handled = YES;
+            [self finishWithSuccess:NO
+                   failureCategory:@"challenge_exception"];
+        }
+        if (handled) return;
+    }
+
     if (!success || !response) {
+        if (!response) {
+            BHTCompatibilityRecord(
+                BHTCompatibilityLoginEventRejectionWithoutPayload,
+                nil, nil);
+        }
         [self finishWithSuccess:NO
-               failureCategory:@"authentication_rejected"];
+               failureCategory:BHTCompatibilityFailureCategory(
+                                   error, response != nil)];
         return;
     }
 
@@ -1657,36 +1952,6 @@ static BOOL BHTPresentNativeLoginChallenge(
                 account, self, completion);
         }
         return;
-    }
-
-    id requestID = BHTSendObject(
-        response,
-        NSSelectorFromString(@"loginVerificationRequestId"));
-    if (requestID) {
-        BHTCompatibilityRecord(
-            BHTCompatibilityLoginEventChallengeRequired,
-            @"challenge_required", nil);
-        __weak typeof(self) weakSelf = self;
-        BOOL handled = NO;
-        @try {
-            handled = BHTPresentNativeLoginChallenge(
-                response, fallbackUsername, self,
-                self.addAccountController,
-                ^(BOOL challengeSuccess,
-                  NSString* challengeFailure) {
-                    dispatch_async(
-                        dispatch_get_main_queue(), ^{
-                            [weakSelf
-                                finishWithSuccess:challengeSuccess
-                                 failureCategory:challengeFailure];
-                        });
-                });
-        } @catch (__unused NSException* exception) {
-            handled = YES;
-            [self finishWithSuccess:NO
-                   failureCategory:@"challenge_exception"];
-        }
-        if (handled) return;
     }
 
     [self finishWithSuccess:NO
@@ -1762,9 +2027,14 @@ static BOOL BHTPresentNativeLoginChallenge(
         return;
     }
 
-    NSString* username = [self.usernameField.text
-        stringByTrimmingCharactersInSet:
-            NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    BOOL identifierNormalized = NO;
+    NSString* username = BHTNormalizedCompatibilityIdentifier(
+        self.usernameField.text, &identifierNormalized);
+    if (identifierNormalized) {
+        BHTCompatibilityRecord(
+            BHTCompatibilityLoginEventIdentifierNormalized,
+            nil, nil);
+    }
     NSString* password = [self.passwordField.text copy];
     if (username.length == 0 || password.length == 0) {
         [self setBusy:NO
@@ -1784,6 +2054,7 @@ static BOOL BHTPresentNativeLoginChallenge(
 
     self.metricsCollector =
         [BHTCompatibilityMetricsCollector new];
+    self.metricsCollector.hostView = self.view;
     __weak typeof(self) weakSelf = self;
     [self.metricsCollector
         startWithCompletion:^(NSString* metrics) {
@@ -2023,7 +2294,18 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"attempted",
         @"metricsResolved",
         @"metricsTimedOut",
+        @"metricsCollectorAttached",
+        @"metricsResolvedFromNavigation",
+        @"metricsResolvedFromScript",
         @"commandStarted",
+        @"commandCompletedSuccessfully",
+        @"commandCompletedUnsuccessfully",
+        @"commandPayloadPresent",
+        @"commandFailureObjectPresent",
+        @"challengeRecoveredFromFailedCompletion",
+        @"challengeRecoveredFromFailureObject",
+        @"rejectionWithoutPayload",
+        @"identifierNormalized",
         @"authenticated",
         @"challengeRequired",
         @"challengePresented",
@@ -2062,10 +2344,31 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
 
     NSString* lastStage;
     NSString* lastFailure;
+    BOOL lastCommandSucceeded;
+    BOOL lastCommandPayloadPresent;
+    BOOL lastCommandFailureObjectPresent;
+    NSString* lastCommandPayloadClass;
+    NSString* lastCommandFailureClass;
+    NSString* lastCommandFailureDomain;
+    NSInteger lastCommandFailureCode;
     @synchronized(BHTCompatibilityLoginLock()) {
         lastStage = [BHTCompatibilityLoginLastStage copy] ?: @"idle";
         lastFailure =
             [BHTCompatibilityLoginLastFailure copy] ?: @"none";
+        lastCommandSucceeded =
+            BHTCompatibilityLastCommandSucceeded;
+        lastCommandPayloadPresent =
+            BHTCompatibilityLastCommandPayloadPresent;
+        lastCommandFailureObjectPresent =
+            BHTCompatibilityLastCommandFailureObjectPresent;
+        lastCommandPayloadClass =
+            [BHTCompatibilityLastCommandPayloadClass copy] ?: @"none";
+        lastCommandFailureClass =
+            [BHTCompatibilityLastCommandFailureClass copy] ?: @"none";
+        lastCommandFailureDomain =
+            [BHTCompatibilityLastCommandFailureDomain copy] ?: @"none";
+        lastCommandFailureCode =
+            BHTCompatibilityLastCommandFailureCode;
     }
     Class accountsClass =
         NSClassFromString(@"T1AccountsViewController");
@@ -2095,10 +2398,24 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
             @(nativeAddAccountCompletionSelectorAvailable),
         @"lastStage": lastStage,
         @"lastFailureCategory": lastFailure,
+        @"lastCommandCompletionSucceeded": @(lastCommandSucceeded),
+        @"lastCommandPayloadPresent": @(lastCommandPayloadPresent),
+        @"lastCommandFailureObjectPresent":
+            @(lastCommandFailureObjectPresent),
+        @"lastCommandPayloadClass": lastCommandPayloadClass,
+        @"lastCommandFailureClass": lastCommandFailureClass,
+        @"lastCommandFailureDomain": lastCommandFailureDomain,
+        @"lastCommandFailureCode": @(lastCommandFailureCode),
         @"counters": [counters copy],
         @"nativeSignInRemainsDefault": @YES,
         @"credentialPersistence": @"x_native_account_storage",
         @"attestationOverridesIncluded": @NO,
         @"credentialBackupIncluded": @NO,
+        @"capturesCredentials": @NO,
+        @"capturesIdentifiers": @NO,
+        @"capturesPayloadContents": @NO,
+        @"capturesFailureDescriptions": @NO,
+        @"capturesFailureUserInfo": @NO,
+        @"capturesPrivacySafeFailureFingerprint": @YES,
     };
 }
