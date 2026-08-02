@@ -1230,9 +1230,16 @@ def main() -> None:
             "BHTNormalizedCompatibilityIdentifier(",
             "BHTCompatibilityLoginEventIdentifierNormalized",
             "self.metricsCollector.hostView = self.view;",
+            "startWithCompletion:^(__unused NSString* metrics)",
+            "metrics:nil",
         ),
-        "safe handle normalization and attached metrics lifecycle",
+        "safe handle normalization and compatibility metrics isolation",
     )
+    if "metrics:metrics" in sign_in_action:
+        raise AssertionError(
+            "Navigation-derived metrics must remain isolated from the "
+            "compatibility password command"
+        )
 
     password_response = source_section(
         compatibility_login_source,
@@ -1302,6 +1309,8 @@ def main() -> None:
             '@"credentialPersistence": @"x_native_account_storage"',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
+            '@"uiMetricsPolicy": @"compatibility_nil"',
+            '@"capturedMetricsUsedForAuthentication": @NO',
             '@"addAccountEntryAvailable":',
             '@"nativeAddAccountCompletionSelectorAvailable":',
             '@"addAccountEntryInstalled"',
@@ -2465,11 +2474,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.39" not in (
+    if "Version: 6.1.0-beta.40" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The secondary-account compatibility fix must ship as beta.39"
+            "The compatibility metrics isolation fix must ship as beta.40"
         )
 
     branding_source = (

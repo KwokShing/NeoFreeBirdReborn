@@ -253,6 +253,14 @@ an unsuccessful command completion as a rejection, normalizes a simple leading
 aggregate completion counters. Credentials, identifiers, response contents,
 error descriptions, and error user-info dictionaries remain excluded.
 
+Beta 40 restores the compatibility sign-in behavior proven by successful
+sideloaded X 12.9 reports: collected WebKit instrumentation remains isolated
+from the native password command and `uiMetrics` is passed as `nil`. Beta 39's
+new navigation-derived value correlated with payload-less command 401s on every
+reported attempt, while earlier successful flows all used the nil fallback.
+Privacy-safe command diagnostics and native verification handling remain in
+place so any account-specific rejection can still be distinguished.
+
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids
 stacked app-lock presentations, caches and cancels settings-avatar requests,
