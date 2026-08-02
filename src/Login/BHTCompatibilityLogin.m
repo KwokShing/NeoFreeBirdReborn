@@ -2057,15 +2057,19 @@ static BOOL BHTPresentNativeLoginChallenge(
     self.metricsCollector.hostView = self.view;
     __weak typeof(self) weakSelf = self;
     [self.metricsCollector
-        startWithCompletion:^(NSString* metrics) {
+        startWithCompletion:^(__unused NSString* metrics) {
             BHTCompatibilityLoginViewController* strongSelf =
                 weakSelf;
             if (!strongSelf || strongSelf.cancelled) return;
             strongSelf.metricsCollector = nil;
+            // Every confirmed successful sideloaded X 12.9 flow used the
+            // command's nil uiMetrics fallback. Passing the navigation result
+            // instead produced payload-less 401 responses, so keep collection
+            // isolated for lifecycle diagnostics and do not feed it into auth.
             [strongSelf
                 startPasswordCommandForUsername:username
                                        password:password
-                                        metrics:metrics];
+                                        metrics:nil];
         }];
 }
 
@@ -2411,6 +2415,8 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"credentialPersistence": @"x_native_account_storage",
         @"attestationOverridesIncluded": @NO,
         @"credentialBackupIncluded": @NO,
+        @"uiMetricsPolicy": @"compatibility_nil",
+        @"capturedMetricsUsedForAuthentication": @NO,
         @"capturesCredentials": @NO,
         @"capturesIdentifiers": @NO,
         @"capturesPayloadContents": @NO,
