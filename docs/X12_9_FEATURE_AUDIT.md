@@ -85,7 +85,7 @@ Status meanings:
 | Timeline | `hide_spaces` | Updated | Fleet-line visibility seam; runtime checked |
 | Timeline | `hide_custom_timelines` | Updated | Hides without persisting an empty pinned list |
 | Timeline | `remember_timeline_tab` | Updated | Disabled preference now leaves X's native value alone |
-| Timeline | For You keyword filters | New/runtime check | Two independent, bounded literal-substring lists match usernames/display names or primary visible post text. Cached normalized terms and per-item generation decisions keep section updates light. The gate carries an explicit primary-Home model marker through `TFNTwitterHomeTimeline-deserializeStream` and requires the current `T1URTViewController` timeline to be positively marked; Following and every unknown runtime state fail open |
+| Timeline | For You keyword filters | New/runtime check | Two independent, bounded literal-substring lists match usernames/display names or primary visible post text. Cached normalized terms and per-item generation decisions keep section updates light. The gate carries an explicit primary-Home model marker through `TFNTwitterHomeTimeline-deserializeStream`, binds X's inner data controller to its exact live `T1URTViewController`, and requires that owner's timeline to be positively marked; Following and every unknown runtime state fail open |
 | Timeline | `enable_likes_tab` | New/runtime check | Independent bottom destination backed by native Likes history; opens raw Activity History tab 4 on X 12.9, guards against delayed native offset restoration on its first presentation without a loading cover, preserves position on later tab switches, and retains Profile, History, Lists, and other native destinations pushed from X's side drawer |
 | Timeline | `likes_media_waterfall` | New/runtime check | Newest-first extraction from the same ad-filtered native section snapshot, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, a window-level edge-to-edge viewer on iPhone and iPad, a Posts/Media selector with native segmented-control artwork and a guarded 32-point minimum navigation-title height, Apple-style contextual Photo/Video/GIF previews and action menus in both surfaces (with the guarded TFN sheet retained only as a legacy fallback), and percent-driven modal swipe-down dismissal |
 | Grok | `enable_grok_translations` | Updated | Manual translation gates are no longer forced globally |
@@ -235,6 +235,16 @@ falls back once to X's official intent shell when a pre-commit WebKit policy
 interruption occurs, and always replaces an unrecoverable opening spinner with
 a retry state. It also adds an optional local **Last confirmed** web-account
 label without reading cookies or exporting the label in profiles or reports.
+
+Beta 38 opens every web-account setup path through the same official intent
+route already proven by compatibility replies, keeps that page visible for
+account review, and provides an explicit native **Use This Web Account**
+confirmation instead of relying on X's committed login shell. Confirmation is
+blocked while a navigation is pending, an error is visible, or X is still on a
+login URL. A `/home` landing or return to the intent after a visible login
+transition can confirm automatically. It also resolves For You ownership through a unique, exact
+URT-to-data-controller relationship before comparing keywords, while every
+missing, ambiguous, or Following identity still fails open.
 
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids

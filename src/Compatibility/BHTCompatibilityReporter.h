@@ -8,6 +8,8 @@ typedef NS_ENUM(NSUInteger, BHTForYouFilterDiagnosticEvent) {
     BHTForYouFilterDiagnosticControllerNonForYou,
     BHTForYouFilterDiagnosticControllerUnknown,
     BHTForYouFilterDiagnosticControllerOwnerMissing,
+    BHTForYouFilterDiagnosticDirectOwnerResolved,
+    BHTForYouFilterDiagnosticDirectOwnerMissing,
     BHTForYouFilterDiagnosticControllerNonHome,
     BHTForYouFilterDiagnosticTimelineObjectResolved,
     BHTForYouFilterDiagnosticTimelineObjectMissing,

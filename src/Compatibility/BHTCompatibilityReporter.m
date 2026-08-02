@@ -675,7 +675,8 @@ static NSDictionary* BHTForYouControllerRuntimeShape(void) {
                     method_getName(methodList[index]));
             NSString* lower = name.lowercaseString;
             if ([lower containsString:@"timeline"] ||
-                [lower containsString:@"urt"]) {
+                [lower containsString:@"urt"] ||
+                [lower containsString:@"dataviewcontroller"]) {
                 [methods addObject:name];
             }
         }
@@ -691,7 +692,8 @@ static NSDictionary* BHTForYouControllerRuntimeShape(void) {
                     : @"";
             NSString* lower = name.lowercaseString;
             if (!([lower containsString:@"timeline"] ||
-                  [lower containsString:@"urt"])) {
+                  [lower containsString:@"urt"] ||
+                  [lower containsString:@"dataviewcontroller"])) {
                 continue;
             }
             const char* rawType =
@@ -715,6 +717,14 @@ static NSDictionary* BHTForYouControllerRuntimeShape(void) {
     }];
     return @{
         @"classPresent": @YES,
+        @"dataViewControllerAccessorPresent":
+            @([controllerClass instancesRespondToSelector:
+                  NSSelectorFromString(@"dataViewController")]),
+        @"dataViewControllerIvarPresent":
+            @(class_getInstanceVariable(
+                  controllerClass, "_dataViewController") != NULL ||
+              class_getInstanceVariable(
+                  controllerClass, "dataViewController") != NULL),
         @"timelineMethods":
             [[methods allObjects]
                 sortedArrayUsingSelector:
@@ -729,6 +739,8 @@ static NSDictionary* BHTForYouFilterDiagnosticSnapshot(void) {
         @"nonForYouControllerChecks",
         @"unknownControllerChecks",
         @"ownerMissingChecks",
+        @"directOwnerResolvedChecks",
+        @"directOwnerMissingChecks",
         @"nonHomeControllerChecks",
         @"timelineObjectResolvedChecks",
         @"timelineObjectMissingChecks",
