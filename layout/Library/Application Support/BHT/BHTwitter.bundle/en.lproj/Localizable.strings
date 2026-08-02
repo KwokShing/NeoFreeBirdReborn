@@ -91,24 +91,24 @@
 
 /* Compatibility sign-in */
 "COMPATIBILITY_SIGN_IN_TITLE" = "Compatibility Sign-in";
-"COMPATIBILITY_SIGN_IN_HEADING" = "Sign in through X 12.9";
-"COMPATIBILITY_SIGN_IN_DETAIL" = "Use this only when X's normal sign-in does not finish. Native sign-in remains the default.";
+"COMPATIBILITY_SIGN_IN_HEADING" = "Open X's native sign-in";
+"COMPATIBILITY_SIGN_IN_DETAIL" = "Uses X 12.9's own onboarding flow when the first sign-in screen does not finish.";
 "COMPATIBILITY_SIGN_IN_USERNAME_PLACEHOLDER" = "Username, email, or phone";
 "COMPATIBILITY_SIGN_IN_PASSWORD_PLACEHOLDER" = "Password";
 "COMPATIBILITY_SIGN_IN_ACTION" = "Sign in";
-"COMPATIBILITY_SIGN_IN_PRIVACY" = "NeoFreeBird does not save your password or token. Credentials are passed directly to X, and the resulting account is stored by X.";
+"COMPATIBILITY_SIGN_IN_PRIVACY" = "Your username, password, verification steps, and session stay inside X's native sign-in flow. NeoFreeBird does not receive or save them.";
 "COMPATIBILITY_SIGN_IN_PREPARING" = "Preparing X's sign-in request…";
 "COMPATIBILITY_SIGN_IN_CONTACTING_X" = "Contacting X…";
 "COMPATIBILITY_SIGN_IN_REQUIRED_ERROR" = "Enter both your account identifier and password.";
 "COMPATIBILITY_SIGN_IN_VERSION_ERROR" = "Compatibility Sign-in is available only for X 12.9. Your normal X sign-in has not been changed.";
-"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR" = "Compatibility Sign-in is unavailable because this X build is missing a required component. Tap Share Report above to identify it. X's normal sign-in is unchanged.";
+"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR" = "X's native compatibility route is unavailable in this build. Export a pre-login compatibility report so its guarded selector checks can be reviewed.";
 "COMPATIBILITY_SIGN_IN_REJECTED_ERROR" = "X did not accept this sign-in. Check your details or use X's normal sign-in.";
 "COMPATIBILITY_SIGN_IN_NETWORK_ERROR" = "X could not be reached. Check your connection and try again.";
 "COMPATIBILITY_SIGN_IN_GENERIC_ERROR" = "The compatibility sign-in could not finish safely. Try X's normal sign-in or export a compatibility report.";
 "COMPATIBILITY_SIGN_IN_OK" = "OK";
 "COMPATIBILITY_SIGN_IN_SHARE_REPORT" = "Share Report";
 "COMPATIBILITY_SIGN_IN_REPORT_ERROR" = "NeoFreeBird could not create the login report. Try again after another sign-in attempt.";
-"COMPATIBILITY_SIGN_IN_ADD_ACCOUNT_ACTION" = "Compatibility";
+"COMPATIBILITY_SIGN_IN_ADD_ACCOUNT_ACTION" = "X Sign-in";
 
 /*Tweets*/
 "TWEET_TO_IMAGE_TITLE" = "Save Tweet as image";

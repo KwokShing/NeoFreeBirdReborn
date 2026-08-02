@@ -72,8 +72,9 @@ compatibility-reply session data.
 Native X sign-in and native replies remain the defaults.
 
 **Compatibility Sign-in** is an explicit X 12.9 fallback for installations
-where the normal account flow does not finish. It uses X's own guarded
-password, challenge, account-registration, and credential-storage services.
+where the normal account flow does not finish. It opens X's own guarded
+JetX/Jetfuel onboarding route, so X owns credential entry, verification,
+account registration, and session storage.
 The same option is available when adding another account.
 
 The default-off **Compatibility reply composer** is available when sideloaded
@@ -96,7 +97,7 @@ and compatibility reports.
 | Themes and theme builder | **Settings > NeoFreeBird > Appearance > Themes** |
 | Preference profiles | **Settings > NeoFreeBird > Backup & restore** |
 | Compatibility report | **Settings > NeoFreeBird > Debug** |
-| Signed-out report | **Compatibility Sign-in > Share Report** |
+| Signed-out report | **X login screen > Share Report** |
 
 ## Build and install
 
@@ -160,9 +161,12 @@ X/Twitter tweak.
 
 To export a report while signed out:
 
-1. Open **Compatibility Sign-in** from X's login screen.
-2. Tap **Share Report**.
-3. Save the generated JSON.
+1. On X's login screen, tap **Share Report** beneath
+   **Compatibility Sign-in**.
+2. Save the generated JSON.
+
+If X's guarded native route is unavailable, its error alert also includes a
+**Share Report** action.
 
 After signing in, use **Settings > NeoFreeBird > Debug > Export compatibility
 report**. A copy is also stored inside the app container at:
@@ -183,8 +187,8 @@ method, and reproduction steps.
   response bodies, and web-session contents.
 - Optional web-reply account labels are user-provided, local only, and never
   included in reports or shared preference profiles.
-- Compatibility sign-in stores successful accounts only through X's native
-  account service.
+- Compatibility sign-in delegates successful account storage entirely to X's
+  native account service.
 - Missing private methods fall back to native behavior or a visible unavailable
   state.
 

@@ -1453,7 +1453,8 @@ static NSURL* BHTWriteCompatibilityReportNow(void) {
 #endif
             @"unsafeLoginOverridesIncluded": @NO,
             @"webSessionHarvestingIncluded": @NO,
-            @"compatibilityPasswordSignInIncluded": @YES,
+            @"compatibilityPasswordSignInIncluded": @NO,
+            @"nativeOnboardingSignInIncluded": @YES,
             @"attestationOverridesIncluded": @NO,
             @"credentialBackupIncluded": @NO
         },

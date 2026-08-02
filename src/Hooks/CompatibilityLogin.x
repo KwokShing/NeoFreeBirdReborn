@@ -1,9 +1,9 @@
 #import "Login/BHTCompatibilityLogin.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 
-// X creates its signed-out onboarding controller asynchronously. Wrap the
-// completion only to attach an explicit alternate-sign-in entry; the native
-// controller and native sign-in behavior otherwise remain unchanged.
+// X creates its signed-out onboarding controller asynchronously. Attach a
+// guarded entry that asks the shared host to open X's own JetX/Jetfuel login
+// route; the tweak never receives credentials or authentication state.
 %group BHTCompatibilityLoginHooks
 
 %hook T1HostViewController
@@ -27,9 +27,9 @@
 
 %end
 
-// The signed-in secondary-account flow uses a different controller than
-// first-launch onboarding. Add a separate action to that screen without
-// replacing either of X's native account actions.
+// The signed-in account manager uses a different controller. Its compatibility
+// action delegates to X's existing-account selector with sign-up disabled, so
+// X keeps ownership of registration, dismissal, and switching callbacks.
 %group BHTCompatibilityAddAccountHooks
 
 %hook T1AccountsViewController
