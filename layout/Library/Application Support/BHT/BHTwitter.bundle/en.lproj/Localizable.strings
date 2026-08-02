@@ -103,6 +103,7 @@
 "COMPATIBILITY_SIGN_IN_VERSION_ERROR" = "Compatibility Sign-in is available only for X 12.9. Your normal X sign-in has not been changed.";
 "COMPATIBILITY_SIGN_IN_RUNTIME_ERROR" = "Compatibility Sign-in is unavailable because this X build is missing a required component. Tap Share Report above to identify it. X's normal sign-in is unchanged.";
 "COMPATIBILITY_SIGN_IN_REJECTED_ERROR" = "X did not accept this sign-in. Check your details or use X's normal sign-in.";
+"COMPATIBILITY_SIGN_IN_NETWORK_ERROR" = "X could not be reached. Check your connection and try again.";
 "COMPATIBILITY_SIGN_IN_GENERIC_ERROR" = "The compatibility sign-in could not finish safely. Try X's normal sign-in or export a compatibility report.";
 "COMPATIBILITY_SIGN_IN_OK" = "OK";
 "COMPATIBILITY_SIGN_IN_SHARE_REPORT" = "Share Report";

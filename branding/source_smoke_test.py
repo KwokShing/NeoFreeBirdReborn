@@ -109,6 +109,7 @@ def main() -> None:
         {
             "COMPATIBILITY_SIGN_IN_SHARE_REPORT",
             "COMPATIBILITY_SIGN_IN_REPORT_ERROR",
+            "COMPATIBILITY_SIGN_IN_NETWORK_ERROR",
         }
         - localized_keys
     )
@@ -898,6 +899,25 @@ def main() -> None:
         ),
         "keyboard suppression on a diagnostic-only screen",
     )
+    compatibility_view_disappearance = source_section(
+        compatibility_login_source,
+        "- (void)viewDidDisappear:(BOOL)animated {",
+        "- (void)shareLoginReport:",
+        "compatibility sign-in dismissal cleanup",
+    )
+    require_source_tokens(
+        compatibility_view_disappearance,
+        (
+            "self.isBeingDismissed ||",
+            "self.navigationController.isBeingDismissed",
+            "if (dismissed && !self.requestStarted)",
+            "self.cancelled = YES;",
+            "[self.metricsCollector cancel];",
+            "self.metricsCollector = nil;",
+            'self.passwordField.text = @"";',
+        ),
+        "interactive compatibility sign-in dismissal cleanup",
+    )
 
     metrics_collector = source_section(
         compatibility_login_source,
@@ -916,17 +936,48 @@ def main() -> None:
     require_source_tokens(
         metrics_collector,
         (
+            "configuration.websiteDataStore =\n"
+            "        [WKWebsiteDataStore nonPersistentDataStore];",
+            "forMainFrameOnly:NO",
             "new URL(String(u),",
             "p.searchParams.get('result')",
             "postMessage(r)",
+            "self.webView.navigationDelegate = self;",
+            "self.webView.alpha = 0.0;",
+            "self.webView.userInteractionEnabled = NO;",
+            "self.webView.accessibilityElementsHidden = YES;",
+            "self.webView.frame = self.hostView.bounds;",
+            "UIViewAutoresizingFlexibleWidth |",
+            "UIViewAutoresizingFlexibleHeight;",
+            "[self.hostView addSubview:self.webView];",
+            "BHTCompatibilityLoginEventMetricsCollectorAttached",
         ),
-        "metrics result-only bridge",
+        "attached all-frame metrics result bridge",
     )
     if "postMessage(String(u))" in metrics_collector:
         raise AssertionError(
             "Compatibility metrics must not forward complete request URLs "
             "into native code"
         )
+
+    metrics_navigation = source_section(
+        compatibility_login_source,
+        "- (BOOL)consumeURL:(NSURL*)URL {",
+        "- (void)startWithCompletion:",
+        "bounded compatibility metrics navigation receiver",
+    )
+    require_source_tokens(
+        metrics_navigation,
+        (
+            "BHTCompatibilityMetricsURLIsAllowed(URL)",
+            "componentsWithURL:URL resolvingAgainstBaseURL:NO",
+            'if (![item.name isEqualToString:@"result"]) continue;',
+            "metrics.length == 0 || metrics.length > 65536",
+            "BHTCompatibilityLoginEventMetricsResolvedFromNavigation",
+            "[self finishWithMetrics:metrics];",
+        ),
+        "host-limited result-only navigation metrics capture",
+    )
 
     metrics_response = source_section(
         compatibility_login_source,
@@ -939,6 +990,36 @@ def main() -> None:
             "The native metrics receiver must accept only the extracted "
             "result value, not a complete request URL"
         )
+    require_source_tokens(
+        metrics_response,
+        (
+            "message.frameInfo.request.URL",
+            "BHTCompatibilityLoginEventMetricsResolvedFromScript",
+            "decidePolicyForNavigationAction:",
+            "navigationAction.request.URL",
+            "decidePolicyForNavigationResponse:",
+            "navigationResponse.response.URL",
+            "didReceiveServerRedirectForProvisionalNavigation:",
+            "didFinishNavigation:",
+            "[self consumeURL:webView.URL];",
+        ),
+        "navigation-delegate compatibility metrics capture",
+    )
+    metrics_teardown = source_section(
+        compatibility_login_source,
+        "- (void)cancel {",
+        "@end",
+        "compatibility metrics teardown",
+    )
+    require_source_tokens(
+        metrics_teardown,
+        (
+            "self.webView.navigationDelegate = nil;",
+            "[self.webView removeFromSuperview];",
+            "removeScriptMessageHandlerForName:BHTMetricsHandlerName",
+        ),
+        "deterministic hidden metrics WebView teardown",
+    )
 
     cancellation_path = source_section(
         compatibility_login_source,
@@ -1059,6 +1140,7 @@ def main() -> None:
             "self.signInButton.enabled = controlsEnabled;",
             "self.navigationItem.rightBarButtonItem.enabled =",
             "!busy && !self.sharingReport;",
+            "self.navigationController.modalInPresentation = busy;",
         ),
         "report sharing disabled only during an active login or export",
     )
@@ -1142,6 +1224,47 @@ def main() -> None:
             "A failed runtime recheck must keep credential controls "
             "disabled"
         )
+    require_source_tokens(
+        sign_in_action,
+        (
+            "BHTNormalizedCompatibilityIdentifier(",
+            "BHTCompatibilityLoginEventIdentifierNormalized",
+            "self.metricsCollector.hostView = self.view;",
+        ),
+        "safe handle normalization and attached metrics lifecycle",
+    )
+
+    password_response = source_section(
+        compatibility_login_source,
+        "- (void)handlePasswordResponse:",
+        "- (void)startPasswordCommandForUsername:",
+        "compatibility password response handling",
+    )
+    require_source_tokens(
+        password_response,
+        (
+            "BHTCompatibilityRecordCommandCompletion(",
+            '@"loginVerificationRequestId"',
+            '@"challengeURLString"',
+            "BHTCompatibilityLoginEventChallengeRecoveredFromFailedCompletion",
+            "BHTCompatibilityLoginEventChallengeRecoveredFromFailureObject",
+            "id challengePayload = response;",
+            "id failureRequestID = BHTSendObject(error, requestIDSelector);",
+            "if (requestID && challengeURL)",
+            "BHTPresentNativeLoginChallenge(",
+            "if (!success || !response)",
+            "BHTCompatibilityLoginEventRejectionWithoutPayload",
+            "BHTCompatibilityFailureCategory(",
+        ),
+        "challenge-before-rejection compatibility response flow",
+    )
+    if password_response.index(
+        "BHTPresentNativeLoginChallenge("
+    ) > password_response.index("if (!success || !response)"):
+        raise AssertionError(
+            "A returned X verification challenge must be handled before "
+            "the completion Boolean is treated as a rejection"
+        )
     if compatibility_login_source.count(
         'self.passwordField.text = @"";'
     ) < 3:
@@ -1186,6 +1309,19 @@ def main() -> None:
             '@"accountHandoffAttempted"',
             '@"accountHandoffDispatched"',
             '@"accountHandoffFailed"',
+            '@"lastCommandCompletionSucceeded"',
+            '@"lastCommandPayloadPresent"',
+            '@"lastCommandFailureObjectPresent"',
+            '@"lastCommandPayloadClass"',
+            '@"lastCommandFailureClass"',
+            '@"lastCommandFailureDomain"',
+            '@"lastCommandFailureCode"',
+            '@"capturesCredentials": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesPayloadContents": @NO',
+            '@"capturesFailureDescriptions": @NO',
+            '@"capturesFailureUserInfo": @NO',
+            '@"capturesPrivacySafeFailureFingerprint": @YES',
         ),
         "compatibility sign-in safety diagnostic",
     )
@@ -2329,12 +2465,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.38" not in (
+    if "Version: 6.1.0-beta.39" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The WebKit confirmation and For You ownership fix must ship "
-            "as beta.38"
+            "The secondary-account compatibility fix must ship as beta.39"
         )
 
     branding_source = (

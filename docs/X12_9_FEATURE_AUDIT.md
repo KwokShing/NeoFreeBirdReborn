@@ -246,6 +246,13 @@ transition can confirm automatically. It also resolves For You ownership through
 URT-to-data-controller relationship before comparing keywords, while every
 missing, ambiguous, or Following identity still fails open.
 
+Beta 39 hardens Compatibility Add Account for account-specific authentication
+responses. It checks a returned native verification challenge before treating
+an unsuccessful command completion as a rejection, normalizes a simple leading
+`@` from handles, and exports only bounded class/domain/code fingerprints and
+aggregate completion counters. Credentials, identifiers, response contents,
+error descriptions, and error user-info dictionaries remain excluded.
+
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids
 stacked app-lock presentations, caches and cancels settings-avatar requests,
