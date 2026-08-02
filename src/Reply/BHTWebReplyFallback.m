@@ -72,6 +72,7 @@ typedef NS_ENUM(NSUInteger, BHTWebReplyDiagnosticEvent) {
     BHTWebReplyDiagnosticAccountManagerFallbackCommitted,
     BHTWebReplyDiagnosticAccountManagerFallbackFailed,
     BHTWebReplyDiagnosticPageNavigationWatchdogArmed,
+    BHTWebReplyDiagnosticAccountManagerLandingRecognized,
     BHTWebReplyDiagnosticEventCount,
 };
 
@@ -139,6 +140,7 @@ static NSString* const BHTWebReplyDiagnosticNames[] = {
     @"accountManagerFallbackCommitted",
     @"accountManagerFallbackFailed",
     @"pageNavigationWatchdogArmed",
+    @"accountManagerLandingRecognized",
 };
 _Static_assert(
     sizeof(BHTWebReplyDiagnosticNames) /
@@ -424,28 +426,14 @@ static NSURL* BHTWebReplyURL(long long identifier) {
                : nil;
 }
 
-static NSURL* BHTWebReplySignInURL(void) {
-    NSURLComponents* components =
-        [NSURLComponents
-            componentsWithString:
-                @"https://x.com/i/flow/login"];
-    components.queryItems = @[
-        [NSURLQueryItem
-            queryItemWithName:@"redirect_after_login"
-                        value:@"/home"]
-    ];
-    NSURL* URL = components.URL;
-    return [URL.scheme isEqualToString:@"https"] &&
-                   [URL.host isEqualToString:@"x.com"]
-               ? URL
-               : nil;
-}
-
 static NSURL* BHTWebReplyAccountURL(void) {
-    // Direct /home loads are interrupted by WebKit policy changes on some
-    // sideloaded X 12.9 installs. Enter through the same supported sign-in
-    // flow that already succeeds for compatibility-reply setup.
-    NSURL* URL = BHTWebReplySignInURL();
+    // Use the same official intent shell that compatibility replies already
+    // prove can load in this shared WebKit data store. If the session is not
+    // signed in, X redirects this visible page through its normal login flow
+    // and returns here afterwards. This avoids /i/flow/login's committed shell
+    // getting stuck on X's own "Loading X" screen after authentication.
+    NSURL* URL =
+        [NSURL URLWithString:@"https://x.com/intent/tweet"];
     return [URL.scheme isEqualToString:@"https"] &&
                    [URL.host isEqualToString:@"x.com"]
                ? URL
@@ -453,11 +441,10 @@ static NSURL* BHTWebReplyAccountURL(void) {
 }
 
 static NSURL* BHTWebReplyAccountFallbackURL(void) {
-    // The official intent shell is the route users already confirmed loads
-    // successfully. It contains no status identifier or draft and cannot post
-    // without a visible user action.
-    NSURL* URL =
-        [NSURL URLWithString:@"https://x.com/intent/tweet"];
+    // Retry the same proven official intent route once after a pre-commit
+    // interruption. Do not fall back to the login shell that report 28 showed
+    // can commit successfully and then display X's spinner indefinitely.
+    NSURL* URL = BHTWebReplyAccountURL();
     return [URL.scheme isEqualToString:@"https"] &&
                    [URL.host isEqualToString:@"x.com"]
                ? URL
@@ -515,6 +502,38 @@ static BOOL BHTWebReplyURLIsSignedInLanding(NSURL* URL) {
     NSString* path = URL.path.lowercaseString;
     return [path isEqualToString:@"/home"] ||
            [path hasPrefix:@"/home/"];
+}
+
+static BOOL BHTWebReplyURLIsAccountSessionLanding(NSURL* URL) {
+    if (BHTWebReplyURLIsSignedInLanding(URL)) return YES;
+    if (!URL ||
+        ![URL.scheme.lowercaseString isEqualToString:@"https"]) {
+        return NO;
+    }
+    NSString* host = URL.host.lowercaseString;
+    if (!BHTHostIsExactOrSubdomain(host, @"x.com") &&
+        !BHTHostIsExactOrSubdomain(host, @"twitter.com")) {
+        return NO;
+    }
+    NSString* path = URL.path.lowercaseString;
+    return [path isEqualToString:@"/intent/tweet"] ||
+           [path hasPrefix:@"/intent/tweet/"];
+}
+
+static BOOL BHTWebReplyURLIsLoginFlow(NSURL* URL) {
+    if (!URL ||
+        ![URL.scheme.lowercaseString isEqualToString:@"https"]) {
+        return NO;
+    }
+    NSString* host = URL.host.lowercaseString;
+    if (!BHTHostIsExactOrSubdomain(host, @"x.com") &&
+        !BHTHostIsExactOrSubdomain(host, @"twitter.com")) {
+        return NO;
+    }
+    NSString* path = URL.path.lowercaseString;
+    return [path isEqualToString:@"/login"] ||
+           [path hasPrefix:@"/i/flow/login"] ||
+           [path hasPrefix:@"/i/flow/signup"];
 }
 
 static BOOL BHTWebReplyIsExpectedAppHandoffURL(
@@ -632,7 +651,10 @@ static void BHTRecordWebReplyNavigationFailure(
 @property(nonatomic) BOOL observingURL;
 @property(nonatomic) BOOL didRecordClose;
 @property(nonatomic) BOOL blockedAlertVisible;
+@property(nonatomic) BOOL confirmationAlertVisible;
 @property(nonatomic) BOOL hasVisibleCommittedContent;
+@property(nonatomic) BOOL mainFrameDidFinish;
+@property(nonatomic) BOOL observedLoginNavigation;
 @property(nonatomic, strong) WKNavigation*
     latestMainFrameNavigation;
 @property(nonatomic, strong) WKNavigation*
@@ -660,6 +682,9 @@ static void BHTRecordWebReplyNavigationFailure(
 - (void)editAccountLabel;
 - (BOOL)scheduleAccountManagerFallbackIfNeeded;
 - (void)recordAccountManagerFallbackFailureIfNeeded;
+- (BOOL)canExplicitlyConfirmWebAccount;
+- (void)showExplicitConfirmationUnavailableAlert;
+- (void)transitionToSetupReady;
 - (BOOL)settleMainFrameProvisionalNavigationForCallback:
     (WKNavigation*)navigation;
 - (BOOL)finishMainFrameNavigationForCallback:
@@ -740,8 +765,13 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
                 UIBarButtonSystemItemClose
                                  target:self
                                  action:@selector(closeTapped)];
+    NSString* initialDoneTitle =
+        self.screenMode == BHTWebReplyScreenModeReply
+            ? BHTWebReplyLocalized(@"WEB_REPLY_DONE")
+            : BHTWebReplyLocalized(
+                  @"WEB_REPLY_USE_WEB_ACCOUNT");
     self.doneItem = [[UIBarButtonItem alloc]
-        initWithTitle:BHTWebReplyLocalized(@"WEB_REPLY_DONE")
+        initWithTitle:initialDoneTitle
                 style:UIBarButtonItemStyleDone
                target:self
                action:@selector(doneTapped)];
@@ -1175,16 +1205,19 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
 }
 
 - (void)doneTapped {
-    if (self.screenMode ==
-            BHTWebReplyScreenModeSignInSetup &&
-        !self.setupReady) {
+    if (!self.setupReady &&
+        self.screenMode != BHTWebReplyScreenModeReply) {
+        if (![self canExplicitlyConfirmWebAccount]) {
+            [self showExplicitConfirmationUnavailableAlert];
+            return;
+        }
         BHTRecordWebReplyDiagnostic(
-            BHTWebReplyDiagnosticSetupCompletedManually);
-    } else if (
-        self.screenMode ==
-        BHTWebReplyScreenModeAccountManagement) {
-        BHTRecordWebReplyDiagnostic(
-            BHTWebReplyDiagnosticAccountManagerCompleted);
+            self.screenMode ==
+                    BHTWebReplyScreenModeSignInSetup
+                ? BHTWebReplyDiagnosticSetupCompletedManually
+                : BHTWebReplyDiagnosticAccountManagerCompleted);
+        [self transitionToSetupReady];
+        return;
     }
     dispatch_block_t completion = [self.doneCompletion copy];
     self.doneCompletion = nil;
@@ -1218,6 +1251,40 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
     [self.navigationController
         dismissViewControllerAnimated:YES
                            completion:completion];
+}
+
+- (BOOL)canExplicitlyConfirmWebAccount {
+    return self.hasVisibleCommittedContent &&
+        !self.mainFrameProvisionalNavigationInFlight &&
+        self.errorView.hidden &&
+        !BHTWebReplyURLIsLoginFlow(self.webView.URL);
+}
+
+- (void)showExplicitConfirmationUnavailableAlert {
+    if (self.confirmationAlertVisible ||
+        self.presentedViewController) {
+        return;
+    }
+    self.confirmationAlertVisible = YES;
+    UIAlertController* alert = [UIAlertController
+        alertControllerWithTitle:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_CONFIRM_WAIT_TITLE")
+                         message:
+            BHTWebReplyLocalized(
+                @"WEB_REPLY_CONFIRM_WAIT_DETAIL")
+                  preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction
+        actionWithTitle:
+            BHTWebReplyLocalized(@"WEB_REPLY_OK")
+                  style:UIAlertActionStyleDefault
+                handler:^(__unused UIAlertAction* action) {
+                    weakSelf.confirmationAlertVisible = NO;
+                }]];
+    [self presentViewController:alert
+                       animated:YES
+                     completion:nil];
 }
 
 - (void)recordCloseIfNeeded {
@@ -1529,6 +1596,7 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
         return;
     }
     self.loadAttemptComplete = NO;
+    self.mainFrameDidFinish = NO;
     self.errorView.hidden = YES;
     [self.loadingView.layer removeAllAnimations];
     self.loadingView.alpha = 1.0;
@@ -1688,8 +1756,16 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
 }
 
 - (void)considerSetupLandingURL:(NSURL*)URL {
-    if (self.screenMode !=
-            BHTWebReplyScreenModeSignInSetup ||
+    BOOL setupMode =
+        self.screenMode == BHTWebReplyScreenModeSignInSetup;
+    BOOL accountManagerMode =
+        self.screenMode ==
+        BHTWebReplyScreenModeAccountManagement;
+    if ((setupMode || accountManagerMode) &&
+        BHTWebReplyURLIsLoginFlow(URL)) {
+        self.observedLoginNavigation = YES;
+    }
+    if ((!setupMode && !accountManagerMode) ||
         self.mainFrameProvisionalNavigationInFlight ||
         self.setupReady) {
         return;
@@ -1697,27 +1773,62 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
     // A committed /home document is enough to prove that X accepted the
     // visible sign-in flow. Waiting for a later 99%-progress callback can hang
     // forever when X finishes with a same-document SPA transition.
-    if (self.hasVisibleCommittedContent &&
-        BHTWebReplyURLIsSignedInLanding(URL)) {
+    BOOL signedInLanding =
+        BHTWebReplyURLIsSignedInLanding(URL);
+    BOOL returnedToIntent =
+        self.observedLoginNavigation &&
+        BHTWebReplyURLIsAccountSessionLanding(URL) &&
+        !signedInLanding;
+    BOOL recognizedLanding =
+        signedInLanding || returnedToIntent;
+    BOOL lifecycleReady =
+        signedInLanding || self.mainFrameDidFinish;
+    if (self.hasVisibleCommittedContent && lifecycleReady &&
+        recognizedLanding) {
         [self showSetupReady];
     }
 }
 
 - (void)showSetupReady {
+    BOOL setupMode =
+        self.screenMode == BHTWebReplyScreenModeSignInSetup;
+    BOOL accountManagerMode =
+        self.screenMode ==
+        BHTWebReplyScreenModeAccountManagement;
+    BOOL signedInLanding =
+        BHTWebReplyURLIsSignedInLanding(
+            self.webView.URL);
+    BOOL returnedToIntent =
+        self.observedLoginNavigation &&
+        BHTWebReplyURLIsAccountSessionLanding(
+            self.webView.URL) &&
+        !signedInLanding;
+    BOOL recognizedLanding =
+        signedInLanding || returnedToIntent;
+    BOOL lifecycleReady =
+        signedInLanding || self.mainFrameDidFinish;
     if (self.setupReady ||
-        self.screenMode !=
-            BHTWebReplyScreenModeSignInSetup ||
+        (!setupMode && !accountManagerMode) ||
         self.mainFrameProvisionalNavigationInFlight ||
         !self.hasVisibleCommittedContent ||
-        !BHTWebReplyURLIsSignedInLanding(
-            self.webView.URL)) {
+        !lifecycleReady ||
+        !recognizedLanding) {
         return;
     }
+    BHTRecordWebReplyDiagnostic(
+        setupMode
+            ? BHTWebReplyDiagnosticSignInLandingRecognized
+            : BHTWebReplyDiagnosticAccountManagerLandingRecognized);
+    [self transitionToSetupReady];
+}
+
+- (void)transitionToSetupReady {
+    BOOL accountManagerMode =
+        self.screenMode ==
+        BHTWebReplyScreenModeAccountManagement;
     self.setupReady = YES;
     self.loadAttemptComplete = YES;
     self.loadAttemptGeneration++;
-    BHTRecordWebReplyDiagnostic(
-        BHTWebReplyDiagnosticSignInLandingRecognized);
     [self.loadingView.layer removeAllAnimations];
     self.loadingView.alpha = 1.0;
     self.webView.hidden = YES;
@@ -1725,7 +1836,14 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
     self.loadingView.hidden = YES;
     self.errorView.hidden = YES;
     self.setupReadyView.hidden = NO;
-    self.navigationItem.rightBarButtonItem = self.doneItem;
+    self.doneItem.title =
+        BHTWebReplyLocalized(@"WEB_REPLY_DONE");
+    if (accountManagerMode) {
+        self.navigationItem.rightBarButtonItems =
+            @[self.doneItem, self.accountLabelItem];
+    } else {
+        self.navigationItem.rightBarButtonItem = self.doneItem;
+    }
 }
 
 - (void)recoverFromIgnoredNavigationError {
@@ -1811,6 +1929,7 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
         navigation;
     self.mainFrameProvisionalNavigationInFlight =
         navigation;
+    self.mainFrameDidFinish = NO;
     if (self.setupReady) return;
     if (pageInitiatedNavigation) {
         BHTRecordWebReplyDiagnostic(
@@ -1874,6 +1993,7 @@ static void BHTPerformWhenWebReplyPresenterIsReady(
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticNavigationFinished);
     self.loadAttemptComplete = YES;
+    self.mainFrameDidFinish = YES;
     self.errorView.hidden = YES;
     self.loadingView.hidden = YES;
     self.progressView.hidden = YES;
@@ -2471,7 +2591,7 @@ BOOL BHTPresentWebReplySignInSetup(
     BHTActiveWebReplyNavigationController = nil;
 
     BOOL presented = BHTPresentWebReplyScreen(
-        presenter, BHTWebReplySignInURL(),
+        presenter, BHTWebReplyAccountURL(),
         @"WEB_REPLY_SIGN_IN_TITLE",
         @"WEB_REPLY_SIGN_IN_LOAD_FAILED",
         BHTWebReplyScreenModeSignInSetup,
@@ -2541,8 +2661,12 @@ NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void) {
         @"supportsManualSetupCompletion": @YES,
         @"guardsAccountBoundaryTransitions": @YES,
         @"usesSingleSharedWebAccountSession": @YES,
-        @"usesLoginFlowForAccountManagement": @YES,
-        @"usesOneShotAccountManagerIntentFallback": @YES,
+        @"usesIntentForAccountManagement": @YES,
+        @"usesLoginFlowForAccountManagement": @NO,
+        @"usesOneShotAccountManagerIntentRetry": @YES,
+        @"usesIntentForInitialSignInSetup": @YES,
+        @"requiresExplicitConfirmationForInitialIntent": @YES,
+        @"autoConfirmsOnlyHomeOrPostLoginIntent": @YES,
         @"precommitPolicyInterruptionsCannotLeaveLoaderVisible": @YES,
         @"warnsWhenNativeAccountObjectChanges": @YES,
         @"rechecksEveryReplyWithoutNativeAccountContext": @YES,

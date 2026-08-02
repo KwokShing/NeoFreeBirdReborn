@@ -172,6 +172,9 @@
 "WEB_REPLY_SIGN_IN_LOADING" = "Opening X…";
 "WEB_REPLY_SIGN_IN_READY_TITLE" = "Web replies are ready";
 "WEB_REPLY_SIGN_IN_READY_DETAIL" = "The current x.com session will be reused for compatibility replies until X expires or changes it. NeoFreeBird cannot automatically verify that it matches the account selected in the app.";
+"WEB_REPLY_USE_WEB_ACCOUNT" = "Use This Web Account";
+"WEB_REPLY_CONFIRM_WAIT_TITLE" = "Finish signing in";
+"WEB_REPLY_CONFIRM_WAIT_DETAIL" = "Wait for X to finish loading and make sure the intended account is visible before using this web session.";
 "WEB_REPLY_TITLE" = "Reply";
 "WEB_REPLY_DONE" = "Done";
 "WEB_REPLY_MORE" = "Reply Options";

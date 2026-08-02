@@ -259,6 +259,10 @@ def main() -> None:
         "BHTForYouControllerRuntimeShape",
         '@"timelineMethods"',
         '@"timelineIvars"',
+        '@"dataViewControllerAccessorPresent"',
+        '@"dataViewControllerIvarPresent"',
+        '@"directOwnerResolvedChecks"',
+        '@"directOwnerMissingChecks"',
         '@"configurationGeneration"',
         '@"seenPaletteCount"',
         '@"providerClasses"',
@@ -1548,9 +1552,11 @@ def main() -> None:
             "BHTWebReplyDiagnosticAccountManagerFallbackCommitted",
             "BHTWebReplyDiagnosticAccountManagerFallbackFailed",
             "BHTWebReplyDiagnosticPageNavigationWatchdogArmed",
+            "BHTWebReplyDiagnosticAccountManagerLandingRecognized",
             "BHTWebReplyDiagnosticTransitionPendingBlocked",
             "BHTWebReplyDiagnosticWebViewCloseReceived",
             "BHTWebReplyURLIsSignedInLanding(",
+            "BHTWebReplyURLIsAccountSessionLanding(",
             "BHTWebReplyAccountURL(",
             "BHTWebReplyAccountFallbackURL(",
             "BHTNormalizedWebReplyAccountLabel(",
@@ -1560,6 +1566,7 @@ def main() -> None:
             'forKeyPath:@"URL"',
             "considerSetupLandingURL:",
             "hasVisibleCommittedContent",
+            "mainFrameDidFinish",
             "latestMainFrameNavigation",
             "mainFrameProvisionalNavigationInFlight",
             "explicitMainFrameNavigationAwaitingStart",
@@ -1590,9 +1597,10 @@ def main() -> None:
             '[host isEqualToString:@"appleid.apple.com"]',
             'componentsWithString:\n                @"https://x.com/intent/tweet"',
             'queryItemWithName:@"in_reply_to"',
-            'componentsWithString:\n'
-                '                @"https://x.com/i/flow/login"',
-            'queryItemWithName:@"redirect_after_login"',
+            "BHTWebReplyURLIsLoginFlow(",
+            "canExplicitlyConfirmWebAccount",
+            "showExplicitConfirmationUnavailableAlert",
+            "observedLoginNavigation",
             "BHTWebReplyIsExpectedAppHandoffURL(",
             '[scheme isEqualToString:@"x"]',
             '[scheme isEqualToString:@"twitter"]',
@@ -1652,8 +1660,12 @@ def main() -> None:
             '@"supportsManualSetupCompletion": @YES',
             '@"guardsAccountBoundaryTransitions": @YES',
             '@"usesSingleSharedWebAccountSession": @YES',
-            '@"usesLoginFlowForAccountManagement": @YES',
-            '@"usesOneShotAccountManagerIntentFallback": @YES',
+            '@"usesIntentForAccountManagement": @YES',
+            '@"usesLoginFlowForAccountManagement": @NO',
+            '@"usesOneShotAccountManagerIntentRetry": @YES',
+            '@"usesIntentForInitialSignInSetup": @YES',
+            '@"requiresExplicitConfirmationForInitialIntent": @YES',
+            '@"autoConfirmsOnlyHomeOrPostLoginIntent": @YES',
             '@"precommitPolicyInterruptionsCannotLeaveLoaderVisible": @YES',
             '@"warnsWhenNativeAccountObjectChanges": @YES',
             '@"rechecksEveryReplyWithoutNativeAccountContext": @YES',
@@ -1698,6 +1710,8 @@ def main() -> None:
             "self.hasVisibleCommittedContent",
             "self.mainFrameProvisionalNavigationInFlight",
             "BHTWebReplyURLIsSignedInLanding(URL)",
+            "BHTWebReplyURLIsAccountSessionLanding(URL)",
+            "self.mainFrameDidFinish",
             "[self showSetupReady];",
         ),
         "commit-driven web reply setup completion",
@@ -1712,6 +1726,17 @@ def main() -> None:
                 "A committed signed-in landing must not wait on a one-shot "
                 f"progress gate: {obsolete_gate}"
             )
+    require_source_tokens(
+        setup_landing_source,
+        (
+            "BHTWebReplyURLIsLoginFlow(URL)",
+            "self.observedLoginNavigation = YES",
+            "self.observedLoginNavigation &&",
+            "signedInLanding || returnedToIntent",
+            "signedInLanding || self.mainFrameDidFinish",
+        ),
+        "explicit-or-post-login account confirmation gate",
+    )
     navigation_settlement_source = source_section(
         web_reply_source,
         "- (BOOL)settleMainFrameProvisionalNavigationForCallback:",
@@ -1786,6 +1811,16 @@ def main() -> None:
         raise AssertionError(
             "Setup success must not interrupt X while its session finishes"
         )
+    require_source_tokens(
+        setup_ready_source,
+        (
+            "BHTWebReplyScreenModeAccountManagement",
+            "BHTWebReplyDiagnosticAccountManagerLandingRecognized",
+            "self.navigationItem.rightBarButtonItems =",
+            "@[self.doneItem, self.accountLabelItem]",
+        ),
+        "native account-manager confirmation",
+    )
     ignored_navigation_recovery = source_section(
         web_reply_source,
         "- (void)recoverFromIgnoredNavigationError",
@@ -1812,9 +1847,9 @@ def main() -> None:
     require_source_tokens(
         account_routes_source,
         (
-            "BHTWebReplySignInURL()",
             "BHTWebReplyAccountFallbackURL(void)",
             '@"https://x.com/intent/tweet"',
+            "BHTWebReplyAccountURL()",
         ),
         "supported account-management entry and fallback routes",
     )
@@ -1825,6 +1860,25 @@ def main() -> None:
         raise AssertionError(
             "Account management must not directly reopen the /home route "
             "that report 27 showed being interrupted before commit"
+        )
+    if 'https://x.com/i/flow/login' in account_routes_source:
+        raise AssertionError(
+            "Account management must not reopen X's committed login shell "
+            "that report 28 showed could spin indefinitely"
+        )
+    sign_in_setup_source = source_section(
+        web_reply_source,
+        "BOOL BHTPresentWebReplySignInSetup(",
+        "BOOL BHTPresentWebReplyAccountManager(",
+        "initial web reply sign-in setup route",
+    )
+    if (
+        "BHTWebReplyAccountURL()" not in sign_in_setup_source
+        or "BHTWebReplySignInURL" in sign_in_setup_source
+    ):
+        raise AssertionError(
+            "Initial setup must use the proven intent route instead of X's "
+            "committed login shell"
         )
     done_source = source_section(
         web_reply_source,
@@ -1837,9 +1891,13 @@ def main() -> None:
         (
             "BHTWebReplyScreenModeSignInSetup",
             "!self.setupReady",
+            "BHTWebReplyScreenModeReply",
             "BHTWebReplyDiagnosticSetupCompletedManually",
-            "BHTWebReplyScreenModeAccountManagement",
             "BHTWebReplyDiagnosticAccountManagerCompleted",
+            "[self canExplicitlyConfirmWebAccount]",
+            "[self showExplicitConfirmationUnavailableAlert]",
+            "[self transitionToSetupReady];",
+            "return;",
             "self.doneCompletion = nil;",
             "self.beginsReplyTransitionOnDone",
             "BHTSetWebReplyTransitionPending(YES)",
@@ -1847,6 +1905,24 @@ def main() -> None:
             "animateAlongsideTransition:nil",
         ),
         "mode-specific web reply Done behavior",
+    )
+    confirmation_source = source_section(
+        web_reply_source,
+        "- (BOOL)canExplicitlyConfirmWebAccount",
+        "- (void)recordCloseIfNeeded",
+        "web account explicit-confirmation gate",
+    )
+    require_source_tokens(
+        confirmation_source,
+        (
+            "self.hasVisibleCommittedContent",
+            "!self.mainFrameProvisionalNavigationInFlight",
+            "self.errorView.hidden",
+            "!BHTWebReplyURLIsLoginFlow(self.webView.URL)",
+            'BHTWebReplyLocalized(\n                @"WEB_REPLY_CONFIRM_WAIT_TITLE")',
+            'BHTWebReplyLocalized(\n                @"WEB_REPLY_CONFIRM_WAIT_DETAIL")',
+        ),
+        "stable web account explicit confirmation",
     )
     reply_options_source = source_section(
         web_reply_source,
@@ -2129,6 +2205,9 @@ def main() -> None:
             '"WEB_REPLY_SIGN_IN_LOADING"',
             '"WEB_REPLY_SIGN_IN_READY_TITLE"',
             '"WEB_REPLY_SIGN_IN_READY_DETAIL"',
+            '"WEB_REPLY_USE_WEB_ACCOUNT"',
+            '"WEB_REPLY_CONFIRM_WAIT_TITLE"',
+            '"WEB_REPLY_CONFIRM_WAIT_DETAIL"',
             '"WEB_REPLY_TITLE"',
             '"WEB_REPLY_MANAGE_ACCOUNT"',
             '"WEB_REPLY_ACCOUNT_SESSION_CHECK"',
@@ -2250,12 +2329,12 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.37" not in (
+    if "Version: 6.1.0-beta.38" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The account-manager recovery and local label fix must ship "
-            "as beta.37"
+            "The WebKit confirmation and For You ownership fix must ship "
+            "as beta.38"
         )
 
     branding_source = (
@@ -3366,6 +3445,9 @@ def main() -> None:
             "matchesAnyPostTextCandidate:",
             "filterGenerationWithUsernameFilters:",
             "ItemObjectValueAllowingUntypedIvar",
+            "BHTRegisterURTController",
+            "BHTDirectURTOwnerForDataController",
+            "BHTBindURTDataController",
             "NearestURTTimelineController",
             "IsPrimaryForYouTimelineController",
         ),
@@ -3454,6 +3536,7 @@ def main() -> None:
     require_source_tokens(
         for_you_controller_gate,
         (
+            "BHTDirectURTOwnerForDataController(",
             "NearestURTTimelineController(",
             "ItemObjectValue(",
             'NSSelectorFromString(@"urtTimeline")',
@@ -3464,6 +3547,33 @@ def main() -> None:
         ),
         "inner-controller For You ownership resolution",
     )
+    require_source_tokens(
+        timeline_source,
+        (
+            "BHTWeakURTControllerBox",
+            "@property(nonatomic, weak) id controller",
+            "BHTRegisterURTController(self)",
+            'NSSelectorFromString(@"dataViewController")',
+            'BHTUntypedIvarPointer(\n        owner, "_dataViewController")',
+            "raw == (__bridge void*)dataViewController",
+            "BHTForYouFilterDiagnosticDirectOwnerResolved",
+            "BHTForYouFilterDiagnosticDirectOwnerMissing",
+            "BHTBindDataControllerToURTOwner(",
+            "resolvedOwner && resolvedOwner != owner",
+        ),
+        "exact weak URT data-controller ownership",
+    )
+    lifecycle_owner_binding = source_section(
+        timeline_source,
+        "static void BHTBindURTDataController",
+        "%hook TFNItemsDataViewController",
+        "URT lifecycle owner binding",
+    )
+    if "setSections:" in lifecycle_owner_binding:
+        raise AssertionError(
+            "URT lifecycle hooks must bind ownership without replaying a "
+            "possibly stale section snapshot"
+        )
     require_source_tokens(
         timeline_source,
         (
