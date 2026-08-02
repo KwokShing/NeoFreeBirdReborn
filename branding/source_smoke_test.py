@@ -401,8 +401,8 @@ def main() -> None:
             "BHTInstallCompatibilitySignInEntry",
             "BHTInstallCompatibilityAddAccountSignInEntry",
             "BHTCompatibilitySignInDiagnosticSnapshot",
-            "Native X sign-in remains untouched",
-            "native Add Account and Create Account actions remain",
+            "native onboarding sign-in route",
+            "delegates to X's native existing-account action",
         ),
         "compatibility sign-in public contract",
     )
@@ -429,7 +429,8 @@ def main() -> None:
             "BHTLoadCompatibilityFrameworkIfNeeded();",
             "return "
             "BHTMissingCompatibilityRequirements().count == 0;",
-            "return BHTCompatibilityRuntimeIsAvailable();",
+            "return BHTCompatibilityVersionIsSupported() &&",
+            "BHTNativeInitialSignInSignatureIsSupported();",
         ),
         "hard X 12.9 compatibility gate",
     )
@@ -810,7 +811,7 @@ def main() -> None:
         )
     compatibility_presenter = source_section(
         compatibility_login_source,
-        "static void BHTPresentCompatibilitySignInForContext(",
+        "static void BHTPresentNativeInitialCompatibilitySignIn(",
         "@interface BHTCompatibilityEntryTarget",
         "compatibility sign-in presentation gate",
     )
@@ -844,17 +845,69 @@ def main() -> None:
     require_source_tokens(
         compatibility_presenter,
         (
-            "BHTCompatibilityPresentedSignInController",
-            "BHTCompatibilityPresentedSignInController =",
+            '@"showLoginFlowWithSource:completion:"',
+            "BHTNativeInitialSignInSignatureIsSupported()",
+            "BHTCompatibilityNativeInitialDispatched",
+            "typedef void (^BHTNativeLoginCompletion)(void);",
+            "typedef void (*BHTShowNativeLoginFunction)(",
+            "host, loginSelector, 0, [completion copy]",
+            "BHTCompatibilityNativeInitialDispatchPending",
+            "BHTReconcileNativeInitialPresentation(",
+            "BHTPresentNativeAddAccountCompatibilitySignIn(",
+            '@"_addAccount:sender:"',
+            "sender ?: accountsController",
+            '@"native_add_account_requested", @"none"',
         ),
-        "single-instance compatibility sign-in presentation",
+        "guarded X-owned native compatibility routes",
     )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            "signature, 2, @encode(NSInteger)",
+            'signature, 3, "@?"',
+            "signature, 2, @encode(BOOL)",
+            'signature, 3, "@"',
+            '@"legacyPasswordCommandReachable": @NO',
+            "BHTCompatibilityNativeInitialPresentedController",
+            "current != baselinePresentedController",
+            "observed.presentingViewController",
+            "BHTSharePreLoginCompatibilityReport(",
+            '@"NeoFreeBird.ShareLoginReport"',
+            "shareCompatibilityReport:",
+        ),
+        "exact native login ABIs and disabled legacy route",
+    )
+    if "2.0 * NSEC_PER_SEC" in compatibility_presenter:
+        raise AssertionError(
+            "The native login presentation guard must not expire on a "
+            "fixed two-second timer"
+        )
+    native_login_completion = source_section(
+        compatibility_presenter,
+        "BHTNativeLoginCompletion completion = ^{",
+        "        @try {",
+        "X-owned native login callback",
+    )
+    if "BHTClearNativeInitialDispatchPending" in native_login_completion:
+        raise AssertionError(
+            "X's callback is not proof that its login controller has been "
+            "dismissed; presentation reconciliation must clear the guard"
+        )
+    if "BHTPresentLegacyCompatibilitySignInForContext(" in (
+        compatibility_presenter.split(
+            "void BHTPresentCompatibilitySignIn(", 1
+        )[-1]
+    ):
+        raise AssertionError(
+            "Public compatibility actions must not dispatch the rejected "
+            "legacy password command"
+        )
 
     require_source_tokens(
         compatibility_add_account_entry,
         (
-            "BHTCompatibilitySignInIsAvailable()",
-            "BHTNativeAddAccountCompletionGetterIsSupported()",
+            "BHTCompatibilityVersionIsSupported()",
+            "BHTNativeAddAccountSignInSignatureIsSupported()",
             '@"COMPATIBILITY_SIGN_IN_ADD_ACCOUNT_ACTION"',
             '@"NeoFreeBird.CompatibilityAddAccountSignIn"',
             "rightBarButtonItems",
@@ -1306,6 +1359,7 @@ def main() -> None:
             '@"missingRuntimeRequirements":',
             '@"preLoginDiagnosticsEligible":',
             '@"nativeSignInRemainsDefault": @YES',
+            '@"nativeAuthenticationOutcome": @"x_owned_unknown"',
             '@"credentialPersistence": @"x_native_account_storage"',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
@@ -1318,6 +1372,7 @@ def main() -> None:
             '@"accountHandoffAttempted"',
             '@"accountHandoffDispatched"',
             '@"accountHandoffFailed"',
+            '@"nativeInitialCallbackInvoked"',
             '@"lastCommandCompletionSucceeded"',
             '@"lastCommandPayloadPresent"',
             '@"lastCommandFailureObjectPresent"',
@@ -1371,7 +1426,8 @@ def main() -> None:
             "BHTCompatibilitySignInDiagnosticSnapshot()",
             '@"unsafeLoginOverridesIncluded": @NO',
             '@"webSessionHarvestingIncluded": @NO',
-            '@"compatibilityPasswordSignInIncluded": @YES',
+            '@"compatibilityPasswordSignInIncluded": @NO',
+            '@"nativeOnboardingSignInIncluded": @YES',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
         ),
@@ -2474,11 +2530,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.40" not in (
+    if "Version: 6.1.0-beta.41" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The compatibility metrics isolation fix must ship as beta.40"
+            "The native onboarding sign-in fix must ship as beta.41"
         )
 
     branding_source = (

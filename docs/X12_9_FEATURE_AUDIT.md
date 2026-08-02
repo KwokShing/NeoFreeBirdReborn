@@ -253,6 +253,16 @@ an unsuccessful command completion as a rejection, normalizes a simple leading
 aggregate completion counters. Credentials, identifiers, response contents,
 error descriptions, and error user-info dictionaries remain excluded.
 
+Beta 41 replaces the now consistently rejected private password-command path
+with X 12.9's own guarded JetX/Jetfuel onboarding route. The initial sign-in
+action calls the shared host's native login flow using its verified runtime
+signature, while account management delegates to X's native existing-account
+action. X owns credential entry, verification, session storage, account
+registration, and switching. NeoFreeBird records only fixed capability flags
+and aggregate dispatch/completion counters; it does not inspect credentials,
+cookies, callback URLs, request data, tokens, keychain values, or Jetfuel state.
+The legacy password screen remains unreachable in this beta.
+
 Beta 40 restores the compatibility sign-in behavior proven by successful
 sideloaded X 12.9 reports: collected WebKit instrumentation remains isolated
 from the native password command and `uiMetrics` is passed as `nil`. Beta 39's

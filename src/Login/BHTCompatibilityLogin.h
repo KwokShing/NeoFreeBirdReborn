@@ -3,23 +3,23 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-// Reports whether the X 12.9-only credential fallback can run.
-// Native X sign-in remains untouched. The pre-login diagnostic screen may
-// still be shown when this returns NO.
+// Reports whether X 12.9's own native onboarding sign-in route can run.
+// NeoFreeBird never receives the credentials entered on that route.
 BOOL BHTCompatibilitySignInIsAvailable(void);
 void BHTPresentCompatibilitySignIn(
     UIViewController* _Nullable presenter);
 void BHTPresentCompatibilitySignInForAddingAccount(
     UIViewController* _Nullable accountsController);
 
-// Adds a small alternate-sign-in entry to X's signed-out onboarding surface.
-// The returned native onboarding controller is otherwise left intact.
+// Adds native compatibility sign-in and privacy-safe report actions to X's
+// signed-out onboarding surface. Tapping sign-in asks X's host controller to
+// present its native JetX/Jetfuel login flow.
 void BHTInstallCompatibilitySignInEntry(
     UIViewController* _Nullable onboardingController);
 
-// Adds a separate Compatibility Sign-in action to X's signed-in account
-// management screen. X's native Add Account and Create Account actions remain
-// unchanged.
+// Adds a separate action to X's signed-in account-management screen. It
+// delegates to X's native existing-account action so X retains its normal
+// account registration, dismissal, and switching callbacks.
 void BHTInstallCompatibilityAddAccountSignInEntry(
     UIViewController* _Nullable accountsController);
 
