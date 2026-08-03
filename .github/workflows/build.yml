@@ -27,7 +27,7 @@ on:
         default: "15.0"
         required: true
       decrypted_ipa_url:
-        description: "Direct URL of an authorized decrypted X 12.9 IPA (only needed for sideloaded/TrollStore)"
+        description: "Direct URL of an authorized decrypted X IPA (only needed for sideloaded/TrollStore)"
         default: ""
         required: false
         type: string
@@ -155,10 +155,6 @@ jobs:
           fi
           X_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST")
           X_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PLIST")
-          if [ "$X_VERSION" != "12.9" ]; then
-            echo "This compatibility branch targets X 12.9; received X $X_VERSION (build $X_BUILD)." >&2
-            exit 1
-          fi
           echo "X_VERSION=${X_VERSION}" >> "$GITHUB_ENV"
           echo "X_BUILD=${X_BUILD}" >> "$GITHUB_ENV"
           echo "$X_VERSION"
