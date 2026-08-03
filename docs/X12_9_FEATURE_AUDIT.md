@@ -289,6 +289,26 @@ raw errors are never retained or exported. The same beta introduces the
 guarded account-aware visible web controller described above, with the custom
 Web Intent retained as the pre-presentation fallback.
 
+Beta 45 follows the beta 44 device result that recorded an exact CreateTweet
+request with HTTP 2xx and no transport error even though X later emitted its
+composition-send failure notification and the reply was absent when checked.
+It adds one X 12.9-only checkpoint at
+`GraphQLEndpointResponse -modelWithParseError:APIErrors:`. The exact method ABI,
+inherited `originalRequest` getter, and request `URL` getter are all verified
+before the hook installs. A lock-free window hint keeps ordinary GraphQL
+traffic off the reply-state lock. Only the numeric active-reply generation is
+captured before X's decoder, which is then called exactly once and remains
+unchanged. Afterward, only a 30-second active reply window and an exact HTTPS
+API-host `CreateTweet` or `CreateTweetWithUndo` URL may produce a record.
+The report reduces the result to fixed booleans and enums for model presence,
+parse-error presence, and whether the API-error collection is absent, empty,
+nonempty, or an unexpected present object. It never reads collection elements,
+error messages or descriptions, response bodies, raw URLs, headers, cookies,
+tokens, tweet text, identifiers, or account data, and it never persists or
+exports decoded objects. The operation-scoped temporal association cannot
+prove application success or distinguish a concurrent CreateTweet from
+another app action, so the report states that limitation explicitly.
+
 Beta 40 stopped feeding captured WebKit instrumentation into the native
 password command and restored `uiMetrics:nil`, matching the successful beta 29
 and beta 36 reports. The following beta 40 device report still returned the

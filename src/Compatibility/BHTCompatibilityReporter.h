@@ -68,6 +68,15 @@ void BHTInstallReplyWorkflowDiagnosticObservers(void);
 // composition, status, or request object crosses this boundary.
 BOOL BHTReplyWorkflowDiagnosticSessionForNetworkRequest(
     NSUInteger* _Nullable generation);
+// Captures the active reply generation for X's decoded response seam. Its
+// 30-second bound is longer than request construction because Undo Tweet can
+// defer the decoded application result until the outbox runs. It returns only
+// a process-local generation and exposes no reply or account.
+BOOL BHTReplyWorkflowDiagnosticSessionForApplicationResponse(
+    NSUInteger* _Nullable generation);
+// Lock-free hint used by the app-global GraphQL decoder hook so ordinary
+// timeline responses do not contend on reply workflow state.
+BOOL BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void);
 // Cheap lock-free gate for app-global task-constructor hooks. A true result
 // is only a hint; the strict correlation function above still revalidates the
 // reply session before any task is tagged.

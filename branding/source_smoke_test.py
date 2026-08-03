@@ -1501,6 +1501,8 @@ def main() -> None:
             "BHTRecordReplyWorkflowDiagnostic(",
             "BHTInstallReplyWorkflowDiagnosticObservers(void)",
             "BHTReplyWorkflowDiagnosticSessionForNetworkRequest(",
+            "BHTReplyWorkflowDiagnosticSessionForApplicationResponse(",
+            "BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void)",
             "BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive(void)",
         ),
         "privacy-preserving reply workflow diagnostic API",
@@ -1770,7 +1772,8 @@ def main() -> None:
             '@"taggedTasksWithoutObservedCompletion":',
             '@"correlationScope": @"process_temporal_strict"',
             '@"constructorToCompletionTimingIncludesQueueDelay": @YES',
-            '@"graphQLApplicationErrorsInsideHTTP2xxAreUnobserved": @YES',
+            '@"graphQLApplicationErrorsInsideHTTP2xxAreUnobservedByThisLayer":',
+            '@"graphQLApplicationDiagnosticIncludedSeparately": @YES',
             '@"strictHTTPSHostAllowlist": @YES',
             '@"requestForwardedUnchanged": @YES',
             '@"capturesRequestBodies": @NO',
@@ -2136,6 +2139,251 @@ def main() -> None:
             "BHTReplyWorkflowNetworkWindowOpen",
         ),
         "strict native reply network correlation window",
+    )
+
+    reply_application_header = (
+        ROOT / "src" / "Reply" / "BHTReplyApplicationDiagnostics.h"
+    ).read_text(encoding="utf-8")
+    reply_application_source = (
+        ROOT / "src" / "Reply" / "BHTReplyApplicationDiagnostics.m"
+    ).read_text(encoding="utf-8")
+    reply_application_hook = (
+        ROOT / "src" / "Hooks" / "ReplyApplicationDiagnostics.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        reply_application_header + reply_application_source,
+        (
+            "BHTRecordNativeReplyApplicationResult(",
+            "BHTMarkNativeReplyApplicationHookInstalled(void)",
+            "BHTNativeReplyApplicationDiagnosticSnapshot(void)",
+            "BHTNativeReplyDecodedOutcomeModelPresent",
+            "BHTNativeReplyDecodedOutcomeAPIErrors",
+            "BHTNativeReplyDecodedOutcomeParseError",
+            "BHTNativeReplyDecodedOutcomeEmptyResult",
+            'URL.lastPathComponent',
+            'isEqualToString:@"CreateTweet"',
+            'isEqualToString:@"CreateTweetWithUndo"',
+            'BHTNativeReplyApplicationAttemptLimit = 8',
+            '@"sessionGeneration": @(sessionGeneration)',
+            '@"modelPresent": @(modelPresent)',
+            '@"parseErrorPresent": @(parseErrorPresent)',
+            '@"apiErrorsState":',
+            '@"correlationScope": @"process_temporal_operation_only"',
+            '@"requestIdentityBound": @NO',
+            '@"applicationSuccessIsNotInferred": @YES',
+            '@"strictHTTPSAPIHostAndOperationAllowlist": @YES',
+            '@"sanitizedAttemptsPersistWhenReportIsWritten": @YES',
+            '@"capturesResponseBodies": @NO',
+            '@"capturesResponseMessages": @NO',
+            '@"capturesRawErrors": @NO',
+            '@"capturesErrorDescriptionsOrUserInfo": @NO',
+            '@"capturesURLs": @NO',
+            '@"capturesHeadersCookiesOrTokens": @NO',
+            '@"capturesTweetOrReplyText": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesAccountData": @NO',
+            '@"inspectsAPIErrorCollectionElements": @NO',
+            '@"persistsDecodedObjects": @NO',
+            '@"exportsDecodedObjects": @NO',
+        ),
+        "fixed-category native reply application diagnostics",
+    )
+    require_source_tokens(
+        reply_application_hook,
+        (
+            'isEqualToString:@"12.9"',
+            '%hook _TtC14GraphQLActions23GraphQLEndpointResponse',
+            'modelWithParseError:(id __autoreleasing*)parseError',
+            'APIErrors:(id __autoreleasing*)APIErrors',
+            'BHTReplyApplicationMethodHasDecoderABI(',
+            'method_getNumberOfArguments(method) != 4',
+            "argument[0] != '^'",
+            "argument[1] != '@'",
+            'BHTReplyApplicationMethodReturnsObjectWithNoArguments(',
+            'NSClassFromString(@"TFSAPIRequest")',
+            'NSSelectorFromString(@"originalRequest")',
+            'NSSelectorFromString(@"URL")',
+            'BHTReplyWorkflowDiagnosticSessionForApplicationResponse(',
+            'BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive()',
+            'BHTRecordNativeReplyApplicationResult(',
+            '%init(BHTNativeReplyApplicationHooks);',
+            'BHTMarkNativeReplyApplicationHookInstalled();',
+            '@catch (__unused NSException* exception)',
+        ),
+        "guarded X 12.9 decoded reply application hook",
+    )
+    if reply_application_hook.count("%orig(") != 1:
+        raise AssertionError(
+            "The decoded reply diagnostic must forward to X exactly once"
+        )
+    decoded_hook_body = source_section(
+        reply_application_hook,
+        "- (id)modelWithParseError:",
+        "%end",
+        "decoded reply application hook",
+    )
+    fast_gate_position = decoded_hook_body.find(
+        "BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive()"
+    )
+    correlation_position = decoded_hook_body.find(
+        "BHTReplyWorkflowDiagnosticSessionForApplicationResponse("
+    )
+    original_position = decoded_hook_body.find(
+        "%orig(parseError, APIErrors);"
+    )
+    request_position = decoded_hook_body.find(
+        'NSSelectorFromString(@"originalRequest")'
+    )
+    decoded_error_position = decoded_hook_body.find(
+        "id decodedParseError ="
+    )
+    record_position = decoded_hook_body.find(
+        "BHTRecordNativeReplyApplicationResult("
+    )
+    if not (
+        -1 < fast_gate_position < correlation_position < original_position
+        < request_position < decoded_error_position < record_position
+    ):
+        raise AssertionError(
+            "The application hook must capture only the numeric reply "
+            "generation before X, then inspect decoded presence after X"
+        )
+    if decoded_hook_body.count("return model;") != 2:
+        raise AssertionError(
+            "The decoded reply hook must preserve X's model on both the "
+            "uncorrelated and correlated paths"
+        )
+    application_allowlist = source_section(
+        reply_application_source,
+        "static BOOL BHTNativeReplyApplicationOperationForURL(",
+        "static BHTNativeReplyAPIErrorState",
+        "decoded reply exact URL allowlist",
+    )
+    application_allowlist_literals = set(
+        re.findall(r'@"([^"]+)"', application_allowlist)
+    )
+    if application_allowlist_literals != {
+        "https",
+        "CreateTweet",
+        "CreateTweetWithUndo",
+        "api.twitter.com",
+        "api.x.com",
+    }:
+        raise AssertionError(
+            "The decoded reply allowlist contains an unexpected scheme, "
+            f"host, or operation: {sorted(application_allowlist_literals)}"
+        )
+    for fuzzy in ("hasSuffix:", "hasPrefix:", "containsString:"):
+        if fuzzy in application_allowlist:
+            raise AssertionError(
+                "The decoded reply allowlist must use exact comparisons: "
+                f"{fuzzy}"
+            )
+    for unsafe_application_value in (
+        "absoluteString",
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "valueForHTTPHeaderField",
+        "httpCookieStore",
+        "NSHTTPCookieStorage",
+        "localizedDescription",
+        ".userInfo",
+        "statusID",
+        "userID",
+        "fromUserName",
+        "objectAtIndex:",
+        "firstObject",
+        "enumerateObjects",
+        "valueForKey:",
+        "JSONObjectWithData:",
+        "dataWithJSONObject:",
+    ):
+        if unsafe_application_value in (
+            reply_application_source + reply_application_hook
+        ):
+            raise AssertionError(
+                "Decoded reply diagnostics must not inspect response or "
+                f"account contents: {unsafe_application_value}"
+            )
+    application_correlation_helper = source_section(
+        compatibility_source,
+        "BOOL BHTReplyWorkflowDiagnosticSessionForApplicationResponse(",
+        "typedef struct {",
+        "native reply application correlation",
+    )
+    require_source_tokens(
+        application_correlation_helper,
+        (
+            "BHTReplyWorkflowSessionActive &&",
+            "BHTReplyWorkflowSendForwarded &&",
+            "BHTReplyWorkflowComposerPresented &&",
+            "BHTReplyWorkflowSessionGeneration > 0",
+            "BHTReplyWorkflowSendForwardedAt > 0",
+            "BHTReplyWorkflowApplicationCorrelationWindowSeconds",
+            "*generation = active",
+        ),
+        "active native reply application correlation",
+    )
+    if application_correlation_helper.find(
+        "BHTExpireReplyWorkflowSessionIfNeededLocked();"
+    ) > application_correlation_helper.find(
+        "BOOL active ="
+    ):
+        raise AssertionError(
+            "Application correlation must expire stale workflow state "
+            "before accepting a generation"
+        )
+    if "BHTReplyWorkflowNetworkCorrelationWindowSeconds" in (
+        application_correlation_helper
+    ):
+        raise AssertionError(
+            "Decoded application correlation must survive Undo Tweet's "
+            "deferred outbox interval"
+        )
+    application_fast_gate = source_section(
+        compatibility_source,
+        "BOOL BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void)",
+        "typedef struct {",
+        "lock-free native reply application hint",
+    )
+    require_source_tokens(
+        application_fast_gate,
+        (
+            "atomic_load_explicit(",
+            "&BHTReplyWorkflowApplicationWindowOpen",
+            "memory_order_acquire",
+        ),
+        "lock-free native reply application hint",
+    )
+    for forbidden in (
+        "@synchronized",
+        "BHTObservationLock",
+        "request",
+        "URL",
+        "dispatch_",
+    ):
+        if forbidden in application_fast_gate:
+            raise AssertionError(
+                "The app-global decoded reply hint must remain a single "
+                f"lock-free atomic read: {forbidden}"
+            )
+    require_source_tokens(
+        compatibility_source,
+        (
+            '#import "Reply/BHTReplyApplicationDiagnostics.h"',
+            '@"nativeReplyApplication":',
+            'BHTNativeReplyApplicationDiagnosticSnapshot()',
+            '@"applicationCorrelationWindowSeconds":',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"modelWithParseError:APIErrors:", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"originalRequest", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"TFSAPIRequest", @"URL", NO)',
+        ),
+        "decoded reply application report integration",
     )
 
     web_reply_header = (
@@ -3127,12 +3375,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.44" not in (
+    if "Version: 6.1.0-beta.45" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The reply diagnostics and account-bound fallback must ship "
-            "as beta.44"
+            "The decoded native-reply diagnostics must ship as beta.45"
         )
 
     branding_source = (

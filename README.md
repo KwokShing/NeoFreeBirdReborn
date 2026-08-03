@@ -101,7 +101,7 @@ The tapped identifier necessarily remains in X's official visible reply URL
 while that screen is open. An optional local **Last confirmed: @handle** label
 for the custom session is unverified and excluded from profiles and reports.
 
-Beta 44 also expands native-reply troubleshooting without changing the native
+Beta 44 expanded native-reply troubleshooting without changing the native
 request. Reports now include an ordered, monotonic send-stage trace and fixed
 categories for known `CreateTweet` task constructors, first-party host class,
 HTTP result class, network-error class, and coarse duration. Per-overload
@@ -111,8 +111,21 @@ active only during a short forwarded-reply window. During that window it
 transiently classifies the HTTP method, URL scheme, exact first-party host, and
 operation name; those values are reduced to fixed counters and are never logged
 or retained as raw URLs. It never reads headers, bodies, cookies, tokens,
-response contents, reply text, identifiers, or account data. A GraphQL
-application error returned inside HTTP 2xx remains intentionally opaque.
+response contents, reply text, identifiers, or account data.
+
+Beta 45 adds a second, narrower checkpoint after X 12.9 decodes a GraphQL
+response. It distinguishes a decoded model, API-error presence, parse-error
+presence, combinations of those states, and an empty decoded result. This is
+needed because HTTP 2xx only confirms transport; it does not prove that X
+accepted or assimilated the reply. A lock-free hint first avoids work during
+ordinary GraphQL traffic, and only the numeric active-reply generation is
+captured before X's decoder runs. Decoded presence is inspected only after X
+returns. The checkpoint is restricted to a 30-second temporal reply window and
+exact HTTPS API-host `CreateTweet` operations, and it preserves the response
+unchanged. It records only fixed presence categories and never reads or exports
+error messages, response bodies, raw URLs, headers, cookies, tokens, tweet
+text, identifiers, or account data. This operation-scoped temporal result is a
+diagnostic clue, not proof that X accepted the reply.
 
 ## Where to find things
 

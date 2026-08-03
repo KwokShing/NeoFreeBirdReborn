@@ -578,7 +578,9 @@ NSDictionary* BHTReplyRequestDiagnosticSnapshot(void) {
             @(BHTReplyRequestRecentAttemptLimit),
         @"correlationScope": @"process_temporal_strict",
         @"constructorToCompletionTimingIncludesQueueDelay": @YES,
-        @"graphQLApplicationErrorsInsideHTTP2xxAreUnobserved": @YES,
+        @"graphQLApplicationErrorsInsideHTTP2xxAreUnobservedByThisLayer":
+            @YES,
+        @"graphQLApplicationDiagnosticIncludedSeparately": @YES,
         @"strictHTTPSHostAllowlist": @YES,
         @"requestForwardedUnchanged": @YES,
         @"capturesRequestBodies": @NO,

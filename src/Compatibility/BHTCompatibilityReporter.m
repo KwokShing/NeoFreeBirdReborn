@@ -5,6 +5,7 @@
 #import "Login/BHTCompatibilityLogin.h"
 #import "MediaActions/BHTMediaActionUtility.h"
 #import "Reply/BHTWebReplyFallback.h"
+#import "Reply/BHTReplyApplicationDiagnostics.h"
 #import "Reply/BHTReplyRequestDiagnostics.h"
 #import "Security/BHTAuthenticationURLUtility.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
@@ -57,6 +58,7 @@ static BOOL BHTReplyWorkflowAwaitingComposerClose;
 static CFAbsoluteTime BHTReplyWorkflowExpiresAt;
 static NSTimeInterval BHTReplyWorkflowSendForwardedAt;
 static atomic_bool BHTReplyWorkflowNetworkWindowOpen;
+static atomic_bool BHTReplyWorkflowApplicationWindowOpen;
 static NSUInteger BHTReplyWorkflowSessionGeneration;
 static NSMutableDictionary<NSString*, id>*
     BHTReplyWorkflowObserverTokens;
@@ -97,7 +99,19 @@ static const NSTimeInterval
     BHTReplyWorkflowDiagnosticWindowSeconds = 90.0;
 static const NSTimeInterval
     BHTReplyWorkflowNetworkCorrelationWindowSeconds = 15.0;
+static const NSTimeInterval
+    BHTReplyWorkflowApplicationCorrelationWindowSeconds = 30.0;
 static const NSUInteger BHTReplyWorkflowTraceLimit = 64;
+
+static void BHTSetReplyWorkflowActiveWindows(BOOL open) {
+    atomic_store_explicit(
+        &BHTReplyWorkflowNetworkWindowOpen,
+        open, memory_order_release);
+    atomic_store_explicit(
+        &BHTReplyWorkflowApplicationWindowOpen,
+        open, memory_order_release);
+}
+
 static NSString* const BHTReplyWorkflowEventNames[] = {
     @"replyActionTapped",
     @"replyActionForwardedToX",
@@ -139,9 +153,7 @@ static void BHTStartReplyWorkflowSessionLocked(void) {
     BHTReplyWorkflowComposerClosed = NO;
     BHTReplyWorkflowAwaitingComposerClose = NO;
     BHTReplyWorkflowSendForwardedAt = 0;
-    atomic_store_explicit(
-        &BHTReplyWorkflowNetworkWindowOpen,
-        false, memory_order_release);
+    BHTSetReplyWorkflowActiveWindows(NO);
     BHTReplyWorkflowLastOutcome = @"none";
     BHTReplyWorkflowSessionGeneration++;
     BHTReplyWorkflowTraceStartedAt =
@@ -249,9 +261,7 @@ static void BHTExpireReplyWorkflowSessionIfNeededLocked(void) {
     BHTReplyWorkflowSendForwarded = NO;
     BHTReplyWorkflowAwaitingComposerClose = NO;
     BHTReplyWorkflowSendForwardedAt = 0;
-    atomic_store_explicit(
-        &BHTReplyWorkflowNetworkWindowOpen,
-        false, memory_order_release);
+    BHTSetReplyWorkflowActiveWindows(NO);
     BHTReplyWorkflowExpiresAt = 0;
     BHTReplyWorkflowLastOutcome = @"timed_out";
 }
@@ -286,9 +296,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                 BHTReplyWorkflowComposerVisible = NO;
                 BHTReplyWorkflowComposerClosed = NO;
                 BHTReplyWorkflowAwaitingComposerClose = NO;
-                atomic_store_explicit(
-                    &BHTReplyWorkflowNetworkWindowOpen,
-                    false, memory_order_release);
+                BHTSetReplyWorkflowActiveWindows(NO);
                 BHTReplyWorkflowExpiresAt = 0;
                 break;
             case BHTReplyWorkflowDiagnosticPersistentComposerPresented:
@@ -365,9 +373,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                     BHTReplyWorkflowSendForwarded = NO;
                     BHTReplyWorkflowAwaitingComposerClose = NO;
                     BHTReplyWorkflowSendForwardedAt = 0;
-                    atomic_store_explicit(
-                        &BHTReplyWorkflowNetworkWindowOpen,
-                        false, memory_order_release);
+                    BHTSetReplyWorkflowActiveWindows(NO);
                     BHTReplyWorkflowLastOutcome = @"none";
                 }
                 break;
@@ -379,9 +385,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                     BHTReplyWorkflowSendForwarded = YES;
                     BHTReplyWorkflowSendForwardedAt =
                         NSProcessInfo.processInfo.systemUptime;
-                    atomic_store_explicit(
-                        &BHTReplyWorkflowNetworkWindowOpen,
-                        true, memory_order_release);
+                    BHTSetReplyWorkflowActiveWindows(YES);
                 }
                 break;
             case BHTReplyWorkflowDiagnosticValidationEntered:
@@ -405,9 +409,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                             BHTReplyWorkflowDiagnosticContainerCancelled &&
                         !BHTReplyWorkflowSendForwarded) {
                         BHTReplyWorkflowSessionActive = NO;
-                        atomic_store_explicit(
-                            &BHTReplyWorkflowNetworkWindowOpen,
-                            false, memory_order_release);
+                        BHTSetReplyWorkflowActiveWindows(NO);
                         BHTReplyWorkflowExpiresAt = 0;
                         BHTReplyWorkflowLastOutcome =
                             @"container_cancelled_before_send";
@@ -430,9 +432,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                         !BHTReplyWorkflowComposerClosed;
                     BHTReplyWorkflowSessionActive = NO;
                     BHTReplyWorkflowSendForwarded = NO;
-                    atomic_store_explicit(
-                        &BHTReplyWorkflowNetworkWindowOpen,
-                        false, memory_order_release);
+                    BHTSetReplyWorkflowActiveWindows(NO);
                     BHTReplyWorkflowExpiresAt = 0;
                 } else {
                     shouldRecord = NO;
@@ -449,9 +449,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                             : @"composition_send_failed";
                     BHTReplyWorkflowSessionActive = NO;
                     BHTReplyWorkflowSendForwarded = NO;
-                    atomic_store_explicit(
-                        &BHTReplyWorkflowNetworkWindowOpen,
-                        false, memory_order_release);
+                    BHTSetReplyWorkflowActiveWindows(NO);
                     BHTReplyWorkflowAwaitingComposerClose =
                         BHTReplyWorkflowComposerPresented &&
                         !BHTReplyWorkflowComposerClosed;
@@ -515,6 +513,45 @@ BOOL BHTReplyWorkflowDiagnosticSessionForNetworkRequest(
         }
         return active;
     }
+}
+
+BOOL BHTReplyWorkflowDiagnosticSessionForApplicationResponse(
+    NSUInteger* generation) {
+    @synchronized(BHTObservationLock()) {
+        BHTExpireReplyWorkflowSessionIfNeededLocked();
+        NSTimeInterval elapsedSinceSend =
+            BHTReplyWorkflowSendForwardedAt > 0
+                ? NSProcessInfo.processInfo.systemUptime -
+                    BHTReplyWorkflowSendForwardedAt
+                : DBL_MAX;
+        BOOL active =
+            BHTReplyWorkflowSessionActive &&
+            BHTReplyWorkflowSendForwarded &&
+            BHTReplyWorkflowComposerPresented &&
+            BHTReplyWorkflowSessionGeneration > 0 &&
+            BHTReplyWorkflowSendForwardedAt > 0 &&
+            elapsedSinceSend <=
+                BHTReplyWorkflowApplicationCorrelationWindowSeconds;
+        if (!active &&
+            elapsedSinceSend >
+                BHTReplyWorkflowApplicationCorrelationWindowSeconds) {
+            atomic_store_explicit(
+                &BHTReplyWorkflowApplicationWindowOpen,
+                false, memory_order_release);
+        }
+        if (generation) {
+            *generation = active
+                ? BHTReplyWorkflowSessionGeneration
+                : 0;
+        }
+        return active;
+    }
+}
+
+BOOL BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void) {
+    return atomic_load_explicit(
+        &BHTReplyWorkflowApplicationWindowOpen,
+        memory_order_acquire);
 }
 
 typedef struct {
@@ -843,6 +880,8 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
             @(BHTReplyWorkflowDiagnosticWindowSeconds),
         @"networkCorrelationWindowSeconds":
             @(BHTReplyWorkflowNetworkCorrelationWindowSeconds),
+        @"applicationCorrelationWindowSeconds":
+            @(BHTReplyWorkflowApplicationCorrelationWindowSeconds),
         @"counters": [counters copy],
         @"orderedTrace": orderedTrace,
         @"orderedTraceLimit": @(BHTReplyWorkflowTraceLimit),
@@ -1536,6 +1575,9 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"nativeReplyNetwork", @"NSURLSession", @"uploadTaskWithRequest:fromFile:completionHandler:", NO),
         BHTProbe(@"nativeReplyNetwork", @"TNLURLSessionTaskOperation", @"_network_finalizeDidCompleteTask:URLSession:error:", NO),
         BHTProbe(@"nativeReplyNetwork", @"TNLURLSessionTaskOperation", @"URLSession:task:didCompleteWithError:", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"modelWithParseError:APIErrors:", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"originalRequest", NO),
+        BHTProbe(@"nativeReplyApplication", @"TFSAPIRequest", @"URL", NO),
         BHTProbe(@"webReplyAccountBound", @"T1WebViewController", @"initWithRootURL:account:shouldAuthenticate:shouldPresentAsNativePage:sourceStatus:scribeComponent:scribeParameters:", NO),
         BHTProbe(@"webReplyAccountBound", @"T1WebViewController", @"account", NO),
         BHTProbe(@"webReplyAccountBound", @"T1WebViewController", @"doesURLResultTypeOpenInWebview:", NO),
@@ -1691,6 +1733,8 @@ static NSURL* BHTWriteCompatibilityReportNow(void) {
             BHTReplyWorkflowDiagnosticSnapshot(),
         @"nativeReplyNetwork":
             BHTReplyRequestDiagnosticSnapshot(),
+        @"nativeReplyApplication":
+            BHTNativeReplyApplicationDiagnosticSnapshot(),
         @"webReplyFallback":
             BHTWebReplyFallbackDiagnosticSnapshot(),
         @"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot(),
