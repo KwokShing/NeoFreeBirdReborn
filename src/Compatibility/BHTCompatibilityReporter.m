@@ -1455,7 +1455,7 @@ static NSURL* BHTWriteCompatibilityReportNow(void) {
             @"webSessionHarvestingIncluded": @NO,
             @"compatibilityPasswordSignInIncluded": @YES,
             @"nativeOnboardingSignInIncluded": @NO,
-            @"compatibilityXAuthClientMetadataIncluded": @YES,
+            @"compatibilityXAuthClientMetadataIncluded": @NO,
             @"attestationOverridesIncluded": @NO,
             @"credentialBackupIncluded": @NO
         },

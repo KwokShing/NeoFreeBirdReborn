@@ -77,10 +77,12 @@ screen and submits one guarded password request through X's legacy account
 service. The password field is cleared before that request starts and is never
 saved or included in reports. Verification, account registration, credential
 storage, and account switching continue through X's own services. The same
-option is available when adding another account. For this compatibility
-request only, beta 42 advertises X 12.3's client-version header—the version
-where this legacy route is still known to work. Timeline, posting, media, and
-all other API traffic continue to identify as X 12.9.
+option is available when adding another account. Beta 43 returns the password
+request to X 12.9's native client metadata and preserves the minimum preflight
+window observed in the successful beta 29 and beta 36 device reports. Captured
+WebKit instrumentation remains diagnostic-only and is never supplied to the
+password command. Timeline, posting, media, and all other API traffic remain
+untouched.
 
 The default-off **Compatibility reply composer** is available when sideloaded
 builds reject native replies. It opens X's official reply page in a visible,

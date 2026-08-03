@@ -396,7 +396,6 @@ def main() -> None:
         compatibility_login_header,
         (
             "BHTCompatibilitySignInIsAvailable",
-            "BHTInstallCompatibilityXAuthClientMetadataOverride",
             "BHTPresentCompatibilitySignIn",
             "BHTPresentCompatibilitySignInForAddingAccount",
             "BHTInstallCompatibilitySignInEntry",
@@ -522,10 +521,16 @@ def main() -> None:
             "@selector(viewDidAppear:)",
             "refreshRegisteredDashContentControllers",
             "%init(BHTCompatibilityAddAccountHooks);",
-            "BHTInstallCompatibilityXAuthClientMetadataOverride();",
         ),
         "native onboarding and add-account entry wrappers",
     )
+    if "BHTInstallCompatibilityXAuthClientMetadataOverride" in (
+        compatibility_login_header + compatibility_login_hook
+    ):
+        raise AssertionError(
+            "Beta 43 must not install the experimental X 12.3 metadata "
+            "override"
+        )
     if "private_startLoginFlowWithSender:" in compatibility_login_hook:
         raise AssertionError(
             "Compatibility sign-in must not replace X's native login action"
@@ -545,35 +550,19 @@ def main() -> None:
             "onboarding completion"
         )
 
-    xauth_client_metadata = source_section(
-        compatibility_login_source,
-        "static NSDictionary* BHTCompatibilityXAuthAllHTTPHeaderFields(",
-        "static BOOL BHTPasswordCommandSignatureIsSupported(void)",
-        "request-local xAuth client metadata override",
-    )
-    require_source_tokens(
-        xauth_client_metadata,
-        (
-            "BHTCompatibilityOriginalAllHTTPHeaderFields",
-            "BHTCompatibilityPasswordRequestClaimPending",
-            "BHTCompatibilityPasswordRequestMarkerKey",
-            "@synchronized(request)",
-            "objc_getAssociatedObject(",
-            "objc_setAssociatedObject(",
-            "atomic_compare_exchange_strong_explicit(",
-            "original(request, selector)",
-            "headers[BHTCompatibilityClientVersionHeader] =",
-            "BHTCompatibilityXAuthClientVersion;",
-            '@"TFSTwitterAPIXAuthPasswordRequest"',
-            '@"allHTTPHeaderFields"',
-            "signature.numberOfArguments != 2",
-            "returnType[0] != '@'",
-            "class_addMethod(",
-            "BHTCompatibilityClientVersionOverrideInstalled",
-            "BHTEndCompatibilityClientMetadataScope(",
-        ),
-        "guarded password-request client-version compatibility",
-    )
+    for removed_metadata_token in (
+        "BHTCompatibilityXAuthAllHTTPHeaderFields",
+        "BHTCompatibilityXAuthClientVersion",
+        "BHTCompatibilityClientVersionHeader",
+        "X-Twitter-Client-Version",
+        '@"TFSTwitterAPIXAuthPasswordRequest"',
+        "BHTEndCompatibilityClientMetadataScope",
+    ):
+        if removed_metadata_token in compatibility_login_source:
+            raise AssertionError(
+                "Beta 43 must use X 12.9's native password-request "
+                f"metadata: {removed_metadata_token}"
+            )
     if "T1APIRequestHeaderProvider" in compatibility_login_source:
         raise AssertionError(
             "Compatibility client metadata must not hook X's global header "
@@ -1305,40 +1294,19 @@ def main() -> None:
             "BHTNormalizedCompatibilityIdentifier(",
             "BHTCompatibilityLoginEventIdentifierNormalized",
             "self.metricsCollector.hostView = self.view;",
+            "NSDate* preflightStartedAt = [NSDate date];",
             "startWithCompletion:^(__unused NSString* metrics)",
+            "BHTCompatibilityMinimumPreflightDuration - elapsed",
+            "BHTCompatibilityLoginEventMinimumPreflightElapsed",
+            "dispatch_after(",
             "metrics:nil",
         ),
-        "safe handle normalization and compatibility metrics isolation",
+        "beta 29 request timing and compatibility metrics isolation",
     )
     if "metrics:metrics" in sign_in_action:
         raise AssertionError(
             "Navigation-derived metrics must remain isolated from the "
             "compatibility password command"
-        )
-
-    password_command_start = source_section(
-        compatibility_login_source,
-        "- (void)startPasswordCommandForUsername:",
-        "- (void)signInTapped {",
-        "compatibility password command metadata scope",
-    )
-    require_source_tokens(
-        password_command_start,
-        (
-            "BHTCompatibilityPasswordCommandGeneration",
-            "BHTCompatibilityPasswordRequestClaimPending",
-            "30.0 * NSEC_PER_SEC",
-            "BHTEndCompatibilityClientMetadataScope(",
-            "BHTCompatibilityClientMetadataScopeTimedOut",
-        ),
-        "generation-safe compatibility metadata scope",
-    )
-    if password_command_start.count(
-        "BHTEndCompatibilityClientMetadataScope("
-    ) < 4:
-        raise AssertionError(
-            "Compatibility metadata scope must clear on timeout, command "
-            "completion, start failure, and exception"
         )
 
     password_response = source_section(
@@ -1411,12 +1379,17 @@ def main() -> None:
             '@"credentialEntryOwner": @"compatibility_screen_ephemeral"',
             '@"credentialPersistence": @"x_native_account_storage"',
             '@"xAuthClientMetadataPolicy":',
-            '@"marked_request_instance_12_3_client_version"',
+            '@"native_x_12_9"',
             '@"xAuthClientMetadataTargetVersion":',
-            '@"xAuthClientMetadataOverrideInstalled":',
-            '@"xAuthClientMetadataOverrideClaimed":',
-            '@"xAuthClientMetadataOverrideApplied":',
-            '@"xAuthClientMetadataScopeTimedOut":',
+            '@"xAuthClientMetadataOverrideInstalled": @NO',
+            '@"xAuthClientMetadataOverrideClaimed": @0',
+            '@"xAuthClientMetadataOverrideApplied": @0',
+            '@"xAuthClientMetadataScopeTimedOut": @0',
+            '@"compatibilityRequestProfile":',
+            '@"beta29_native_12_9_preflight"',
+            '@"preflightPolicy":',
+            '@"minimum_12_second_then_nil_metrics"',
+            '@"preflightMinimumDelaySeconds":',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
             '@"uiMetricsPolicy": @"compatibility_nil"',
@@ -1483,7 +1456,7 @@ def main() -> None:
             '@"webSessionHarvestingIncluded": @NO',
             '@"compatibilityPasswordSignInIncluded": @YES',
             '@"nativeOnboardingSignInIncluded": @NO',
-            '@"compatibilityXAuthClientMetadataIncluded": @YES',
+            '@"compatibilityXAuthClientMetadataIncluded": @NO',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
         ),
@@ -2586,11 +2559,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.42" not in (
+    if "Version: 6.1.0-beta.43" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The dedicated compatibility sign-in rewrite must ship as beta.42"
+            "The beta 29 request-profile test must ship as beta.43"
         )
 
     branding_source = (
