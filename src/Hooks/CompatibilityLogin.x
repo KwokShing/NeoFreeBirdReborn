@@ -58,7 +58,6 @@
     NSString* version = [NSBundle.mainBundle
         objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if ([version isEqualToString:@"12.9"]) {
-        BHTInstallCompatibilityXAuthClientMetadataOverride();
         %init(BHTCompatibilityLoginHooks);
 
         Class accountsController =

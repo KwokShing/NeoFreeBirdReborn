@@ -260,20 +260,25 @@ account-registration, and account-switching checks from betas 39 and 40. The
 normal X sign-in remains visible and untouched. Password text is cleared before
 the request starts and is never persisted or included in diagnostics. Beta 42
 also retains the signed-out Share Report action added in beta 41 so a failed
-attempt can be investigated without first reaching the app's settings. A
-request-subclass-only override sets `X-Twitter-Client-Version: 12.3` on the
-`xauth_password.json` request while that compatibility command is active. The
-global header provider is not modified, so normal X 12.9 API traffic keeps its
-original client metadata. Reports expose only whether this override installed
-and how many times it applied, never request headers or account data.
+attempt can be investigated without first reaching the app's settings.
 
-Beta 40 restores the compatibility sign-in behavior proven by successful
-sideloaded X 12.9 reports: collected WebKit instrumentation remains isolated
-from the native password command and `uiMetrics` is passed as `nil`. Beta 39's
-new navigation-derived value correlated with payload-less command 401s on every
-reported attempt, while earlier successful flows all used the nil fallback.
-Privacy-safe command diagnostics and native verification handling remain in
-place so any account-specific rejection can still be distinguished.
+Beta 43 removes beta 42's experimental password-request client-version
+override after the device report showed that X returned the same payload-less
+401 even though the scoped override installed and applied correctly. The
+compatibility password request again uses X 12.9's native metadata. It also
+holds the diagnostic preflight for at least 12 seconds before starting the
+password command, reproducing the timing and `uiMetrics:nil` request profile
+recorded by the successful beta 29 and beta 36 reports. Reports identify this
+fixed request profile and elapsed preflight without recording headers,
+credentials, account identifiers, or response contents.
+
+Beta 40 stopped feeding captured WebKit instrumentation into the native
+password command and restored `uiMetrics:nil`, matching the successful beta 29
+and beta 36 reports. The following beta 40 device report still returned the
+same payload-less 401, so the captured metrics value was ruled out as the
+continuing cause. Privacy-safe command diagnostics and native verification
+handling remain in place so account-specific rejection can still be
+distinguished from a returned verification challenge.
 
 Beta 14 also restricts launch cleanup to NeoFreeBird's own temporary directory,
 uses asynchronous Photos saves, scopes the font-picker customization, avoids

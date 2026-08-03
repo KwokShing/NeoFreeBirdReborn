@@ -13,10 +13,8 @@
 #import <string.h>
 
 static NSString* const BHTCompatibilityTargetVersion = @"12.9";
-static NSString* const BHTCompatibilityXAuthClientVersion = @"12.3";
-static NSString* const BHTCompatibilityClientVersionHeader =
-    @"X-Twitter-Client-Version";
 static NSString* const BHTMetricsHandlerName = @"bht";
+static const NSTimeInterval BHTCompatibilityMinimumPreflightDuration = 12.0;
 
 @protocol BHTXAuthPasswordCommandInitializing <NSObject>
 // X 12.9 encodes this completion block as v28@?0B8@12@20.
@@ -54,6 +52,7 @@ typedef NS_ENUM(NSUInteger, BHTCompatibilityLoginEvent) {
     BHTCompatibilityLoginEventMetricsCollectorAttached,
     BHTCompatibilityLoginEventMetricsResolvedFromNavigation,
     BHTCompatibilityLoginEventMetricsResolvedFromScript,
+    BHTCompatibilityLoginEventMinimumPreflightElapsed,
     BHTCompatibilityLoginEventCommandStarted,
     BHTCompatibilityLoginEventCommandCompletedSuccessfully,
     BHTCompatibilityLoginEventCommandCompletedUnsuccessfully,
@@ -89,13 +88,6 @@ static atomic_ulong BHTCompatibilityNativeAddAccountAttempted;
 static atomic_ulong BHTCompatibilityNativeAddAccountDispatched;
 static atomic_ulong BHTCompatibilityNativeAddAccountFailed;
 static atomic_bool BHTCompatibilityPreLoginReportSharePending;
-static atomic_bool BHTCompatibilityPasswordRequestClaimPending;
-static atomic_ulong BHTCompatibilityPasswordCommandGeneration;
-static atomic_bool BHTCompatibilityClientVersionOverrideInstalled;
-static atomic_ulong BHTCompatibilityClientVersionOverrideClaimed;
-static atomic_ulong BHTCompatibilityClientVersionOverrideApplied;
-static atomic_ulong BHTCompatibilityClientMetadataScopeTimedOut;
-static IMP BHTCompatibilityOriginalAllHTTPHeaderFields;
 static NSString* BHTCompatibilityLoginLastStage = @"idle";
 static NSString* BHTCompatibilityLoginLastFailure = @"none";
 static BOOL BHTCompatibilityLastCommandSucceeded;
@@ -112,7 +104,6 @@ static char BHTCompatibilityReportButtonKey;
 static char BHTCompatibilityEntryTargetKey;
 static char BHTCompatibilityAddAccountItemKey;
 static char BHTCompatibilityAddAccountTargetKey;
-static char BHTCompatibilityPasswordRequestMarkerKey;
 static void* BHTCompatibilityFrameworkHandle;
 
 static NSObject* BHTCompatibilityLoginLock(void) {
@@ -381,109 +372,6 @@ static NSMethodSignature* BHTInstanceMethodSignature(
                ? [NSMethodSignature
                      signatureWithObjCTypes:typeEncoding]
                : nil;
-}
-
-static NSDictionary* BHTCompatibilityXAuthAllHTTPHeaderFields(
-    id request,
-    SEL selector) {
-    typedef NSDictionary* (*BHTHeaderFieldsFunction)(id, SEL);
-    BHTHeaderFieldsFunction original =
-        (BHTHeaderFieldsFunction)
-            BHTCompatibilityOriginalAllHTTPHeaderFields;
-    NSDictionary* existing = original
-        ? original(request, selector)
-        : nil;
-    BOOL marked = NO;
-    @synchronized(request) {
-        marked = [objc_getAssociatedObject(
-            request, &BHTCompatibilityPasswordRequestMarkerKey)
-            boolValue];
-        if (!marked) {
-            bool expectedPending = true;
-            if (atomic_compare_exchange_strong_explicit(
-                    &BHTCompatibilityPasswordRequestClaimPending,
-                    &expectedPending, false,
-                    memory_order_acq_rel,
-                    memory_order_relaxed)) {
-                objc_setAssociatedObject(
-                    request,
-                    &BHTCompatibilityPasswordRequestMarkerKey,
-                    @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                marked = YES;
-                atomic_fetch_add_explicit(
-                    &BHTCompatibilityClientVersionOverrideClaimed, 1,
-                    memory_order_relaxed);
-            }
-        }
-    }
-    if (!marked) {
-        return existing;
-    }
-
-    NSMutableDictionary* headers =
-        [existing isKindOfClass:NSDictionary.class]
-            ? [existing mutableCopy]
-            : [NSMutableDictionary dictionary];
-    headers[BHTCompatibilityClientVersionHeader] =
-        BHTCompatibilityXAuthClientVersion;
-    atomic_fetch_add_explicit(
-        &BHTCompatibilityClientVersionOverrideApplied, 1,
-        memory_order_relaxed);
-    return [headers copy];
-}
-
-static BOOL BHTEndCompatibilityClientMetadataScope(
-    unsigned long generation) {
-    if (atomic_load_explicit(
-            &BHTCompatibilityPasswordCommandGeneration,
-            memory_order_acquire) != generation) {
-        return NO;
-    }
-    return atomic_exchange_explicit(
-        &BHTCompatibilityPasswordRequestClaimPending,
-        false, memory_order_acq_rel);
-}
-
-void BHTInstallCompatibilityXAuthClientMetadataOverride(void) {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        if (!BHTCompatibilityVersionIsSupported()) return;
-        BHTLoadCompatibilityFrameworkIfNeeded();
-
-        Class requestClass = NSClassFromString(
-            @"TFSTwitterAPIXAuthPasswordRequest");
-        SEL selector = NSSelectorFromString(
-            @"allHTTPHeaderFields");
-        Method inheritedMethod = requestClass
-            ? class_getInstanceMethod(requestClass, selector)
-            : NULL;
-        const char* typeEncoding = inheritedMethod
-            ? method_getTypeEncoding(inheritedMethod)
-            : NULL;
-        NSMethodSignature* signature = typeEncoding
-            ? [NSMethodSignature
-                  signatureWithObjCTypes:typeEncoding]
-            : nil;
-        const char* returnType = signature
-            ? BHTUnqualifiedObjCType(
-                  signature.methodReturnType)
-            : NULL;
-        if (!requestClass || !inheritedMethod ||
-            !signature || signature.numberOfArguments != 2 ||
-            !returnType || returnType[0] != '@') {
-            return;
-        }
-
-        BHTCompatibilityOriginalAllHTTPHeaderFields =
-            method_getImplementation(inheritedMethod);
-        BOOL installed = class_addMethod(
-            requestClass, selector,
-            (IMP)BHTCompatibilityXAuthAllHTTPHeaderFields,
-            typeEncoding);
-        atomic_store_explicit(
-            &BHTCompatibilityClientVersionOverrideInstalled,
-            installed, memory_order_release);
-    });
 }
 
 static BOOL BHTPasswordCommandSignatureIsSupported(void) {
@@ -2180,29 +2068,9 @@ static BOOL BHTPresentNativeLoginChallenge(
     if (self.cancelled) return;
     self.requestStarted = YES;
     self.navigationItem.leftBarButtonItem.enabled = NO;
-    unsigned long metadataGeneration =
-        atomic_fetch_add_explicit(
-            &BHTCompatibilityPasswordCommandGeneration, 1,
-            memory_order_acq_rel) + 1;
-    atomic_store_explicit(
-        &BHTCompatibilityPasswordRequestClaimPending,
-        true, memory_order_release);
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW,
-                      (int64_t)(30.0 * NSEC_PER_SEC)),
-        dispatch_get_main_queue(), ^{
-            if (BHTEndCompatibilityClientMetadataScope(
-                    metadataGeneration)) {
-                atomic_fetch_add_explicit(
-                    &BHTCompatibilityClientMetadataScopeTimedOut, 1,
-                    memory_order_relaxed);
-            }
-        });
     __weak typeof(self) weakSelf = self;
     void (^completion)(BOOL, id, id) =
         ^(BOOL success, id response, id error) {
-            BHTEndCompatibilityClientMetadataScope(
-                metadataGeneration);
             dispatch_async(dispatch_get_main_queue(), ^{
                 BHTCompatibilityLoginViewController* strongSelf =
                     weakSelf;
@@ -2226,16 +2094,12 @@ static BOOL BHTPresentNativeLoginChallenge(
         command = BHTCreatePasswordCommand(
             username, password, metrics, completion);
         if (!command || !BHTStartPasswordCommand(command)) {
-            BHTEndCompatibilityClientMetadataScope(
-                metadataGeneration);
             self.requestStarted = NO;
             [self finishWithSuccess:NO
                    failureCategory:@"command_start_failed"];
             return;
         }
     } @catch (__unused NSException* exception) {
-        BHTEndCompatibilityClientMetadataScope(
-            metadataGeneration);
         self.requestStarted = NO;
         [self finishWithSuccess:NO
                failureCategory:@"command_exception"];
@@ -2294,21 +2158,37 @@ static BOOL BHTPresentNativeLoginChallenge(
     self.metricsCollector =
         [BHTCompatibilityMetricsCollector new];
     self.metricsCollector.hostView = self.view;
+    NSTimeInterval preflightStartedAt =
+        NSProcessInfo.processInfo.systemUptime;
     __weak typeof(self) weakSelf = self;
     [self.metricsCollector
         startWithCompletion:^(__unused NSString* metrics) {
-            BHTCompatibilityLoginViewController* strongSelf =
-                weakSelf;
-            if (!strongSelf || strongSelf.cancelled) return;
-            strongSelf.metricsCollector = nil;
-            // Every confirmed successful sideloaded X 12.9 flow used the
-            // command's nil uiMetrics fallback. Passing the navigation result
-            // instead produced payload-less 401 responses, so keep collection
-            // isolated for lifecycle diagnostics and do not feed it into auth.
-            [strongSelf
-                startPasswordCommandForUsername:username
-                                       password:password
-                                        metrics:nil];
+            NSTimeInterval elapsed =
+                NSProcessInfo.processInfo.systemUptime -
+                preflightStartedAt;
+            NSTimeInterval remaining = MAX(
+                0.0,
+                BHTCompatibilityMinimumPreflightDuration - elapsed);
+            dispatch_after(
+                dispatch_time(
+                    DISPATCH_TIME_NOW,
+                    (int64_t)(remaining * NSEC_PER_SEC)),
+                dispatch_get_main_queue(), ^{
+                    BHTCompatibilityLoginViewController* strongSelf =
+                        weakSelf;
+                    if (!strongSelf || strongSelf.cancelled) return;
+                    strongSelf.metricsCollector = nil;
+                    BHTCompatibilityRecord(
+                        BHTCompatibilityLoginEventMinimumPreflightElapsed,
+                        @"preflight_complete", nil);
+                    // The successful beta 29 and beta 36 device reports both
+                    // reached X only after this preflight window and supplied
+                    // nil uiMetrics. Keep the captured value diagnostic-only.
+                    [strongSelf
+                        startPasswordCommandForUsername:username
+                                               password:password
+                                                metrics:nil];
+                });
         }];
 }
 
@@ -2943,6 +2823,7 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"metricsCollectorAttached",
         @"metricsResolvedFromNavigation",
         @"metricsResolvedFromScript",
+        @"minimumPreflightElapsed",
         @"commandStarted",
         @"commandCompletedSuccessfully",
         @"commandCompletedUnsuccessfully",
@@ -3063,25 +2944,19 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"credentialEntryOwner": @"compatibility_screen_ephemeral",
         @"credentialPersistence": @"x_native_account_storage",
         @"xAuthClientMetadataPolicy":
-            @"marked_request_instance_12_3_client_version",
+            @"native_x_12_9",
         @"xAuthClientMetadataTargetVersion":
-            BHTCompatibilityXAuthClientVersion,
-        @"xAuthClientMetadataOverrideInstalled":
-            @(atomic_load_explicit(
-                &BHTCompatibilityClientVersionOverrideInstalled,
-                memory_order_acquire)),
-        @"xAuthClientMetadataOverrideClaimed":
-            @(atomic_load_explicit(
-                &BHTCompatibilityClientVersionOverrideClaimed,
-                memory_order_relaxed)),
-        @"xAuthClientMetadataOverrideApplied":
-            @(atomic_load_explicit(
-                &BHTCompatibilityClientVersionOverrideApplied,
-                memory_order_relaxed)),
-        @"xAuthClientMetadataScopeTimedOut":
-            @(atomic_load_explicit(
-                &BHTCompatibilityClientMetadataScopeTimedOut,
-                memory_order_relaxed)),
+            BHTCompatibilityTargetVersion,
+        @"xAuthClientMetadataOverrideInstalled": @NO,
+        @"xAuthClientMetadataOverrideClaimed": @0,
+        @"xAuthClientMetadataOverrideApplied": @0,
+        @"xAuthClientMetadataScopeTimedOut": @0,
+        @"compatibilityRequestProfile":
+            @"beta29_native_12_9_preflight",
+        @"preflightPolicy":
+            @"minimum_12_second_then_nil_metrics",
+        @"preflightMinimumDelaySeconds":
+            @(BHTCompatibilityMinimumPreflightDuration),
         @"attestationOverridesIncluded": @NO,
         @"credentialBackupIncluded": @NO,
         @"uiMetricsPolicy": @"compatibility_nil",

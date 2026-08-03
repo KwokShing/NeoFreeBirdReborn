@@ -7,9 +7,6 @@ NS_ASSUME_NONNULL_BEGIN
 // Credentials exist only in the temporary compatibility controller and are
 // cleared before the private X command starts; they are never persisted.
 BOOL BHTCompatibilitySignInIsAvailable(void);
-// Installs a guarded request-subclass override that changes only the
-// compatibility password request's client-version header to X 12.3.
-void BHTInstallCompatibilityXAuthClientMetadataOverride(void);
 void BHTPresentCompatibilitySignIn(
     UIViewController* _Nullable presenter);
 void BHTPresentCompatibilitySignInForAddingAccount(
