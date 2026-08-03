@@ -253,15 +253,19 @@ an unsuccessful command completion as a rejection, normalizes a simple leading
 aggregate completion counters. Credentials, identifiers, response contents,
 error descriptions, and error user-info dictionaries remain excluded.
 
-Beta 41 replaces the now consistently rejected private password-command path
-with X 12.9's own guarded JetX/Jetfuel onboarding route. The initial sign-in
-action calls the shared host's native login flow using its verified runtime
-signature, while account management delegates to X's native existing-account
-action. X owns credential entry, verification, session storage, account
-registration, and switching. NeoFreeBird records only fixed capability flags
-and aggregate dispatch/completion counters; it does not inspect credentials,
-cookies, callback URLs, request data, tokens, keychain values, or Jetfuel state.
-The legacy password screen remains unreachable in this beta.
+Beta 42 restores Compatibility Sign-in as a dedicated, opt-in screen instead
+of sending the user through X 12.9's JetX/Jetfuel onboarding route. It retains
+the exact guarded password-command ABI, native verification challenge,
+account-registration, and account-switching checks from betas 39 and 40. The
+normal X sign-in remains visible and untouched. Password text is cleared before
+the request starts and is never persisted or included in diagnostics. Beta 42
+also retains the signed-out Share Report action added in beta 41 so a failed
+attempt can be investigated without first reaching the app's settings. A
+request-subclass-only override sets `X-Twitter-Client-Version: 12.3` on the
+`xauth_password.json` request while that compatibility command is active. The
+global header provider is not modified, so normal X 12.9 API traffic keeps its
+original client metadata. Reports expose only whether this override installed
+and how many times it applied, never request headers or account data.
 
 Beta 40 restores the compatibility sign-in behavior proven by successful
 sideloaded X 12.9 reports: collected WebKit instrumentation remains isolated
