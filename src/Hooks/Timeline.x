@@ -1243,7 +1243,7 @@ static NSArray* FilteredTimelineSections(TFNItemsDataViewController* dataViewCon
         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (renderedGeneration &&
         renderedGeneration.unsignedIntegerValue != generation &&
-        self.isViewLoaded &&
+        [(UIViewController*)self isViewLoaded] &&
         BHTIsPrimaryForYouURTController(self)) {
         id tableView = ItemObjectValue(
             self, @selector(tableView), "tableView");
