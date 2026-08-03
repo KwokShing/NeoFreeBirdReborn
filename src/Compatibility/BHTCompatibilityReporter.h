@@ -1,3 +1,5 @@
+#pragma once
+
 #import <Foundation/Foundation.h>
 
 @class UIImageView;
@@ -31,6 +33,12 @@ typedef NS_ENUM(NSUInteger, BHTReplyWorkflowDiagnosticEvent) {
     BHTReplyWorkflowDiagnosticComposerClosed,
     BHTReplyWorkflowDiagnosticSendButtonTapped,
     BHTReplyWorkflowDiagnosticSendForwardedToX,
+    BHTReplyWorkflowDiagnosticValidationEntered,
+    BHTReplyWorkflowDiagnosticValidationReturned,
+    BHTReplyWorkflowDiagnosticSendCompositionsEntered,
+    BHTReplyWorkflowDiagnosticSendCompositionsReturned,
+    BHTReplyWorkflowDiagnosticContainerCompleted,
+    BHTReplyWorkflowDiagnosticContainerCancelled,
     BHTReplyWorkflowDiagnosticOutboxQueued,
     BHTReplyWorkflowDiagnosticOutboxProcessing,
     BHTReplyWorkflowDiagnosticOutboxProcessed,
@@ -55,6 +63,15 @@ void BHTRecordForYouFilterDiagnostic(
 void BHTRecordReplyWorkflowDiagnostic(
     BHTReplyWorkflowDiagnosticEvent event);
 void BHTInstallReplyWorkflowDiagnosticObservers(void);
+// Returns only whether a native reply send is currently inside the guarded
+// diagnostic window, plus its process-local generation. No account,
+// composition, status, or request object crosses this boundary.
+BOOL BHTReplyWorkflowDiagnosticSessionForNetworkRequest(
+    NSUInteger* _Nullable generation);
+// Cheap lock-free gate for app-global task-constructor hooks. A true result
+// is only a hint; the strict correlation function above still revalidates the
+// reply session before any task is tagged.
+BOOL BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive(void);
 void BHTRecordNavigationEntryClasses(NSArray* entries);
 void BHTRecordTimelineItemObservation(id item, NSString* location, BOOL hidden);
 void BHTRecordMediaActionObservation(NSString* stage,

@@ -119,7 +119,7 @@ Status meanings:
 | Profile | `square_avatars` | Ported | Live avatar/image/shadow restyling |
 | Profile | `full_profile_counts` | Updated | Previously always on; now opt-in |
 | Account access | Compatibility Sign-in | New/runtime check | Explicit X 12.9-only fallback available from signed-out onboarding, Profiles settings, and Add Account; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
-| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps that opens X's visible Web Intent in a native-themed in-app WebKit shell. Setup and replies use the same app-wide persistent x.com WebKit session, warn when its active account may differ from the native account, never capture native draft text or auto-post, and fall through to native behavior when the route cannot be presented |
+| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps. Inline replies first try X's guarded visible web controller with the exact hook account object and requested authentication, then fall back to the native-themed Web Intent shell. Persistent-compose replies retain the shared-session shell because that path has no authoritative hook account. Neither route captures native draft text or auto-posts, and both fall through to native behavior when they cannot be presented |
 | Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; only X 12.9's available canonical-user selector is hooked |
 | Tweets | `enable_edit_tweet` | Updated | Exposes native UI only; server eligibility still applies |
 | Tweets | undo timeout | Ported | Unified timeout picker and old-key migration |
@@ -168,19 +168,21 @@ change the FFmpeg TLS backend without a demonstrated build need.
   subscription spoofing, and attestation evasion remain excluded. The guarded
   Compatibility Sign-in fallback is not a web-session replacement and stores
   the resulting account only through X's native account service.
-- The optional Compatibility reply composer is a visible, in-app x.com screen
-  for sideloaded installs where native replies fail. One persistent WebKit
-  session is shared by all native app accounts and remains separate from X's
-  native account store. The first reply after launch and each process-local
-  native-account context change that NeoFreeBird detects displays an explicit
-  review/continue boundary. A missing account context remains conservative and
-  asks again on the next reply. On the iOS 15 deployment target, safely binding
-  separate persistent WebKit profiles would require reading or copying session
-  data, so NeoFreeBird instead lets the user visibly switch the web account and
-  never reads cookies or stores or exports credentials, page account data, raw
-  URLs, or reply text. A user may save an optional local account label after
-  visually confirming the account. The label is explicitly unverified and is
-  excluded from preference profiles and compatibility reports.
+- The optional Compatibility reply composer is always visible and never posts
+  automatically. On the verified inline-reply path, beta 44 first attempts X
+  12.9's guarded `T1WebViewController`, passes the exact account argument X
+  supplied for that tap, requests authentication, and verifies that the
+  controller retained the same object. This verifies wiring, not the
+  server-side web account, which requires two-account device testing. If the class, initializer ABI,
+  keep-in-webview selector, account getter, or UIKit presentation check fails,
+  it falls back to the existing visible x.com Web Intent. Only the custom
+  fallback shares one persistent WebKit session across native app accounts and
+  therefore retains the explicit account-review boundary and optional local,
+  unverified account label. Neither route inspects or exports cookies,
+  credentials, page account data, or reply text, and neither separately
+  persists, logs, or exports raw URLs or identifiers. The tapped status
+  identifier necessarily remains in X's official visible reply URL while that
+  screen is open.
 
 ## Device validation
 
@@ -271,6 +273,21 @@ password command, reproducing the timing and `uiMetrics:nil` request profile
 recorded by the successful beta 29 and beta 36 reports. Reports identify this
 fixed request profile and elapsed preflight without recording headers,
 credentials, account identifiers, or response contents.
+
+Beta 44 adds an ordered monotonic trace for native reply validation, composition
+handoff, outbox notifications, and composer closure. It also tags only exact
+`CreateTweet` and `CreateTweetWithUndo` tasks created during a short active
+reply window and observes their completion at a runtime-guarded TNL seam. X
+12.9's verified URL-session delegate callback is used when the private
+finalizer candidate is absent. Reports contain fixed constructor, host,
+HTTP-class, error-class,
+and duration buckets only. While the short correlation window is active, the
+observer transiently classifies the HTTP method, URL scheme, exact first-party
+host, and operation name. Requests are forwarded unchanged; bodies, headers,
+cookies, tokens, raw URLs, identifiers, response contents, account data, and
+raw errors are never retained or exported. The same beta introduces the
+guarded account-aware visible web controller described above, with the custom
+Web Intent retained as the pre-presentation fallback.
 
 Beta 40 stopped feeding captured WebKit instrumentation into the native
 password command and restored `uiMetrics:nil`, matching the successful beta 29

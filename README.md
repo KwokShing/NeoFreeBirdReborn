@@ -85,17 +85,34 @@ password command. Timeline, posting, media, and all other API traffic remain
 untouched.
 
 The default-off **Compatibility reply composer** is available when sideloaded
-builds reject native replies. It opens X's official reply page in a visible,
-in-app web surface and never posts automatically. Compatibility replies for
-every native app account use the same persistent x.com session, which does not
-switch with the account selected inside X. NeoFreeBird asks you to review that
-session before the first compatibility reply after each launch and when it
-detects a native-account context change. NeoFreeBird does not read or export
-web credentials, cookies, page account data, or reply text, and it cannot match
-the web account to the account selected in X. After visually checking X, you
-can optionally save a local **Last confirmed: @handle** label. That
-user-provided label is not verified and is excluded from preference profiles
-and compatibility reports.
+builds reject native replies. For an inline reply, beta 44 first asks X 12.9's
+own visible web controller to authenticate with the exact native account object
+supplied for that tap. NeoFreeBird verifies that the controller retained that
+same object; X still decides which server-side web account is active, so this
+path must be checked with both accounts on-device. The controller is
+runtime-checked, never hidden, and never posts automatically. If that private
+controller is unavailable or fails a guard, NeoFreeBird falls back to its
+existing visible x.com Web Intent.
+Only that custom fallback uses one persistent web session for every app
+account, so it still asks you to review the web account when needed. NeoFreeBird
+does not inspect or export web credentials, cookies, page account data, or
+reply text, and it does not separately persist, log, or export post identifiers.
+The tapped identifier necessarily remains in X's official visible reply URL
+while that screen is open. An optional local **Last confirmed: @handle** label
+for the custom session is unverified and excluded from profiles and reports.
+
+Beta 44 also expands native-reply troubleshooting without changing the native
+request. Reports now include an ordered, monotonic send-stage trace and fixed
+categories for known `CreateTweet` task constructors, first-party host class,
+HTTP result class, network-error class, and coarse duration. Per-overload
+availability and fixed rejection counters distinguish a missed networking seam
+from a request that simply did not match the strict policy. The observer is
+active only during a short forwarded-reply window. During that window it
+transiently classifies the HTTP method, URL scheme, exact first-party host, and
+operation name; those values are reduced to fixed counters and are never logged
+or retained as raw URLs. It never reads headers, bodies, cookies, tokens,
+response contents, reply text, identifiers, or account data. A GraphQL
+application error returned inside HTTP 2xx remains intentionally opaque.
 
 ## Where to find things
 
