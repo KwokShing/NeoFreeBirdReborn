@@ -396,13 +396,14 @@ def main() -> None:
         compatibility_login_header,
         (
             "BHTCompatibilitySignInIsAvailable",
+            "BHTInstallCompatibilityXAuthClientMetadataOverride",
             "BHTPresentCompatibilitySignIn",
             "BHTPresentCompatibilitySignInForAddingAccount",
             "BHTInstallCompatibilitySignInEntry",
             "BHTInstallCompatibilityAddAccountSignInEntry",
             "BHTCompatibilitySignInDiagnosticSnapshot",
-            "native onboarding sign-in route",
-            "delegates to X's native existing-account action",
+            "guarded X 12.9 compatibility password flow",
+            "Successful accounts are registered and switched through X's account APIs",
         ),
         "compatibility sign-in public contract",
     )
@@ -429,8 +430,7 @@ def main() -> None:
             "BHTLoadCompatibilityFrameworkIfNeeded();",
             "return "
             "BHTMissingCompatibilityRequirements().count == 0;",
-            "return BHTCompatibilityVersionIsSupported() &&",
-            "BHTNativeInitialSignInSignatureIsSupported();",
+            "return BHTCompatibilityRuntimeIsAvailable();",
         ),
         "hard X 12.9 compatibility gate",
     )
@@ -522,6 +522,7 @@ def main() -> None:
             "@selector(viewDidAppear:)",
             "refreshRegisteredDashContentControllers",
             "%init(BHTCompatibilityAddAccountHooks);",
+            "BHTInstallCompatibilityXAuthClientMetadataOverride();",
         ),
         "native onboarding and add-account entry wrappers",
     )
@@ -542,6 +543,41 @@ def main() -> None:
         raise AssertionError(
             "Compatibility sign-in must decorate and forward X's native "
             "onboarding completion"
+        )
+
+    xauth_client_metadata = source_section(
+        compatibility_login_source,
+        "static NSDictionary* BHTCompatibilityXAuthAllHTTPHeaderFields(",
+        "static BOOL BHTPasswordCommandSignatureIsSupported(void)",
+        "request-local xAuth client metadata override",
+    )
+    require_source_tokens(
+        xauth_client_metadata,
+        (
+            "BHTCompatibilityOriginalAllHTTPHeaderFields",
+            "BHTCompatibilityPasswordRequestClaimPending",
+            "BHTCompatibilityPasswordRequestMarkerKey",
+            "@synchronized(request)",
+            "objc_getAssociatedObject(",
+            "objc_setAssociatedObject(",
+            "atomic_compare_exchange_strong_explicit(",
+            "original(request, selector)",
+            "headers[BHTCompatibilityClientVersionHeader] =",
+            "BHTCompatibilityXAuthClientVersion;",
+            '@"TFSTwitterAPIXAuthPasswordRequest"',
+            '@"allHTTPHeaderFields"',
+            "signature.numberOfArguments != 2",
+            "returnType[0] != '@'",
+            "class_addMethod(",
+            "BHTCompatibilityClientVersionOverrideInstalled",
+            "BHTEndCompatibilityClientMetadataScope(",
+        ),
+        "guarded password-request client-version compatibility",
+    )
+    if "T1APIRequestHeaderProvider" in compatibility_login_source:
+        raise AssertionError(
+            "Compatibility client metadata must not hook X's global header "
+            "provider"
         )
     add_account_did_appear = source_section(
         compatibility_login_hook,
@@ -811,8 +847,8 @@ def main() -> None:
         )
     compatibility_presenter = source_section(
         compatibility_login_source,
-        "static void BHTPresentNativeInitialCompatibilitySignIn(",
-        "@interface BHTCompatibilityEntryTarget",
+        "static void BHTPresentCompatibilitySignInForContext(",
+        "static void BHTSetReportShareSenderEnabled(",
         "compatibility sign-in presentation gate",
     )
     compatibility_entry = source_section(
@@ -845,20 +881,14 @@ def main() -> None:
     require_source_tokens(
         compatibility_presenter,
         (
-            '@"showLoginFlowWithSource:completion:"',
-            "BHTNativeInitialSignInSignatureIsSupported()",
-            "BHTCompatibilityNativeInitialDispatched",
-            "typedef void (^BHTNativeLoginCompletion)(void);",
-            "typedef void (*BHTShowNativeLoginFunction)(",
-            "host, loginSelector, 0, [completion copy]",
-            "BHTCompatibilityNativeInitialDispatchPending",
-            "BHTReconcileNativeInitialPresentation(",
-            "BHTPresentNativeAddAccountCompatibilitySignIn(",
-            '@"_addAccount:sender:"',
-            "sender ?: accountsController",
-            '@"native_add_account_requested", @"none"',
+            "BHTCompatibilityPresentedSignInController",
+            "BHTCompatibilityVersionIsSupported()",
+            "BHTCompatibilityLoginViewController* login =",
+            "login.addAccountController = addAccountController;",
+            "UIModalPresentationFormSheet",
+            "BHTCompatibilityPresentedSignInController =",
         ),
-        "guarded X-owned native compatibility routes",
+        "dedicated compatibility sign-in presentation",
     )
     require_source_tokens(
         compatibility_login_source,
@@ -867,47 +897,39 @@ def main() -> None:
             'signature, 3, "@?"',
             "signature, 2, @encode(BOOL)",
             'signature, 3, "@"',
-            '@"legacyPasswordCommandReachable": @NO',
-            "BHTCompatibilityNativeInitialPresentedController",
-            "current != baselinePresentedController",
-            "observed.presentingViewController",
+            '@"legacyPasswordCommandReachable": @YES',
             "BHTSharePreLoginCompatibilityReport(",
             '@"NeoFreeBird.ShareLoginReport"',
             "shareCompatibilityReport:",
         ),
-        "exact native login ABIs and disabled legacy route",
+        "dedicated login route and signed-out diagnostics",
     )
-    if "2.0 * NSEC_PER_SEC" in compatibility_presenter:
-        raise AssertionError(
-            "The native login presentation guard must not expire on a "
-            "fixed two-second timer"
-        )
-    native_login_completion = source_section(
-        compatibility_presenter,
-        "BHTNativeLoginCompletion completion = ^{",
-        "        @try {",
-        "X-owned native login callback",
+    public_login_routes = source_section(
+        compatibility_login_source,
+        "void BHTPresentCompatibilitySignIn(",
+        "@interface BHTCompatibilityEntryTarget",
+        "public compatibility login routes",
     )
-    if "BHTClearNativeInitialDispatchPending" in native_login_completion:
+    if "BHTPresentCompatibilitySignInForContext(" not in public_login_routes:
         raise AssertionError(
-            "X's callback is not proof that its login controller has been "
-            "dismissed; presentation reconciliation must clear the guard"
+            "Public compatibility actions must dispatch the dedicated "
+            "compatibility controller"
         )
-    if "BHTPresentLegacyCompatibilitySignInForContext(" in (
-        compatibility_presenter.split(
-            "void BHTPresentCompatibilitySignIn(", 1
-        )[-1]
+    if (
+        "BHTPresentNativeInitialCompatibilitySignIn(" in public_login_routes
+        or "BHTPresentNativeAddAccountCompatibilitySignIn("
+        in public_login_routes
     ):
         raise AssertionError(
-            "Public compatibility actions must not dispatch the rejected "
-            "legacy password command"
+            "Public compatibility actions must not route through X's native "
+            "JetX/Jetfuel onboarding"
         )
 
     require_source_tokens(
         compatibility_add_account_entry,
         (
-            "BHTCompatibilityVersionIsSupported()",
-            "BHTNativeAddAccountSignInSignatureIsSupported()",
+            "BHTCompatibilitySignInIsAvailable()",
+            "BHTNativeAddAccountCompletionGetterIsSupported()",
             '@"COMPATIBILITY_SIGN_IN_ADD_ACCOUNT_ACTION"',
             '@"NeoFreeBird.CompatibilityAddAccountSignIn"',
             "rightBarButtonItems",
@@ -1294,6 +1316,31 @@ def main() -> None:
             "compatibility password command"
         )
 
+    password_command_start = source_section(
+        compatibility_login_source,
+        "- (void)startPasswordCommandForUsername:",
+        "- (void)signInTapped {",
+        "compatibility password command metadata scope",
+    )
+    require_source_tokens(
+        password_command_start,
+        (
+            "BHTCompatibilityPasswordCommandGeneration",
+            "BHTCompatibilityPasswordRequestClaimPending",
+            "30.0 * NSEC_PER_SEC",
+            "BHTEndCompatibilityClientMetadataScope(",
+            "BHTCompatibilityClientMetadataScopeTimedOut",
+        ),
+        "generation-safe compatibility metadata scope",
+    )
+    if password_command_start.count(
+        "BHTEndCompatibilityClientMetadataScope("
+    ) < 4:
+        raise AssertionError(
+            "Compatibility metadata scope must clear on timeout, command "
+            "completion, start failure, and exception"
+        )
+
     password_response = source_section(
         compatibility_login_source,
         "- (void)handlePasswordResponse:",
@@ -1359,8 +1406,17 @@ def main() -> None:
             '@"missingRuntimeRequirements":',
             '@"preLoginDiagnosticsEligible":',
             '@"nativeSignInRemainsDefault": @YES',
-            '@"nativeAuthenticationOutcome": @"x_owned_unknown"',
+            '@"compatibilitySignInMode": @"dedicated_xauth_password"',
+            '@"legacyPasswordCommandReachable": @YES',
+            '@"credentialEntryOwner": @"compatibility_screen_ephemeral"',
             '@"credentialPersistence": @"x_native_account_storage"',
+            '@"xAuthClientMetadataPolicy":',
+            '@"marked_request_instance_12_3_client_version"',
+            '@"xAuthClientMetadataTargetVersion":',
+            '@"xAuthClientMetadataOverrideInstalled":',
+            '@"xAuthClientMetadataOverrideClaimed":',
+            '@"xAuthClientMetadataOverrideApplied":',
+            '@"xAuthClientMetadataScopeTimedOut":',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
             '@"uiMetricsPolicy": @"compatibility_nil"',
@@ -1372,7 +1428,6 @@ def main() -> None:
             '@"accountHandoffAttempted"',
             '@"accountHandoffDispatched"',
             '@"accountHandoffFailed"',
-            '@"nativeInitialCallbackInvoked"',
             '@"lastCommandCompletionSucceeded"',
             '@"lastCommandPayloadPresent"',
             '@"lastCommandFailureObjectPresent"',
@@ -1426,8 +1481,9 @@ def main() -> None:
             "BHTCompatibilitySignInDiagnosticSnapshot()",
             '@"unsafeLoginOverridesIncluded": @NO',
             '@"webSessionHarvestingIncluded": @NO',
-            '@"compatibilityPasswordSignInIncluded": @NO',
-            '@"nativeOnboardingSignInIncluded": @YES',
+            '@"compatibilityPasswordSignInIncluded": @YES',
+            '@"nativeOnboardingSignInIncluded": @NO',
+            '@"compatibilityXAuthClientMetadataIncluded": @YES',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
         ),
@@ -2530,11 +2586,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.41" not in (
+    if "Version: 6.1.0-beta.42" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The native onboarding sign-in fix must ship as beta.41"
+            "The dedicated compatibility sign-in rewrite must ship as beta.42"
         )
 
     branding_source = (

@@ -72,10 +72,15 @@ compatibility-reply session data.
 Native X sign-in and native replies remain the defaults.
 
 **Compatibility Sign-in** is an explicit X 12.9 fallback for installations
-where the normal account flow does not finish. It opens X's own guarded
-JetX/Jetfuel onboarding route, so X owns credential entry, verification,
-account registration, and session storage.
-The same option is available when adding another account.
+where the normal account flow does not finish. It opens a separate NeoFreeBird
+screen and submits one guarded password request through X's legacy account
+service. The password field is cleared before that request starts and is never
+saved or included in reports. Verification, account registration, credential
+storage, and account switching continue through X's own services. The same
+option is available when adding another account. For this compatibility
+request only, beta 42 advertises X 12.3's client-version header—the version
+where this legacy route is still known to work. Timeline, posting, media, and
+all other API traffic continue to identify as X 12.9.
 
 The default-off **Compatibility reply composer** is available when sideloaded
 builds reject native replies. It opens X's official reply page in a visible,
@@ -165,7 +170,7 @@ To export a report while signed out:
    **Compatibility Sign-in**.
 2. Save the generated JSON.
 
-If X's guarded native route is unavailable, its error alert also includes a
+If X's guarded compatibility service is unavailable, its error alert includes a
 **Share Report** action.
 
 After signing in, use **Settings > NeoFreeBird > Debug > Export compatibility
@@ -182,13 +187,13 @@ method, and reproduction steps.
 ## Privacy and safety
 
 - NeoFreeBird does not bypass app attestation or spoof subscriptions.
-- It does not harvest passwords, cookies, session tokens, or account data.
+- It does not save or log passwords, cookies, session tokens, or account data.
 - Reports exclude credentials, account identifiers, post/reply text, raw URLs,
   response bodies, and web-session contents.
 - Optional web-reply account labels are user-provided, local only, and never
   included in reports or shared preference profiles.
-- Compatibility sign-in delegates successful account storage entirely to X's
-  native account service.
+- Compatibility sign-in clears its password field before contacting X and
+  delegates successful account storage entirely to X's account service.
 - Missing private methods fall back to native behavior or a visible unavailable
   state.
 

@@ -1,9 +1,8 @@
 #import "Login/BHTCompatibilityLogin.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 
-// X creates its signed-out onboarding controller asynchronously. Attach a
-// guarded entry that asks the shared host to open X's own JetX/Jetfuel login
-// route; the tweak never receives credentials or authentication state.
+// X creates its signed-out onboarding controller asynchronously. Attach the
+// opt-in compatibility entry without replacing X's normal sign-in controls.
 %group BHTCompatibilityLoginHooks
 
 %hook T1HostViewController
@@ -28,8 +27,7 @@
 %end
 
 // The signed-in account manager uses a different controller. Its compatibility
-// action delegates to X's existing-account selector with sign-up disabled, so
-// X keeps ownership of registration, dismissal, and switching callbacks.
+// action opens the same dedicated flow with an Add Account handoff context.
 %group BHTCompatibilityAddAccountHooks
 
 %hook T1AccountsViewController
@@ -60,6 +58,7 @@
     NSString* version = [NSBundle.mainBundle
         objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if ([version isEqualToString:@"12.9"]) {
+        BHTInstallCompatibilityXAuthClientMetadataOverride();
         %init(BHTCompatibilityLoginHooks);
 
         Class accountsController =

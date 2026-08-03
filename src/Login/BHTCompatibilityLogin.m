@@ -13,6 +13,9 @@
 #import <string.h>
 
 static NSString* const BHTCompatibilityTargetVersion = @"12.9";
+static NSString* const BHTCompatibilityXAuthClientVersion = @"12.3";
+static NSString* const BHTCompatibilityClientVersionHeader =
+    @"X-Twitter-Client-Version";
 static NSString* const BHTMetricsHandlerName = @"bht";
 
 @protocol BHTXAuthPasswordCommandInitializing <NSObject>
@@ -86,6 +89,13 @@ static atomic_ulong BHTCompatibilityNativeAddAccountAttempted;
 static atomic_ulong BHTCompatibilityNativeAddAccountDispatched;
 static atomic_ulong BHTCompatibilityNativeAddAccountFailed;
 static atomic_bool BHTCompatibilityPreLoginReportSharePending;
+static atomic_bool BHTCompatibilityPasswordRequestClaimPending;
+static atomic_ulong BHTCompatibilityPasswordCommandGeneration;
+static atomic_bool BHTCompatibilityClientVersionOverrideInstalled;
+static atomic_ulong BHTCompatibilityClientVersionOverrideClaimed;
+static atomic_ulong BHTCompatibilityClientVersionOverrideApplied;
+static atomic_ulong BHTCompatibilityClientMetadataScopeTimedOut;
+static IMP BHTCompatibilityOriginalAllHTTPHeaderFields;
 static NSString* BHTCompatibilityLoginLastStage = @"idle";
 static NSString* BHTCompatibilityLoginLastFailure = @"none";
 static BOOL BHTCompatibilityLastCommandSucceeded;
@@ -102,6 +112,7 @@ static char BHTCompatibilityReportButtonKey;
 static char BHTCompatibilityEntryTargetKey;
 static char BHTCompatibilityAddAccountItemKey;
 static char BHTCompatibilityAddAccountTargetKey;
+static char BHTCompatibilityPasswordRequestMarkerKey;
 static void* BHTCompatibilityFrameworkHandle;
 
 static NSObject* BHTCompatibilityLoginLock(void) {
@@ -370,6 +381,109 @@ static NSMethodSignature* BHTInstanceMethodSignature(
                ? [NSMethodSignature
                      signatureWithObjCTypes:typeEncoding]
                : nil;
+}
+
+static NSDictionary* BHTCompatibilityXAuthAllHTTPHeaderFields(
+    id request,
+    SEL selector) {
+    typedef NSDictionary* (*BHTHeaderFieldsFunction)(id, SEL);
+    BHTHeaderFieldsFunction original =
+        (BHTHeaderFieldsFunction)
+            BHTCompatibilityOriginalAllHTTPHeaderFields;
+    NSDictionary* existing = original
+        ? original(request, selector)
+        : nil;
+    BOOL marked = NO;
+    @synchronized(request) {
+        marked = [objc_getAssociatedObject(
+            request, &BHTCompatibilityPasswordRequestMarkerKey)
+            boolValue];
+        if (!marked) {
+            bool expectedPending = true;
+            if (atomic_compare_exchange_strong_explicit(
+                    &BHTCompatibilityPasswordRequestClaimPending,
+                    &expectedPending, false,
+                    memory_order_acq_rel,
+                    memory_order_relaxed)) {
+                objc_setAssociatedObject(
+                    request,
+                    &BHTCompatibilityPasswordRequestMarkerKey,
+                    @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                marked = YES;
+                atomic_fetch_add_explicit(
+                    &BHTCompatibilityClientVersionOverrideClaimed, 1,
+                    memory_order_relaxed);
+            }
+        }
+    }
+    if (!marked) {
+        return existing;
+    }
+
+    NSMutableDictionary* headers =
+        [existing isKindOfClass:NSDictionary.class]
+            ? [existing mutableCopy]
+            : [NSMutableDictionary dictionary];
+    headers[BHTCompatibilityClientVersionHeader] =
+        BHTCompatibilityXAuthClientVersion;
+    atomic_fetch_add_explicit(
+        &BHTCompatibilityClientVersionOverrideApplied, 1,
+        memory_order_relaxed);
+    return [headers copy];
+}
+
+static BOOL BHTEndCompatibilityClientMetadataScope(
+    unsigned long generation) {
+    if (atomic_load_explicit(
+            &BHTCompatibilityPasswordCommandGeneration,
+            memory_order_acquire) != generation) {
+        return NO;
+    }
+    return atomic_exchange_explicit(
+        &BHTCompatibilityPasswordRequestClaimPending,
+        false, memory_order_acq_rel);
+}
+
+void BHTInstallCompatibilityXAuthClientMetadataOverride(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        if (!BHTCompatibilityVersionIsSupported()) return;
+        BHTLoadCompatibilityFrameworkIfNeeded();
+
+        Class requestClass = NSClassFromString(
+            @"TFSTwitterAPIXAuthPasswordRequest");
+        SEL selector = NSSelectorFromString(
+            @"allHTTPHeaderFields");
+        Method inheritedMethod = requestClass
+            ? class_getInstanceMethod(requestClass, selector)
+            : NULL;
+        const char* typeEncoding = inheritedMethod
+            ? method_getTypeEncoding(inheritedMethod)
+            : NULL;
+        NSMethodSignature* signature = typeEncoding
+            ? [NSMethodSignature
+                  signatureWithObjCTypes:typeEncoding]
+            : nil;
+        const char* returnType = signature
+            ? BHTUnqualifiedObjCType(
+                  signature.methodReturnType)
+            : NULL;
+        if (!requestClass || !inheritedMethod ||
+            !signature || signature.numberOfArguments != 2 ||
+            !returnType || returnType[0] != '@') {
+            return;
+        }
+
+        BHTCompatibilityOriginalAllHTTPHeaderFields =
+            method_getImplementation(inheritedMethod);
+        BOOL installed = class_addMethod(
+            requestClass, selector,
+            (IMP)BHTCompatibilityXAuthAllHTTPHeaderFields,
+            typeEncoding);
+        atomic_store_explicit(
+            &BHTCompatibilityClientVersionOverrideInstalled,
+            installed, memory_order_release);
+    });
 }
 
 static BOOL BHTPasswordCommandSignatureIsSupported(void) {
@@ -671,8 +785,7 @@ static BOOL BHTCompatibilityRuntimeIsAvailable(void) {
 }
 
 BOOL BHTCompatibilitySignInIsAvailable(void) {
-    return BHTCompatibilityVersionIsSupported() &&
-           BHTNativeInitialSignInSignatureIsSupported();
+    return BHTCompatibilityRuntimeIsAvailable();
 }
 
 static id BHTSendObject(id target, SEL selector) {
@@ -2067,9 +2180,29 @@ static BOOL BHTPresentNativeLoginChallenge(
     if (self.cancelled) return;
     self.requestStarted = YES;
     self.navigationItem.leftBarButtonItem.enabled = NO;
+    unsigned long metadataGeneration =
+        atomic_fetch_add_explicit(
+            &BHTCompatibilityPasswordCommandGeneration, 1,
+            memory_order_acq_rel) + 1;
+    atomic_store_explicit(
+        &BHTCompatibilityPasswordRequestClaimPending,
+        true, memory_order_release);
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW,
+                      (int64_t)(30.0 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            if (BHTEndCompatibilityClientMetadataScope(
+                    metadataGeneration)) {
+                atomic_fetch_add_explicit(
+                    &BHTCompatibilityClientMetadataScopeTimedOut, 1,
+                    memory_order_relaxed);
+            }
+        });
     __weak typeof(self) weakSelf = self;
     void (^completion)(BOOL, id, id) =
         ^(BOOL success, id response, id error) {
+            BHTEndCompatibilityClientMetadataScope(
+                metadataGeneration);
             dispatch_async(dispatch_get_main_queue(), ^{
                 BHTCompatibilityLoginViewController* strongSelf =
                     weakSelf;
@@ -2093,12 +2226,16 @@ static BOOL BHTPresentNativeLoginChallenge(
         command = BHTCreatePasswordCommand(
             username, password, metrics, completion);
         if (!command || !BHTStartPasswordCommand(command)) {
+            BHTEndCompatibilityClientMetadataScope(
+                metadataGeneration);
             self.requestStarted = NO;
             [self finishWithSuccess:NO
                    failureCategory:@"command_start_failed"];
             return;
         }
     } @catch (__unused NSException* exception) {
+        BHTEndCompatibilityClientMetadataScope(
+            metadataGeneration);
         self.requestStarted = NO;
         [self finishWithSuccess:NO
                failureCategory:@"command_exception"];
@@ -2177,11 +2314,10 @@ static BOOL BHTPresentNativeLoginChallenge(
 
 @end
 
-// Retain the old password-command screen only as inert diagnostic code while
-// beta reports transition. X now rejects that private endpoint with a bare
-// 401, so no user-facing action dispatches to it.
-__attribute__((unused)) static void
-BHTPresentLegacyCompatibilitySignInForContext(
+// Compatibility Sign-in is deliberately separate from X's normal onboarding.
+// It uses the guarded X 12.9 password command and hands successful accounts
+// back to X's own account service without changing the native sign-in action.
+static void BHTPresentCompatibilitySignInForContext(
     UIViewController* presenter,
     UIViewController* addAccountController) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -2592,12 +2728,13 @@ static void BHTPresentNativeAddAccountCompatibilitySignIn(
 
 void BHTPresentCompatibilitySignIn(
     UIViewController* presenter) {
-    BHTPresentNativeInitialCompatibilitySignIn(presenter);
+    BHTPresentCompatibilitySignInForContext(
+        presenter, nil);
 }
 
 void BHTPresentCompatibilitySignInForAddingAccount(
     UIViewController* accountsController) {
-    BHTPresentNativeAddAccountCompatibilitySignIn(
+    BHTPresentCompatibilitySignInForContext(
         accountsController, accountsController);
 }
 
@@ -2622,8 +2759,8 @@ void BHTPresentCompatibilitySignInForAddingAccount(
     atomic_fetch_add_explicit(
         &BHTCompatibilityAddAccountEntryOpened, 1,
         memory_order_relaxed);
-    BHTPresentNativeAddAccountCompatibilitySignIn(
-        self.presenter, sender);
+    BHTPresentCompatibilitySignInForAddingAccount(
+        self.presenter);
 }
 @end
 
@@ -2741,8 +2878,8 @@ void BHTInstallCompatibilitySignInEntry(
 void BHTInstallCompatibilityAddAccountSignInEntry(
     UIViewController* accountsController) {
     if (!accountsController ||
-        !BHTCompatibilityVersionIsSupported() ||
-        !BHTNativeAddAccountSignInSignatureIsSupported()) {
+        !BHTCompatibilitySignInIsAvailable() ||
+        !BHTNativeAddAccountCompletionGetterIsSupported()) {
         return;
     }
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -2797,8 +2934,6 @@ void BHTInstallCompatibilityAddAccountSignInEntry(
 NSDictionary<NSString*, id>*
 BHTCompatibilitySignInDiagnosticSnapshot(void) {
     NSArray<NSString*>* missingRequirements =
-        BHTMissingNativeCompatibilityRequirements();
-    NSArray<NSString*>* legacyMissingRequirements =
         BHTMissingCompatibilityRequirements();
     NSArray<NSString*>* names = @[
         @"presented",
@@ -2852,35 +2987,6 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @(atomic_load_explicit(
             &BHTCompatibilityAccountHandoffFailed,
             memory_order_relaxed));
-    counters[@"nativeInitialAttempted"] =
-        @(atomic_load_explicit(
-            &BHTCompatibilityNativeInitialAttempted,
-            memory_order_relaxed));
-    counters[@"nativeInitialDispatched"] =
-        @(atomic_load_explicit(
-            &BHTCompatibilityNativeInitialDispatched,
-            memory_order_relaxed));
-    counters[@"nativeInitialCallbackInvoked"] =
-        @(atomic_load_explicit(
-            &BHTCompatibilityNativeInitialCallbackInvoked,
-            memory_order_relaxed));
-    counters[@"nativeInitialFailed"] =
-        @(atomic_load_explicit(
-            &BHTCompatibilityNativeInitialFailed,
-            memory_order_relaxed));
-    counters[@"nativeAddAccountAttempted"] =
-        @(atomic_load_explicit(
-            &BHTCompatibilityNativeAddAccountAttempted,
-            memory_order_relaxed));
-    counters[@"nativeAddAccountDispatched"] =
-        @(atomic_load_explicit(
-            &BHTCompatibilityNativeAddAccountDispatched,
-            memory_order_relaxed));
-    counters[@"nativeAddAccountFailed"] =
-        @(atomic_load_explicit(
-            &BHTCompatibilityNativeAddAccountFailed,
-            memory_order_relaxed));
-
     NSString* lastStage;
     NSString* lastFailure;
     BOOL lastCommandSucceeded;
@@ -2913,18 +3019,14 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         NSClassFromString(@"T1AccountsViewController");
     BOOL nativeAddAccountCompletionSelectorAvailable =
         BHTNativeAddAccountCompletionGetterIsSupported();
-    BOOL nativeInitialSignInSelectorAvailable =
-        BHTNativeInitialSignInSignatureIsSupported();
-    BOOL nativeAddAccountSignInSelectorAvailable =
-        BHTNativeAddAccountSignInSignatureIsSupported();
     BOOL addAccountEntryAvailable =
-        BHTCompatibilityVersionIsSupported() &&
+        missingRequirements.count == 0 &&
         accountsClass &&
         [accountsClass instancesRespondToSelector:
                            @selector(viewWillAppear:)] &&
         [accountsClass instancesRespondToSelector:
                            @selector(viewDidAppear:)] &&
-        nativeAddAccountSignInSelectorAvailable;
+        nativeAddAccountCompletionSelectorAvailable;
     return @{
         @"targetAppVersion": BHTCompatibilityTargetVersion,
         @"appVersionSupported":
@@ -2934,19 +3036,15 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"missingRuntimeRequirements":
             missingRequirements,
         @"legacyPasswordRuntimeAvailable":
-            @(legacyMissingRequirements.count == 0),
+            @(missingRequirements.count == 0),
         @"legacyPasswordMissingRuntimeRequirements":
-            legacyMissingRequirements,
+            missingRequirements,
         @"preLoginDiagnosticsEligible":
             @(BHTCompatibilityVersionIsSupported()),
         @"addAccountEntryAvailable":
             @(addAccountEntryAvailable),
         @"nativeAddAccountCompletionSelectorAvailable":
             @(nativeAddAccountCompletionSelectorAvailable),
-        @"nativeInitialSignInSelectorAvailable":
-            @(nativeInitialSignInSelectorAvailable),
-        @"nativeAddAccountSignInSelectorAvailable":
-            @(nativeAddAccountSignInSelectorAvailable),
         @"lastStage": lastStage,
         @"lastFailureCategory": lastFailure,
         @"lastCommandCompletionSucceeded": @(lastCommandSucceeded),
@@ -2958,13 +3056,32 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"lastCommandFailureDomain": lastCommandFailureDomain,
         @"lastCommandFailureCode": @(lastCommandFailureCode),
         @"counters": [counters copy],
-        @"compatibilitySignInMode": @"x_native_jetfuel",
+        @"compatibilitySignInMode": @"dedicated_xauth_password",
         @"nativeSignInRemainsDefault": @YES,
         @"legacyPasswordCommandIsDefault": @NO,
-        @"legacyPasswordCommandReachable": @NO,
-        @"credentialEntryOwner": @"x_native_onboarding",
-        @"nativeAuthenticationOutcome": @"x_owned_unknown",
+        @"legacyPasswordCommandReachable": @YES,
+        @"credentialEntryOwner": @"compatibility_screen_ephemeral",
         @"credentialPersistence": @"x_native_account_storage",
+        @"xAuthClientMetadataPolicy":
+            @"marked_request_instance_12_3_client_version",
+        @"xAuthClientMetadataTargetVersion":
+            BHTCompatibilityXAuthClientVersion,
+        @"xAuthClientMetadataOverrideInstalled":
+            @(atomic_load_explicit(
+                &BHTCompatibilityClientVersionOverrideInstalled,
+                memory_order_acquire)),
+        @"xAuthClientMetadataOverrideClaimed":
+            @(atomic_load_explicit(
+                &BHTCompatibilityClientVersionOverrideClaimed,
+                memory_order_relaxed)),
+        @"xAuthClientMetadataOverrideApplied":
+            @(atomic_load_explicit(
+                &BHTCompatibilityClientVersionOverrideApplied,
+                memory_order_relaxed)),
+        @"xAuthClientMetadataScopeTimedOut":
+            @(atomic_load_explicit(
+                &BHTCompatibilityClientMetadataScopeTimedOut,
+                memory_order_relaxed)),
         @"attestationOverridesIncluded": @NO,
         @"credentialBackupIncluded": @NO,
         @"uiMetricsPolicy": @"compatibility_nil",
