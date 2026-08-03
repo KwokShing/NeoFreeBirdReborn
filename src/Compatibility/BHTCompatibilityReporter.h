@@ -58,8 +58,10 @@ void BHTWriteCompatibilityReportAsync(
     void (^completion)(NSURL* _Nullable reportURL));
 void BHTRecordForYouFilterDiagnostic(
     BHTForYouFilterDiagnosticEvent event);
-// Records fixed workflow stages only. Tweet/reply text, users, IDs, URLs,
-// account objects, notification payloads, and raw errors are never inspected.
+// Records fixed workflow stages only. The two terminal failure observers may
+// transiently reduce X's exact exported failure-error value to a fixed
+// category in BHTReplyFailureDiagnostics; no notification, dictionary, error,
+// text, user, ID, URL, account object, or raw error is retained or exported.
 void BHTRecordReplyWorkflowDiagnostic(
     BHTReplyWorkflowDiagnosticEvent event);
 void BHTInstallReplyWorkflowDiagnosticObservers(void);

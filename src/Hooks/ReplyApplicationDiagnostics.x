@@ -19,6 +19,7 @@
 static Class BHTReplyApplicationRequestClass;
 static Class BHTReplyApplicationCreateTweetResponseClass;
 static Class BHTReplyApplicationCreateTweetPayloadClass;
+static Class BHTReplyApplicationSwiftValueClass;
 static Ivar BHTReplyApplicationCreateTweetIvar;
 static Ivar BHTReplyApplicationTweetResultsIvar;
 static BOOL BHTReplyApplicationModelLayoutAvailable;
@@ -116,6 +117,14 @@ static BOOL BHTReplyApplicationResolveSingleObjectIvar(
 
 static BHTNativeReplyModelStructureState
 BHTReplyApplicationModelStructureState(id model) {
+    if (model && BHTReplyApplicationSwiftValueClass &&
+        object_getClass(model) ==
+            BHTReplyApplicationSwiftValueClass) {
+        // GraphQLActionResponse<CreateTweetOperationResponse> is a Swift
+        // value and crosses this Objective-C seam as an opaque Foundation
+        // box. Recognize only the exact wrapper class; never unbox it.
+        return BHTNativeReplyModelStructureStateOpaqueSwiftValueBox;
+    }
     if (!BHTReplyApplicationModelLayoutAvailable) {
         return BHTNativeReplyModelStructureStateLayoutUnavailable;
     }
@@ -319,12 +328,17 @@ static BOOL BHTReplyApplicationGetObject(
         @"_TtC13GraphQLModels28CreateTweetOperationResponse");
     Class createTweetPayloadClass = NSClassFromString(
         @"_TtCC13GraphQLModels28CreateTweetOperationResponse11CreateTweet");
+    Class swiftValueClass = NSClassFromString(@"__SwiftValue");
     SEL decoderSelector = NSSelectorFromString(
         @"modelWithParseError:APIErrors:");
     SEL originalRequestSelector =
         NSSelectorFromString(@"originalRequest");
     SEL URLSelector = NSSelectorFromString(@"URL");
     BHTReplyApplicationRequestClass = requestClass;
+    BHTReplyApplicationSwiftValueClass = swiftValueClass;
+    if (swiftValueClass) {
+        BHTMarkNativeReplySwiftValueBoxRecognitionAvailable();
+    }
     Ivar createTweetIvar = NULL;
     Ivar tweetResultsIvar = NULL;
     if (BHTReplyApplicationResolveSingleObjectIvar(

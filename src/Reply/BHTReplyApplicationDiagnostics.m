@@ -79,6 +79,7 @@ static NSString* const BHTNativeReplyAPIErrorStateNames[] = {
 };
 static NSString* const BHTNativeReplyModelStructureStateNames[] = {
     @"layoutUnavailable",
+    @"opaqueSwiftValueBox",
     @"unexpectedModelClass",
     @"missingCreateTweet",
     @"unexpectedCreateTweetClass",
@@ -174,6 +175,7 @@ _Static_assert(
 static atomic_bool BHTNativeReplyApplicationHookInstalled;
 static atomic_bool BHTNativeReplyPreparedHookInstalled;
 static atomic_bool BHTNativeReplyModelStructureLayoutAvailable;
+static atomic_bool BHTNativeReplySwiftValueBoxRecognitionAvailable;
 static atomic_ulong BHTNativeReplyApplicationCandidateCalls;
 static atomic_ulong BHTNativeReplyApplicationAcceptedCalls;
 static atomic_ulong BHTNativeReplyPreparedCandidateCalls;
@@ -601,6 +603,12 @@ void BHTMarkNativeReplyModelStructureLayoutAvailable(void) {
         true, memory_order_release);
 }
 
+void BHTMarkNativeReplySwiftValueBoxRecognitionAvailable(void) {
+    atomic_store_explicit(
+        &BHTNativeReplySwiftValueBoxRecognitionAvailable,
+        true, memory_order_release);
+}
+
 static NSDictionary* BHTNativeReplyApplicationCounterDictionary(
     NSString* const names[],
     atomic_ulong counters[],
@@ -636,6 +644,10 @@ NSDictionary* BHTNativeReplyApplicationDiagnosticSnapshot(void) {
         @"modelStructureLayoutAvailable":
             @(atomic_load_explicit(
                 &BHTNativeReplyModelStructureLayoutAvailable,
+                memory_order_acquire)),
+        @"swiftValueBoxRecognitionAvailable":
+            @(atomic_load_explicit(
+                &BHTNativeReplySwiftValueBoxRecognitionAvailable,
                 memory_order_acquire)),
         @"candidateCallsDuringForwardedReply":
             @(atomic_load_explicit(
@@ -713,6 +725,8 @@ NSDictionary* BHTNativeReplyApplicationDiagnosticSnapshot(void) {
         @"inspectsAPIErrorCollectionElements": @NO,
         @"inspectsErrorDomainsOrCodes": @NO,
         @"inspectsCreateTweetObjectPresence": @YES,
+        @"inspectsOpaqueSwiftValueContents": @NO,
+        @"opaqueBoxDoesNotImplyApplicationSuccess": @YES,
         @"inspectsTweetResultsUnionPayload": @NO,
         @"persistsDecodedObjects": @NO,
         @"exportsDecodedObjects": @NO,

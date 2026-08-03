@@ -4,9 +4,10 @@
 #import "Likes/BHTLikesTab.h"
 #import "Login/BHTCompatibilityLogin.h"
 #import "MediaActions/BHTMediaActionUtility.h"
-#import "Reply/BHTWebReplyFallback.h"
 #import "Reply/BHTReplyApplicationDiagnostics.h"
+#import "Reply/BHTReplyFailureDiagnostics.h"
 #import "Reply/BHTReplyRequestDiagnostics.h"
+#import "Reply/BHTWebReplyFallback.h"
 #import "Security/BHTAuthenticationURLUtility.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 #import "ThemeColor/BHTThemePresets.h"
@@ -554,10 +555,28 @@ BOOL BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void) {
         memory_order_acquire);
 }
 
+// Capture only the process-local generation while the workflow is still
+// active. Failure notification handling calls this before the ordinary stage
+// recorder closes the terminal session.
+static NSUInteger
+BHTReplyWorkflowGenerationForFailureNotification(void) {
+    @synchronized(BHTObservationLock()) {
+        BHTExpireReplyWorkflowSessionIfNeededLocked();
+        BOOL active =
+            BHTReplyWorkflowSessionActive &&
+            BHTReplyWorkflowSendForwarded &&
+            BHTReplyWorkflowComposerPresented &&
+            BHTReplyWorkflowSessionGeneration > 0;
+        return active ? BHTReplyWorkflowSessionGeneration : 0;
+    }
+}
+
 typedef struct {
     const char* symbol;
     const char* key;
     BHTReplyWorkflowDiagnosticEvent event;
+    BOOL observesFailure;
+    BHTNativeReplyFailureSource failureSource;
 } BHTReplyNotificationObserverSpec;
 
 static const BHTReplyNotificationObserverSpec
@@ -566,31 +585,43 @@ static const BHTReplyNotificationObserverSpec
             "TFNTwitterCompositionOutboxDidAddCompositionNotification",
             "outboxQueued",
             BHTReplyWorkflowDiagnosticOutboxQueued,
+            NO,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionOutboxWillProcessCompositionNotification",
             "outboxProcessing",
             BHTReplyWorkflowDiagnosticOutboxProcessing,
+            NO,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionOutboxDidProcessCompositionNotification",
             "outboxProcessed",
             BHTReplyWorkflowDiagnosticOutboxProcessed,
+            NO,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionDidSendNotification",
             "sendCompleted",
             BHTReplyWorkflowDiagnosticSendCompleted,
+            NO,
+            BHTNativeReplyFailureSourceCompositionSend,
         },
         {
             "TFNTwitterCompositionOutboxDidFailProcessCompositionNotification",
             "outboxFailed",
             BHTReplyWorkflowDiagnosticOutboxProcessFailed,
+            YES,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionSendDidFailNotification",
             "sendFailed",
             BHTReplyWorkflowDiagnosticCompositionSendFailed,
+            YES,
+            BHTNativeReplyFailureSourceCompositionSend,
         },
 };
 
@@ -634,6 +665,8 @@ void BHTInstallReplyWorkflowDiagnosticObservers(void) {
         return;
     }
 
+    BHTPrepareNativeReplyFailureDiagnostics();
+
     @synchronized(BHTObservationLock()) {
         if (!BHTReplyWorkflowObserverTokens) {
             BHTReplyWorkflowObserverTokens =
@@ -666,9 +699,28 @@ void BHTInstallReplyWorkflowDiagnosticObservers(void) {
                             object:nil
                              queue:nil
                         usingBlock:^(
-                            __unused NSNotification* notification) {
+                            NSNotification* notification) {
+                            NSUInteger failureGeneration = 0;
+                            if (spec.observesFailure) {
+                                @try {
+                                    failureGeneration =
+                                        BHTReplyWorkflowGenerationForFailureNotification();
+                                } @catch (__unused NSException* exception) {
+                                }
+                            }
                             BHTRecordReplyWorkflowDiagnostic(
                                 spec.event);
+                            if (spec.observesFailure) {
+                                @try {
+                                    BHTObserveNativeReplyFailureNotification(
+                                        failureGeneration,
+                                        spec.failureSource,
+                                        notification);
+                                } @catch (__unused NSException* exception) {
+                                    // Diagnostics must never suppress X's
+                                    // ordinary terminal workflow stage.
+                                }
+                            }
                         }];
             if (token) {
                 BHTReplyWorkflowObserverTokens[key] = token;
@@ -898,6 +950,7 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
         @"capturesIdentifiers": @NO,
         @"capturesNotificationPayloads": @NO,
         @"capturesRawErrors": @NO,
+        @"failureErrorClassificationIncludedSeparately": @YES,
         @"networkCorrelationRequiresActiveForwardedSession": @YES,
     };
 }
@@ -1744,6 +1797,8 @@ static NSURL* BHTWriteCompatibilityReportNow(void) {
             BHTReplyRequestDiagnosticSnapshot(),
         @"nativeReplyApplication":
             BHTNativeReplyApplicationDiagnosticSnapshot(),
+        @"nativeReplyFailure":
+            BHTNativeReplyFailureDiagnosticSnapshot(),
         @"webReplyFallback":
             BHTWebReplyFallbackDiagnosticSnapshot(),
         @"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot(),

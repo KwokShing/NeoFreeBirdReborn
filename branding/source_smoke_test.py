@@ -1524,7 +1524,10 @@ def main() -> None:
             "TFNTwitterCompositionDidSendNotification",
             "TFNTwitterCompositionOutboxDidFailProcessCompositionNotification",
             "TFNTwitterCompositionSendDidFailNotification",
-            "__unused NSNotification* notification",
+            "NSNotification* notification",
+            "if (spec.observesFailure)",
+            "BHTReplyWorkflowGenerationForFailureNotification()",
+            "BHTObserveNativeReplyFailureNotification(",
             '@"replyWorkflow":',
             "BHTReplyWorkflowDiagnosticSnapshot()",
             '@"capturesTweetOrReplyText": @NO',
@@ -1532,6 +1535,7 @@ def main() -> None:
             '@"capturesIdentifiers": @NO',
             '@"capturesNotificationPayloads": @NO',
             '@"capturesRawErrors": @NO',
+            '@"failureErrorClassificationIncludedSeparately": @YES',
             '@"correlation":',
             '@"process_level_temporal_heuristic"',
             '@"diagnosticWindowSeconds":',
@@ -1837,6 +1841,225 @@ def main() -> None:
                 "Native reply request diagnostics must not inspect or "
                 f"rewrite sensitive traffic: {unsafe_network_value}"
             )
+
+    reply_failure_header = (
+        ROOT / "src" / "Reply" / "BHTReplyFailureDiagnostics.h"
+    ).read_text(encoding="utf-8")
+    reply_failure_source = (
+        ROOT / "src" / "Reply" / "BHTReplyFailureDiagnostics.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        reply_failure_header + reply_failure_source,
+        (
+            "BHTNativeReplyFailureSourceOutboxProcess",
+            "BHTNativeReplyFailureSourceCompositionSend",
+            "BHTPrepareNativeReplyFailureDiagnostics(void)",
+            "BHTObserveNativeReplyFailureNotification(",
+            "BHTNativeReplyFailureDiagnosticSnapshot(void)",
+            'isEqualToString:@"12.9"',
+            '"TFNTwitterCompositionOutboxNotificationErrorUserInfoKey"',
+            '"HTTPRequestActionResponseErrorGetAPIErrors"',
+            '"HTTPRequestActionResponseErrorGetRestErrors"',
+            '"HTTPRequestActionResponseErrorGetParseError"',
+            '"HTTPRequestActionResponseErrorGetAuthenticationError"',
+            '"HTTPRequestActionResponseErrorGetOperationError"',
+            '"HTTPRequestActionResponseErrorGetInvalidResponseModelError"',
+            '"HTTPRequestActionResponseErrorGetInternalError"',
+            '"HTTPRequestActionResponseErrorIsResponseWithoutDataOrErrorError"',
+            'isEqualToString:@"TwitterSPMMigration"',
+            "BHTReplyFailureClassifiersAvailable",
+            "BHTReplyFailureGetAPIErrors = NULL",
+            "BHTReplyFailureGetRESTError = NULL",
+            "BHTReplyFailureGetParseError = NULL",
+            "BHTReplyFailureGetAuthenticationError = NULL",
+            "BHTReplyFailureGetOperationError = NULL",
+            "BHTReplyFailureGetInvalidResponseModelError = NULL",
+            "BHTReplyFailureGetInternalError = NULL",
+            "BHTReplyFailureIsResponseWithoutDataOrError = NULL",
+            "BHTReplyFailureRecentAttemptLimit = 8",
+            "BHTReplyFailureSourceNames[]",
+            "BHTReplyFailureObservationStateNames[]",
+            "BHTReplyFailureErrorCategoryNames[]",
+            "BHTReplyFailureAPIErrorStateNames[]",
+            "BHTReplyFailureErrorObjectStateNames[]",
+            "_Static_assert(",
+            "if (sessionGeneration == 0)",
+            "[userInfo objectForKey:",
+            "BHTReplyFailureErrorUserInfoKey]",
+            'NSClassFromString(@"__SwiftValue")',
+            "object_getClass(error) ==",
+            "BHTReplyFailureSwiftValueClass",
+            "BHTReplyFailureAPIErrorStateNonemptyCollection",
+            '@"sessionGeneration": @(sessionGeneration)',
+            '@"source": BHTReplyFailureSourceNames[source]',
+            '@"errorObjectState":',
+            '@"failureErrorKeyAvailable":',
+            '@"allClassifiersAvailable":',
+            '@"swiftValueBoxRecognitionAvailable":',
+            '@"recentAttemptLimit":',
+            '@"errorObjectCounters":',
+            '@"correlationScope":',
+            '@"process_temporal_failure_notification"',
+            '@"requestIdentityBound": @NO',
+            '@"strictX12_9Only": @YES',
+            '@"usesExportedActionErrorClassifierBridges": @YES',
+            '@"inspectsFailureNotificationErrorMetadata": @YES',
+            '@"inspectsOnlyExactFailureErrorUserInfoKey": @YES',
+            '@"classifiesOnlyExactOpaqueSwiftValueWrapper": @YES',
+            '@"inspectsOpaqueSwiftValueContents": @NO',
+            '@"enumeratesNotificationUserInfo": @NO',
+            '@"capturesNotificationPayloads": @NO',
+            '@"capturesRawErrors": @NO',
+            '@"capturesErrorDescriptionsOrUserInfo": @NO',
+            '@"inspectsErrorDomainsOrCodes": @NO',
+            '@"inspectsAPIErrorCollectionElements": @NO',
+            '@"capturesTweetOrReplyText": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesAccountData": @NO',
+            '@"persistsNotificationOrErrorObjects": @NO',
+            '@"exportsNotificationOrErrorObjects": @NO',
+            '@"modifiesErrorsNotificationsOrCompletions": @NO',
+            '@"failureClassificationDoesNotInferPostingSuccess": @YES',
+        ),
+        "strict fixed-category native reply failure diagnostics",
+    )
+    failure_observer = source_section(
+        reply_failure_source,
+        "void BHTObserveNativeReplyFailureNotification(",
+        "static NSDictionary* BHTReplyFailureCounterDictionary(",
+        "native reply failure notification classifier",
+    )
+    if failure_observer.find("if (sessionGeneration == 0)") > (
+        failure_observer.find("notification.userInfo")
+    ):
+        raise AssertionError(
+            "Uncorrelated reply failure notifications must be rejected "
+            "before their user-info dictionary is touched"
+        )
+    if failure_observer.count("notification.userInfo") != 1:
+        raise AssertionError(
+            "Reply failure diagnostics may access only one notification "
+            "user-info dictionary"
+        )
+    swift_error_guard = (
+        "BHTReplyFailureSwiftValueClass &&\n"
+        "                       object_getClass(error) ==\n"
+        "                           BHTReplyFailureSwiftValueClass"
+    )
+    swift_guard_index = failure_observer.find(swift_error_guard)
+    first_classifier_index = failure_observer.find(
+        "BHTReplyFailureGetAPIErrors(error)"
+    )
+    ns_error_index = failure_observer.find(
+        "[error isKindOfClass:NSError.class]"
+    )
+    if not (
+        0 <= swift_guard_index < first_classifier_index < ns_error_index
+    ):
+        raise AssertionError(
+            "Private action-error classifiers must run only inside the "
+            "exact opaque Swift-value wrapper branch"
+        )
+    for private_value in (
+        "notification.object",
+        "allKeys",
+        "allValues",
+        "keyEnumerator",
+        "objectEnumerator",
+        "objectAtIndex:",
+        "firstObject",
+        "lastObject",
+        "enumerateObjectsUsingBlock:",
+        "enumerateKeysAndObjectsUsingBlock:",
+        "valueForKey:",
+        "isKindOfClass:BHTReplyFailureSwiftValueClass",
+        "class_getName(error)",
+        "object_getClassName",
+        "NSStringFromClass",
+        "class_copyIvarList",
+        "object_getIvar",
+        "methodForSelector:",
+        "performSelector:",
+        "Mirror",
+        "__SwiftValue.store",
+        "localizedDescription",
+        "debugDescription",
+        "failureReason",
+        "recoverySuggestion",
+        "helpAnchor",
+        "error.domain",
+        "error.code",
+        "error.userInfo",
+        "NSLog",
+        "TFNTwitterCompositionAccountIDUserInfoKey",
+        "TFNTwitterCompositionNotificationStatusKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionIndexUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionsCountUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionsUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationStatusUserInfoKey",
+        "tweetText",
+        "statusID",
+        "userID",
+        "accountID",
+        "absoluteString",
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "cookie",
+        "authToken",
+    ):
+        if private_value in reply_failure_source:
+            raise AssertionError(
+                "Reply failure diagnostics must not inspect or retain "
+                f"private notification/error data: {private_value}"
+            )
+    require_source_tokens(
+        compatibility_source,
+        (
+            '#import "Reply/BHTReplyFailureDiagnostics.h"',
+            '@"nativeReplyFailure":',
+            "BHTNativeReplyFailureDiagnosticSnapshot()",
+        ),
+        "native reply failure report integration",
+    )
+    failure_spec_section = source_section(
+        compatibility_source,
+        "BHTReplyNotificationObserverSpecs[] = {",
+        "static NSString* BHTReplyNotificationNameForSymbol(",
+        "reply failure observer allowlist",
+    )
+    if failure_spec_section.count("YES,") != 2:
+        raise AssertionError(
+            "Exactly the two terminal reply-failure notification specs may "
+            "enable error classification"
+        )
+    failure_observer_integration = source_section(
+        compatibility_source,
+        "usingBlock:^(\n                            NSNotification* notification)",
+        "if (token)",
+        "native reply failure observer integration",
+    )
+    capture_index = failure_observer_integration.find(
+        "BHTReplyWorkflowGenerationForFailureNotification()"
+    )
+    classify_index = failure_observer_integration.find(
+        "BHTObserveNativeReplyFailureNotification("
+    )
+    record_index = failure_observer_integration.find(
+        "BHTRecordReplyWorkflowDiagnostic("
+    )
+    if not (0 <= capture_index < record_index < classify_index):
+        raise AssertionError(
+            "Failure observers must capture correlation, preserve the "
+            "terminal workflow record, then reduce the transient error"
+        )
+    if "@catch (__unused NSException* exception)" not in (
+        failure_observer_integration
+    ):
+        raise AssertionError(
+            "A failure diagnostic exception must not suppress the ordinary "
+            "terminal workflow record"
+        )
     network_allowlist = source_section(
         reply_network_source,
         "static BOOL BHTReplyRequestHostKindForURL(",
@@ -2158,12 +2381,15 @@ def main() -> None:
             "BHTRecordNativeReplyPreparedResponse(",
             "BHTMarkNativeReplyApplicationHookInstalled(void)",
             "BHTMarkNativeReplyPreparedHookInstalled(void)",
+            "BHTMarkNativeReplySwiftValueBoxRecognitionAvailable(void)",
             "BHTNativeReplyApplicationDiagnosticSnapshot(void)",
             "BHTNativeReplyDecodedOutcomeModelPresent",
             "BHTNativeReplyDecodedOutcomeAPIErrors",
             "BHTNativeReplyDecodedOutcomeParseError",
             "BHTNativeReplyDecodedOutcomeEmptyResult",
             "BHTNativeReplyModelStructureStateUnexpectedModelClass",
+            "BHTNativeReplyModelStructureStateOpaqueSwiftValueBox",
+            '@"opaqueSwiftValueBox"',
             "BHTNativeReplyModelStructureStateMissingCreateTweet",
             "BHTNativeReplyModelStructureStateMissingTweetResults",
             "BHTNativeReplyModelStructureStatePayloadPresent",
@@ -2177,6 +2403,7 @@ def main() -> None:
             '@"apiErrorsState":',
             '@"modelStructureState":',
             '@"modelStructureLayoutAvailable":',
+            '@"swiftValueBoxRecognitionAvailable":',
             '@"modelStructureCounters":',
             '@"effectiveModelPresent": @(effectiveModelPresent)',
             '@"effectiveParseErrorPresent":',
@@ -2209,6 +2436,8 @@ def main() -> None:
             '@"inspectsAPIErrorCollectionElements": @NO',
             '@"inspectsErrorDomainsOrCodes": @NO',
             '@"inspectsCreateTweetObjectPresence": @YES',
+            '@"inspectsOpaqueSwiftValueContents": @NO',
+            '@"opaqueBoxDoesNotImplyApplicationSuccess": @YES',
             '@"inspectsTweetResultsUnionPayload": @NO',
             '@"persistsDecodedObjects": @NO',
             '@"exportsDecodedObjects": @NO',
@@ -2233,12 +2462,16 @@ def main() -> None:
             'class_copyIvarList(cls, &count)',
             'count == 1',
             'object_getIvar(',
+            'NSClassFromString(@"__SwiftValue")',
+            'object_getClass(model) ==',
+            'BHTReplyApplicationSwiftValueClass',
             '@"_TtC13GraphQLModels28CreateTweetOperationResponse"',
             '@"_TtCC13GraphQLModels28CreateTweetOperationResponse11CreateTweet"',
             '"createTweet", 16',
             '"tweetResults", 16',
             'BHTNativeReplyApplicationRequestURLIsEligible(',
             'BHTMarkNativeReplyModelStructureLayoutAvailable();',
+            'BHTMarkNativeReplySwiftValueBoxRecognitionAvailable();',
             'NSClassFromString(@"TFSAPIRequest")',
             'NSSelectorFromString(@"originalRequest")',
             'NSSelectorFromString(@"URL")',
@@ -2259,6 +2492,41 @@ def main() -> None:
         ),
         "guarded X 12.9 decoded reply application hook",
     )
+    for forbidden in (
+        "class_getName(model",
+        "NSStringFromClass(object_getClass(model))",
+        "valueForKey:",
+        "Mirror",
+        "_bridgeAnythingToObjectiveC",
+        "__SwiftValue.store",
+    ):
+        if forbidden in reply_application_hook:
+            raise AssertionError(
+                "The native reply diagnostic must recognize but never "
+                f"inspect the opaque Swift value box: {forbidden}"
+            )
+    model_state_section = source_section(
+        reply_application_hook,
+        "BHTReplyApplicationModelStructureState(id model)",
+        "static NSURL* BHTReplyApplicationRequestURL(",
+        "opaque native reply response representation guard",
+    )
+    swift_identity_index = model_state_section.find(
+        "object_getClass(model) =="
+    )
+    opaque_return_index = model_state_section.find(
+        "BHTNativeReplyModelStructureStateOpaqueSwiftValueBox"
+    )
+    layout_index = model_state_section.find(
+        "BHTReplyApplicationModelLayoutAvailable"
+    )
+    if not (
+        0 <= swift_identity_index < opaque_return_index < layout_index
+    ):
+        raise AssertionError(
+            "The exact opaque Swift-value representation must return before "
+            "any direct generated-model layout inspection"
+        )
     if reply_application_hook.count("%orig(") != 1:
         raise AssertionError(
             "The decoded reply diagnostic must forward to X exactly once"
@@ -2443,7 +2711,7 @@ def main() -> None:
     application_fast_gate = source_section(
         compatibility_source,
         "BOOL BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void)",
-        "typedef struct {",
+        "static NSUInteger\nBHTReplyWorkflowGenerationForFailureNotification",
         "lock-free native reply application hint",
     )
     require_source_tokens(
@@ -3484,11 +3752,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.46" not in (
+    if "Version: 6.1.0-beta.47" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The prepared native-reply diagnostics must ship as beta.46"
+            "The reply failure diagnostics must ship as beta.47"
         )
 
     branding_source = (

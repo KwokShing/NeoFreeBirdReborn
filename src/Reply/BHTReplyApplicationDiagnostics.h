@@ -4,6 +4,7 @@
 
 typedef NS_ENUM(NSUInteger, BHTNativeReplyModelStructureState) {
     BHTNativeReplyModelStructureStateLayoutUnavailable = 0,
+    BHTNativeReplyModelStructureStateOpaqueSwiftValueBox,
     BHTNativeReplyModelStructureStateUnexpectedModelClass,
     BHTNativeReplyModelStructureStateMissingCreateTweet,
     BHTNativeReplyModelStructureStateUnexpectedCreateTweetClass,
@@ -49,4 +50,5 @@ void BHTRecordNativeReplyPreparedResponse(
 void BHTMarkNativeReplyApplicationHookInstalled(void);
 void BHTMarkNativeReplyPreparedHookInstalled(void);
 void BHTMarkNativeReplyModelStructureLayoutAvailable(void);
+void BHTMarkNativeReplySwiftValueBoxRecognitionAvailable(void);
 NSDictionary* BHTNativeReplyApplicationDiagnosticSnapshot(void);

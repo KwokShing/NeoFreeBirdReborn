@@ -331,15 +331,54 @@ and these prepared-response states do not prove posting success. They
 distinguish an error already visible after preparation from the next suspected
 typed-model assimilation/outbox layer.
 
-The same beta also gives the existing decoder checkpoint a guarded structural
+The same beta also gave the existing decoder checkpoint a guarded structural
 presence category for X 12.9's exact `CreateTweetOperationResponse` and nested
 `CreateTweet` classes. Both classes must expose exactly their single expected
-pointer-sized ivar at offset 16 within a 24-byte instance before the check is
-enabled. Only whether `createTweet` and then `tweetResults` are present is
-recorded; the objects are transient and never persisted. The 17-byte Swift
-`TweetResultsFragment.result` union is deliberately not read or invoked, so a
-present structural payload remains an observation rather than proof that the
-server created a tweet.
+pointer-sized ivar at offset 16 within a 24-byte instance before the direct
+model check is enabled. The beta 46 device result was initially reported as an
+unexpected model class, but later binary verification showed that this
+Objective-C seam normally returns the outer Swift
+`GraphQLActionResponse<CreateTweetOperationResponse>` value in an opaque
+`__SwiftValue` box rather than returning the generated operation model
+directly. Beta 47 therefore recognizes only that exact wrapper class as
+`opaqueSwiftValueBox` before considering the defensive direct-model layout.
+It never unboxes, reflects on, or reads the wrapper. The direct fallback still
+records only whether `createTweet` and then `tweetResults` are present. The
+objects are transient and never persisted, and the 17-byte Swift
+`TweetResultsFragment.result` union remains deliberately unread. Neither an
+opaque box nor a present direct payload proves that the server created a
+tweet.
+
+Beta 47 also follows a controlled Undo Tweet comparison. With Undo set to ten
+seconds, the reply reached the outbox after the expected delay; with Undo off,
+it reached the outbox immediately. Both attempts still used the ordinary
+`CreateTweet` operation, received HTTP 2xx with an effective prepared model and
+no surfaced prepared parse, operation, or API error, and then ended in the
+same composition-send failure. Undo scheduling is therefore not the root
+cause, and this beta does not change it.
+
+To identify the next layer without changing reply behavior, beta 47 observes
+only X 12.9's two allowlisted terminal reply-failure notifications while an
+active, forwarded native-reply generation still exists. It captures only that
+process-local generation before the ordinary workflow recorder closes the
+session, records the existing terminal stage first, and then reads only the
+value associated with
+X's exact exported
+`TFNTwitterCompositionOutboxNotificationErrorUserInfoKey`. An all-or-nothing,
+same-image set of X's exported `HTTPRequestActionResponseError` classifier
+bridges is called only when that value has the exact opaque `__SwiftValue`
+wrapper expected by the exported Swift ABI, and reduces it to fixed API, REST,
+parse, authentication, operation, invalid-response-model, internal,
+response-without-data-or-error, multiple, or unclassified categories. The
+wrapper itself is never opened; an `NSError` or any other object type is
+reported only as a fixed type state and is never passed to those bridges. The
+notification dictionary is never enumerated, and account, composition,
+status, and index keys are never read. The diagnostic does not retain or
+export the notification, dictionary, error object, API-error elements,
+descriptions, domains, codes, error user info, reply text, identifiers,
+accounts, request or response contents, headers, cookies, or tokens. Its
+process-temporal correlation is not request-identity-bound, and its category
+cannot by itself establish whether a reply was persisted.
 
 Beta 40 stopped feeding captured WebKit instrumentation into the native
 password command and restored `uiMetrics:nil`, matching the successful beta 29
