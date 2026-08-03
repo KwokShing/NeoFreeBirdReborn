@@ -2158,12 +2158,14 @@ static BOOL BHTPresentNativeLoginChallenge(
     self.metricsCollector =
         [BHTCompatibilityMetricsCollector new];
     self.metricsCollector.hostView = self.view;
-    NSDate* preflightStartedAt = [NSDate date];
+    NSTimeInterval preflightStartedAt =
+        NSProcessInfo.processInfo.systemUptime;
     __weak typeof(self) weakSelf = self;
     [self.metricsCollector
         startWithCompletion:^(__unused NSString* metrics) {
-            NSTimeInterval elapsed = [[NSDate date]
-                timeIntervalSinceDate:preflightStartedAt];
+            NSTimeInterval elapsed =
+                NSProcessInfo.processInfo.systemUptime -
+                preflightStartedAt;
             NSTimeInterval remaining = MAX(
                 0.0,
                 BHTCompatibilityMinimumPreflightDuration - elapsed);
