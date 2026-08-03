@@ -85,7 +85,7 @@ Status meanings:
 | Timeline | `hide_spaces` | Updated | Fleet-line visibility seam; runtime checked |
 | Timeline | `hide_custom_timelines` | Updated | Hides without persisting an empty pinned list |
 | Timeline | `remember_timeline_tab` | Updated | Disabled preference now leaves X's native value alone |
-| Timeline | For You keyword filters | New/runtime check | Two independent, bounded literal-substring lists match usernames/display names or primary visible post text. Cached normalized terms and per-item generation decisions keep section updates light. The gate carries an explicit primary-Home model marker through `TFNTwitterHomeTimeline-deserializeStream`, binds X's inner data controller to its exact live `T1URTViewController`, and requires that owner's timeline to be positively marked; Following and every unknown runtime state fail open |
+| Timeline | For You keyword filters | New/runtime check | Two independent, bounded lists match authors/reposters, real `@handle` tokens, or primary visible post text. Cached normalized terms and content-aware per-item decisions keep repeated layout checks light. The gate carries an explicit primary-Home model marker through `TFNTwitterHomeTimeline-deserializeStream`; section filtering accepts only a verified T1URT owner, while exact `T1URTViewController` row-height callbacks provide the X 12.9 render fallback. Following and every unknown runtime state fail open |
 | Timeline | `enable_likes_tab` | New/runtime check | Independent bottom destination backed by native Likes history; opens raw Activity History tab 4 on X 12.9, guards against delayed native offset restoration on its first presentation without a loading cover, preserves position on later tab switches, and retains Profile, History, Lists, and other native destinations pushed from X's side drawer |
 | Timeline | `likes_media_waterfall` | New/runtime check | Newest-first extraction from the same ad-filtered native section snapshot, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, a window-level edge-to-edge viewer on iPhone and iPad, a Posts/Media selector with native segmented-control artwork and a guarded 32-point minimum navigation-title height, Apple-style contextual Photo/Video/GIF previews and action menus in both surfaces (with the guarded TFN sheet retained only as a legacy fallback), and percent-driven modal swipe-down dismissal |
 | Grok | `enable_grok_translations` | Updated | Manual translation gates are no longer forced globally |
@@ -244,9 +244,9 @@ account review, and provides an explicit native **Use This Web Account**
 confirmation instead of relying on X's committed login shell. Confirmation is
 blocked while a navigation is pending, an error is visible, or X is still on a
 login URL. A `/home` landing or return to the intent after a visible login
-transition can confirm automatically. It also resolves For You ownership through a unique, exact
-URT-to-data-controller relationship before comparing keywords, while every
-missing, ambiguous, or Following identity still fails open.
+transition can confirm automatically. Its original For You owner bridge was
+later replaced in beta 48 after device diagnostics proved X 12.9 has no such
+declared inner-controller relationship.
 
 Beta 39 hardens Compatibility Add Account for account-specific authentication
 responses. It checks a returned native verification challenge before treating
@@ -433,3 +433,16 @@ zoom, video playback, and percent-driven dismissal. Equal URL/size-bucket
 requests are coalesced across prefetching, visible cells, contextual previews,
 and the close-up viewer; each consumer can cancel independently, and the shared
 transfer is cancelled only when no consumer remains.
+
+Beta 48 repairs the For You filter at the runtime path actually used by X
+12.9. Device diagnostics showed that section deliveries could arrive through
+a helper controller with no declared owner link, so that path now fails open
+instead of scanning nonexistent ownership fields. The structurally verified
+`T1URTViewController` row-height callbacks recheck the explicit primary-Home
+timeline marker and collapse matching rows without changing reusable cell
+visibility state. The Following timeline therefore remains untouched. Account
+filters now also parse bounded, valid `@handle` tokens from X's trusted full
+text/display-text models, making an entry such as `grok` catch `@grok` without
+treating the ordinary body word “grok” as an account mention. Returning from
+settings reloads only the already-loaded primary For You table when the filter
+generation changed; it does not make a network request.

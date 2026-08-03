@@ -45,8 +45,9 @@ preserved where possible.
 
 - Layered promoted-content filtering across timelines, profiles, search,
   Explore, cards, articles, and supported video paths.
-- Separate **For You** filters for usernames/display names and post text,
-  including `@mentions`. Following is never filtered by these lists.
+- Separate **For You** filters for accounts/`@mentions` and post text. Account
+  entries also catch matching handles mentioned in a post; Following is never
+  filtered by either list.
 - A Posts/Media selector in Likes with an adaptive, pinch-adjustable waterfall
   that respects each item's aspect ratio.
 - Full-window photo and video viewing on iPhone and iPad, original-quality

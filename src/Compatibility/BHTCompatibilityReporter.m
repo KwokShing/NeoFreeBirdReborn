@@ -958,6 +958,8 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
 static NSDictionary* BHTForYouControllerRuntimeShape(void) {
     Class controllerClass = NSClassFromString(@"T1URTViewController");
     if (!controllerClass) return @{@"classPresent": @NO};
+    Class itemsControllerClass =
+        NSClassFromString(@"TFNItemsDataViewController");
 
     NSMutableSet<NSString*>* methods = [NSMutableSet set];
     NSMutableArray<NSDictionary*>* ivars = [NSMutableArray array];
@@ -1015,6 +1017,11 @@ static NSDictionary* BHTForYouControllerRuntimeShape(void) {
     }];
     return @{
         @"classPresent": @YES,
+        @"superclass":
+            NSStringFromClass(class_getSuperclass(controllerClass)) ?: @"none",
+        @"inheritsItemsDataViewController":
+            @(itemsControllerClass &&
+              [controllerClass isSubclassOfClass:itemsControllerClass]),
         @"dataViewControllerAccessorPresent":
             @([controllerClass instancesRespondToSelector:
                   NSSelectorFromString(@"dataViewController")]),
@@ -1028,6 +1035,34 @@ static NSDictionary* BHTForYouControllerRuntimeShape(void) {
                 sortedArrayUsingSelector:
                     @selector(localizedCaseInsensitiveCompare:)],
         @"timelineIvars": [ivars copy],
+        @"renderCallbacks": @{
+            @"tableViewCellForItem":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableViewCellForItem:atIndexPath:")]),
+            @"rowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableView:heightForRowAtIndexPath:")]),
+            @"estimatedRowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableView:estimatedHeightForRowAtIndexPath:")]),
+            @"itemRowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableViewHeightForItem:atIndexPath:")]),
+            @"estimatedItemRowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"estimatedTableViewHeightForItem:atIndexPath:")]),
+            @"itemAtIndexPath":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(@"itemAtIndexPath:")]),
+        },
+        @"filterExecutionPolicy":
+            @"verified_urt_role_section_then_exact_urt_item_height_fallback",
+        @"unknownSectionOwnerFailsOpen": @YES,
     };
 }
 
@@ -1043,10 +1078,14 @@ static NSDictionary* BHTForYouFilterDiagnosticSnapshot(void) {
         @"timelineObjectResolvedChecks",
         @"timelineObjectMissingChecks",
         @"missingStatusItems",
+        @"trustedTextCandidateSetsNonEmpty",
+        @"mentionHandleCandidatesExtracted",
         @"decisionCacheHits",
         @"usernameMatches",
         @"postTextMatches",
         @"noMatches",
+        @"renderRowCollapses",
+        @"renderReloads",
     ];
     NSMutableDictionary* snapshot =
         [NSMutableDictionary dictionaryWithCapacity:names.count];

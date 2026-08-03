@@ -264,6 +264,15 @@ def main() -> None:
         '@"dataViewControllerIvarPresent"',
         '@"directOwnerResolvedChecks"',
         '@"directOwnerMissingChecks"',
+        '@"trustedTextCandidateSetsNonEmpty"',
+        '@"mentionHandleCandidatesExtracted"',
+        '@"renderRowCollapses"',
+        '@"renderReloads"',
+        '@"inheritsItemsDataViewController"',
+        '@"itemRowHeight"',
+        '@"estimatedItemRowHeight"',
+        '@"filterExecutionPolicy"',
+        '@"unknownSectionOwnerFailsOpen"',
         '@"configurationGeneration"',
         '@"seenPaletteCount"',
         '@"providerClasses"',
@@ -3752,11 +3761,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.47" not in (
+    if "Version: 6.1.0-beta.48" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The reply failure diagnostics must ship as beta.47"
+            "The For You filter render fallback must ship as beta.48"
         )
 
     branding_source = (
@@ -4867,17 +4876,21 @@ def main() -> None:
             "matchesAnyPostTextCandidate:",
             "filterGenerationWithUsernameFilters:",
             "ItemObjectValueAllowingUntypedIvar",
-            "BHTRegisterURTController",
-            "BHTDirectURTOwnerForDataController",
-            "BHTBindURTDataController",
             "NearestURTTimelineController",
+            "BHTIsPrimaryForYouURTController",
             "IsPrimaryForYouTimelineController",
+            "BHTShouldHideForYouKeywordItemInURTController",
         ),
         "strict For You-only runtime filtering",
     )
     for forbidden in (
         "lastSelectedTimelineTabIdentifier",
         "kBHTForYouControllerKey",
+        'NSSelectorFromString(@"dataViewController")',
+        '"_dataViewController"',
+        "BHTRegisterURTController",
+        "BHTDirectURTOwnerForDataController",
+        "BHTBindURTDataController",
     ):
         if forbidden in timeline_source:
             raise AssertionError(
@@ -4910,6 +4923,28 @@ def main() -> None:
             "representation instead of selecting one visible string"
         )
 
+    username_mention_candidates = source_section(
+        timeline_source,
+        "static void AddUsernameCandidates",
+        "static void AddPostTextCandidate",
+        "bounded username-filter @mention extraction",
+    )
+    require_source_tokens(
+        username_mention_candidates,
+        (
+            "BHTForYouMaximumMentionCandidates = 32",
+            "BHTForYouMaximumMentionScanLength = 32768",
+            "BHTTwitterHandleMaximumLength = 15",
+            "IsTwitterHandleCharacter",
+            "AddMentionUsernameCandidates",
+            "previous == '@'",
+            "handleLength > BHTTwitterHandleMaximumLength",
+            "[candidates addObject:handle]",
+            "BHTForYouFilterDiagnosticMentionHandleCandidateExtracted",
+        ),
+        "bounded username-filter @mention extraction",
+    )
+
     keyword_decision_cache = source_section(
         timeline_source,
         "static BOOL ShouldHideForYouKeywordItem",
@@ -4926,9 +4961,22 @@ def main() -> None:
             "isEqualToArray:postTextCandidates",
             "return cached.hidden",
             "updated.hidden = hidden",
+            "hasUsernameFilters || hasPostTextFilters",
+            "BHTForYouFilterDiagnosticTrustedTextCandidateSetNonEmpty",
+            "UsernameCandidatesForStatuses(",
         ),
-        "content-aware For You keyword decision caching",
+        "content-aware For You keyword and @mention decision caching",
     )
+    if not re.search(
+        r"UsernameCandidatesForStatuses\s*\(\s*"
+        r"outerStatus\s*,\s*representedStatus\s*,\s*"
+        r"postTextCandidates\s*\)",
+        keyword_decision_cache,
+    ):
+        raise AssertionError(
+            "Username filters must derive @handle candidates from the same "
+            "trusted post-text representations used by post-text filters"
+        )
     if "(hidden ?" in keyword_decision_cache:
         raise AssertionError(
             "For You filtering must not use the stale packed decision cache"
@@ -4958,43 +5006,58 @@ def main() -> None:
     require_source_tokens(
         for_you_controller_gate,
         (
-            "BHTDirectURTOwnerForDataController(",
             "NearestURTTimelineController(",
-            "ItemObjectValue(",
+            "BHTForYouFilterDiagnosticDirectOwnerMissing",
+            "BHTForYouFilterDiagnosticControllerOwnerMissing",
+            "return NO",
+            "return BHTIsPrimaryForYouURTController(urtController)",
+        ),
+        "fail-open section-controller ownership resolution",
+    )
+    direct_urt_gate = source_section(
+        timeline_source,
+        "static BOOL BHTIsPrimaryForYouURTController",
+        "static BOOL IsPrimaryForYouTimelineController",
+        "exact T1URT For You role gate",
+    )
+    require_source_tokens(
+        direct_urt_gate,
+        (
+            'NSClassFromString(@"T1URTViewController")',
+            '@"TIMELINE_HOME"',
             'NSSelectorFromString(@"urtTimeline")',
             'BHTUntypedIvarPointer(urtController, "urtTimeline")',
             "BHTHomeTimelineRoleForTrustedPointer(rawTimeline)",
             "BHTHomeTimelineRoleForTimeline(urtTimeline)",
             "BHTHomeTimelineRolePrimaryForYou",
         ),
-        "inner-controller For You ownership resolution",
+        "exact T1URT timeline-object role resolution",
+    )
+    render_fallback = source_section(
+        timeline_source,
+        "%hook T1URTViewController",
+        "%hook TFNItemsDataViewController",
+        "exact T1URT render fallback",
     )
     require_source_tokens(
-        timeline_source,
+        render_fallback,
         (
-            "BHTWeakURTControllerBox",
-            "@property(nonatomic, weak) id controller",
-            "BHTRegisterURTController(self)",
-            'NSSelectorFromString(@"dataViewController")',
-            'BHTUntypedIvarPointer(\n        owner, "_dataViewController")',
-            "raw == (__bridge void*)dataViewController",
-            "BHTForYouFilterDiagnosticDirectOwnerResolved",
-            "BHTForYouFilterDiagnosticDirectOwnerMissing",
-            "BHTBindDataControllerToURTOwner(",
-            "resolvedOwner && resolvedOwner != owner",
+            "viewWillAppear:",
+            "renderedGeneration.unsignedIntegerValue != generation",
+            "BHTIsPrimaryForYouURTController(self)",
+            "reloadData",
+            "BHTForYouFilterDiagnosticRenderReloaded",
+            "tableViewHeightForItem:",
+            "estimatedTableViewHeightForItem:",
+            "BHTForYouFilterDiagnosticRenderRowCollapsed",
+            "return 0.0",
         ),
-        "exact weak URT data-controller ownership",
+        "role-gated T1URT item-height fallback",
     )
-    lifecycle_owner_binding = source_section(
-        timeline_source,
-        "static void BHTBindURTDataController",
-        "%hook TFNItemsDataViewController",
-        "URT lifecycle owner binding",
-    )
-    if "setSections:" in lifecycle_owner_binding:
+    if "heightForRowAtIndexPath:" in render_fallback:
         raise AssertionError(
-            "URT lifecycle hooks must bind ownership without replaying a "
-            "possibly stale section snapshot"
+            "The keyword fallback must use X's item-height callbacks so "
+            "Ads.x remains the sole outer row-height hook"
         )
     require_source_tokens(
         timeline_source,

@@ -19,7 +19,7 @@
 // owns that exact object.  Every unknown runtime shape deliberately fails open.
 static char kBHTForYouTimelineRoleKey;
 static char kBHTForYouKeywordDecisionKey;
-static char kBHTForYouDataControllerOwnerKey;
+static char kBHTForYouControllerGenerationKey;
 
 typedef NS_ENUM(NSInteger, BHTHomeTimelineRole) {
     BHTHomeTimelineRoleNonForYou = 0,
@@ -45,56 +45,14 @@ typedef NS_ENUM(NSInteger, BHTHomeTimelineRole) {
 @implementation BHTForYouKeywordDecisionCache
 @end
 
-@interface BHTWeakURTControllerBox : NSObject
-@property(nonatomic, weak) id controller;
-@end
-
-@implementation BHTWeakURTControllerBox
-@end
-
 static NSMutableArray<BHTHomeTimelineRegistryEntry*>*
     BHTHomeTimelineRegistry;
-static NSMutableArray<BHTWeakURTControllerBox*>*
-    BHTURTControllerRegistry;
 
 static NSObject* BHTHomeTimelineRegistryLock(void) {
     static NSObject* lock;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{ lock = [NSObject new]; });
     return lock;
-}
-
-static NSObject* BHTURTControllerRegistryLock(void) {
-    static NSObject* lock;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{ lock = [NSObject new]; });
-    return lock;
-}
-
-static void BHTRegisterURTController(id controller) {
-    if (!controller) return;
-    @synchronized(BHTURTControllerRegistryLock()) {
-        if (!BHTURTControllerRegistry) {
-            BHTURTControllerRegistry = [NSMutableArray array];
-        }
-        for (NSInteger index =
-                 (NSInteger)BHTURTControllerRegistry.count - 1;
-             index >= 0; index--) {
-            BHTWeakURTControllerBox* box =
-                BHTURTControllerRegistry[(NSUInteger)index];
-            id registered = box.controller;
-            if (!registered) {
-                [BHTURTControllerRegistry
-                    removeObjectAtIndex:(NSUInteger)index];
-                continue;
-            }
-            if (registered == controller) return;
-        }
-        BHTWeakURTControllerBox* box =
-            [BHTWeakURTControllerBox new];
-        box.controller = controller;
-        [BHTURTControllerRegistry addObject:box];
-    }
 }
 
 static void BHTRegisterHomeTimelineRole(
@@ -595,155 +553,6 @@ static void* BHTUntypedIvarPointer(
     return value;
 }
 
-static TFNItemsDataViewController*
-    BHTDeclaredDataControllerForURTOwner(id owner) {
-    id candidate = ItemObjectValue(
-        owner, NSSelectorFromString(@"dataViewController"),
-        "_dataViewController");
-    Class dataControllerClass =
-        NSClassFromString(@"TFNItemsDataViewController");
-    if (dataControllerClass &&
-        [candidate isKindOfClass:dataControllerClass]) {
-        return candidate;
-    }
-    return nil;
-}
-
-static TFNItemsDataViewController*
-    BHTContainedDataControllerForURTOwner(id owner) {
-    Class dataControllerClass =
-        NSClassFromString(@"TFNItemsDataViewController");
-    // Once containment is established, resolve from the owner side. This is
-    // intentionally bounded and never treats an unrelated Home controller as
-    // proof of ownership.
-    if (![owner isKindOfClass:UIViewController.class] ||
-        !dataControllerClass) {
-        return nil;
-    }
-    NSMutableArray<UIViewController*>* pending =
-        [NSMutableArray arrayWithArray:
-            [(UIViewController*)owner childViewControllers] ?: @[]];
-    TFNItemsDataViewController* resolved = nil;
-    NSUInteger inspected = 0;
-    while (pending.count > 0 && inspected < 32) {
-        UIViewController* child = pending.firstObject;
-        [pending removeObjectAtIndex:0];
-        inspected++;
-        if ([child isKindOfClass:dataControllerClass]) {
-            if (resolved && resolved !=
-                                (TFNItemsDataViewController*)child) {
-                return nil;
-            }
-            resolved = (TFNItemsDataViewController*)child;
-            continue;
-        }
-        NSArray<UIViewController*>* descendants =
-            child.childViewControllers;
-        if (descendants.count > 0) {
-            [pending addObjectsFromArray:descendants];
-        }
-    }
-    return resolved;
-}
-
-static TFNItemsDataViewController*
-    BHTTypedDataControllerForURTOwner(id owner) {
-    return BHTDeclaredDataControllerForURTOwner(owner) ?:
-           BHTContainedDataControllerForURTOwner(owner);
-}
-
-static BOOL BHTURTOwnerOwnsDataController(
-    id owner, TFNItemsDataViewController* dataViewController) {
-    if (!owner || !dataViewController) return NO;
-    TFNItemsDataViewController* declared =
-        BHTDeclaredDataControllerForURTOwner(owner);
-    if (declared) return declared == dataViewController;
-
-    // Swift-backed builds can omit the Objective-C type encoding. Compare the
-    // stored pointer only; do not message or retain an unverified candidate.
-    void* raw = BHTUntypedIvarPointer(
-        owner, "_dataViewController");
-    if (raw) {
-        return raw == (__bridge void*)dataViewController;
-    }
-
-    TFNItemsDataViewController* contained =
-        BHTContainedDataControllerForURTOwner(owner);
-    return contained == dataViewController;
-}
-
-static void BHTBindDataControllerToURTOwner(
-    TFNItemsDataViewController* dataViewController, id owner) {
-    if (!dataViewController || !owner) return;
-    BHTWeakURTControllerBox* box =
-        [BHTWeakURTControllerBox new];
-    box.controller = owner;
-    objc_setAssociatedObject(
-        dataViewController, &kBHTForYouDataControllerOwnerKey,
-        box, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
-
-static UIViewController* BHTDirectURTOwnerForDataController(
-    TFNItemsDataViewController* dataViewController) {
-    if (!dataViewController) return nil;
-    NSMutableArray* owners = [NSMutableArray array];
-    BHTWeakURTControllerBox* cached =
-        objc_getAssociatedObject(
-            dataViewController,
-            &kBHTForYouDataControllerOwnerKey);
-    id cachedOwner = cached.controller;
-    if (cachedOwner) [owners addObject:cachedOwner];
-
-    // Snapshot strong references under the lock, then perform UIKit
-    // containment checks outside it. An owner relationship is accepted only
-    // when exactly one live URT controller claims this data controller.
-    @synchronized(BHTURTControllerRegistryLock()) {
-        for (NSInteger index =
-                 (NSInteger)BHTURTControllerRegistry.count - 1;
-             index >= 0; index--) {
-            BHTWeakURTControllerBox* box =
-                BHTURTControllerRegistry[(NSUInteger)index];
-            id owner = box.controller;
-            if (!owner) {
-                [BHTURTControllerRegistry
-                    removeObjectAtIndex:(NSUInteger)index];
-                continue;
-            }
-            if ([owners indexOfObjectIdenticalTo:owner] ==
-                NSNotFound) {
-                [owners addObject:owner];
-            }
-        }
-    }
-    id resolvedOwner = nil;
-    for (id owner in owners) {
-        if (!BHTURTOwnerOwnsDataController(
-                owner, dataViewController)) {
-            continue;
-        }
-        if (resolvedOwner && resolvedOwner != owner) {
-            objc_setAssociatedObject(
-                dataViewController,
-                &kBHTForYouDataControllerOwnerKey, nil,
-                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            BHTRecordForYouFilterDiagnostic(
-                BHTForYouFilterDiagnosticDirectOwnerMissing);
-            return nil;
-        }
-        resolvedOwner = owner;
-    }
-    if (resolvedOwner) {
-        BHTBindDataControllerToURTOwner(
-            dataViewController, resolvedOwner);
-        BHTRecordForYouFilterDiagnostic(
-            BHTForYouFilterDiagnosticDirectOwnerResolved);
-        return resolvedOwner;
-    }
-    BHTRecordForYouFilterDiagnostic(
-        BHTForYouFilterDiagnosticDirectOwnerMissing);
-    return nil;
-}
-
 static NSString* ItemStringValue(id object, SEL selector,
                                  const char* ivarName) {
     id value = ItemObjectValue(object, selector, ivarName);
@@ -830,40 +639,14 @@ static UIViewController* NearestURTTimelineController(
     return nil;
 }
 
-static BOOL IsPrimaryForYouTimelineController(
-    TFNItemsDataViewController* dataViewController) {
-    if (!dataViewController) return NO;
-
-    NSString* dataLocation = ItemStringValue(
-        dataViewController, @selector(adDisplayLocation),
-        "adDisplayLocation");
-    if (dataLocation.length > 0 &&
-        ![dataLocation isEqualToString:@"TIMELINE_HOME"]) {
-        BHTRecordForYouFilterDiagnostic(
-            BHTForYouFilterDiagnosticControllerNonHome);
-        return NO;
-    }
-
+static BOOL BHTIsPrimaryForYouURTController(id urtController) {
     Class urtControllerClass = NSClassFromString(@"T1URTViewController");
-    if (!urtControllerClass) {
+    if (!urtControllerClass ||
+        ![urtController isKindOfClass:urtControllerClass]) {
         BHTRecordForYouFilterDiagnostic(
             BHTForYouFilterDiagnosticControllerOwnerMissing);
         return NO;
     }
-
-    UIViewController* urtController =
-        NearestURTTimelineController(
-            dataViewController, urtControllerClass);
-    if (!urtController) {
-        urtController = BHTDirectURTOwnerForDataController(
-            dataViewController);
-    }
-    if (!urtController) {
-        BHTRecordForYouFilterDiagnostic(
-            BHTForYouFilterDiagnosticControllerOwnerMissing);
-        return NO;
-    }
-
     NSString* location =
         ItemStringValue(urtController, @selector(adDisplayLocation),
                         "adDisplayLocation");
@@ -907,6 +690,47 @@ static BOOL IsPrimaryForYouTimelineController(
         primary ? BHTForYouFilterDiagnosticControllerPrimary
                 : BHTForYouFilterDiagnosticControllerNonForYou);
     return primary;
+}
+
+static BOOL IsPrimaryForYouTimelineController(
+    TFNItemsDataViewController* dataViewController) {
+    if (!dataViewController) return NO;
+
+    NSString* dataLocation = ItemStringValue(
+        dataViewController, @selector(adDisplayLocation),
+        "adDisplayLocation");
+    if (dataLocation.length > 0 &&
+        ![dataLocation isEqualToString:@"TIMELINE_HOME"]) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticControllerNonHome);
+        return NO;
+    }
+
+    Class urtControllerClass = NSClassFromString(@"T1URTViewController");
+    if (!urtControllerClass) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticControllerOwnerMissing);
+        return NO;
+    }
+
+    // In X 12.9 T1URTViewController is itself a verified subclass of
+    // TFNItemsDataViewController. Prefer that exact relationship and bounded
+    // UIKit ancestry. Some Home section snapshots are delivered by a separate
+    // helper controller with no declared owner link; those deliberately fail
+    // open here and are handled later by the exact T1URT render callbacks.
+    UIViewController* urtController =
+        NearestURTTimelineController(
+            dataViewController, urtControllerClass);
+    if (!urtController) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticDirectOwnerMissing);
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticControllerOwnerMissing);
+        return NO;
+    }
+    BHTRecordForYouFilterDiagnostic(
+        BHTForYouFilterDiagnosticDirectOwnerResolved);
+    return BHTIsPrimaryForYouURTController(urtController);
 }
 
 static id StatusFromTimelineItem(id item) {
@@ -966,15 +790,93 @@ static void AddUsernameCandidates(NSMutableArray<NSString*>* candidates,
     }
 }
 
+static const NSUInteger BHTForYouMaximumMentionCandidates = 32;
+static const NSUInteger BHTForYouMaximumMentionScanLength = 32768;
+static const NSUInteger BHTTwitterHandleMaximumLength = 15;
+
+static BOOL IsTwitterHandleCharacter(unichar character) {
+    return (character >= 'a' && character <= 'z') ||
+           (character >= 'A' && character <= 'Z') ||
+           (character >= '0' && character <= '9') ||
+           character == '_';
+}
+
+static void AddMentionUsernameCandidates(
+    NSMutableArray<NSString*>* candidates,
+    NSArray<NSString*>* trustedTextCandidates) {
+    NSUInteger addedMentionCount = 0;
+    for (id candidateValue in trustedTextCandidates) {
+        if (addedMentionCount >= BHTForYouMaximumMentionCandidates) break;
+        if (![candidateValue isKindOfClass:NSString.class]) continue;
+
+        NSString* text = candidateValue;
+        NSUInteger scanLength =
+            MIN(text.length, BHTForYouMaximumMentionScanLength);
+        for (NSUInteger index = 0;
+             index < scanLength &&
+             addedMentionCount < BHTForYouMaximumMentionCandidates;
+             index++) {
+            if ([text characterAtIndex:index] != '@') continue;
+
+            // Do not treat the domain part of an email address, an embedded
+            // identifier, or the second character of @@text as a mention.
+            if (index > 0) {
+                unichar previous = [text characterAtIndex:index - 1];
+                if (IsTwitterHandleCharacter(previous) || previous == '@') {
+                    continue;
+                }
+            }
+
+            NSUInteger handleStart = index + 1;
+            NSUInteger handleEnd = handleStart;
+            while (handleEnd < scanLength &&
+                   IsTwitterHandleCharacter(
+                       [text characterAtIndex:handleEnd]) &&
+                   handleEnd - handleStart <=
+                       BHTTwitterHandleMaximumLength) {
+                handleEnd++;
+            }
+
+            NSUInteger handleLength = handleEnd - handleStart;
+            BOOL handleContinues =
+                handleEnd < text.length &&
+                IsTwitterHandleCharacter(
+                    [text characterAtIndex:handleEnd]);
+            if (handleLength == 0 ||
+                handleLength > BHTTwitterHandleMaximumLength ||
+                handleContinues) {
+                continue;
+            }
+
+            NSString* handle =
+                [text substringWithRange:
+                          NSMakeRange(handleStart, handleLength)];
+            if (![candidates containsObject:handle]) {
+                [candidates addObject:handle];
+                addedMentionCount++;
+                BHTRecordForYouFilterDiagnostic(
+                    BHTForYouFilterDiagnosticMentionHandleCandidateExtracted);
+            }
+            index = handleEnd - 1;
+        }
+    }
+}
+
 static NSArray<NSString*>* UsernameCandidatesForStatuses(
-    id outerStatus, id representedStatus) {
+    id outerStatus, id representedStatus,
+    NSArray<NSString*>* trustedTextCandidates) {
     NSMutableArray<NSString*>* candidates =
-        [NSMutableArray arrayWithCapacity:4];
+        [NSMutableArray arrayWithCapacity:8];
     AddUsernameCandidates(candidates, representedStatus);
     if (outerStatus != representedStatus) {
         // Include the reposting account as well as the visible post author.
         AddUsernameCandidates(candidates, outerStatus);
     }
+    // The account filter also covers explicit @handles in the post without
+    // broadening it to ordinary body text. This lets a saved `grok` account
+    // filter match `@grok`, while words such as "grok" still belong in the
+    // separate post-text filter.
+    AddMentionUsernameCandidates(candidates, trustedTextCandidates);
     return [candidates copy];
 }
 
@@ -1105,14 +1007,21 @@ static BOOL ShouldHideForYouKeywordItem(
         return NO;
     }
 
+    NSArray<NSString*>* postTextCandidates =
+        hasUsernameFilters || hasPostTextFilters
+            ? PostTextCandidates(representedStatus)
+            : @[];
+    if (postTextCandidates.count > 0) {
+        // Count only that a trusted representation was available. Never
+        // export post text, handles, or saved filter values.
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticTrustedTextCandidateSetNonEmpty);
+    }
     NSArray<NSString*>* usernameCandidates =
         hasUsernameFilters
             ? UsernameCandidatesForStatuses(
-                  outerStatus, representedStatus)
-            : @[];
-    NSArray<NSString*>* postTextCandidates =
-        hasPostTextFilters
-            ? PostTextCandidates(representedStatus)
+                  outerStatus, representedStatus,
+                  postTextCandidates)
             : @[];
 
     // X may hydrate or replace text after a section's first delivery. Cache
@@ -1149,6 +1058,22 @@ static BOOL ShouldHideForYouKeywordItem(
         outerStatus, &kBHTForYouKeywordDecisionKey, updated,
         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return hidden;
+}
+
+static BOOL BHTShouldHideForYouKeywordItemInURTController(
+    id urtController, id item) {
+    BOOL hasUsernameFilters = NO;
+    BOOL hasPostTextFilters = NO;
+    NSUInteger generation =
+        [BHTForYouKeywordFilter
+            filterGenerationWithUsernameFilters:&hasUsernameFilters
+                                 postTextFilters:&hasPostTextFilters];
+    if (!(hasUsernameFilters || hasPostTextFilters) ||
+        !BHTIsPrimaryForYouURTController(urtController)) {
+        return NO;
+    }
+    return ShouldHideForYouKeywordItem(
+        item, generation, hasUsernameFilters, hasPostTextFilters);
 }
 
 static BOOL ItemHasTopicBanner(id viewModel) {
@@ -1301,36 +1226,53 @@ static NSArray* FilteredTimelineSections(TFNItemsDataViewController* dataViewCon
     return modified ? [filteredSections copy] : sections;
 }
 
-static void BHTBindURTDataController(id owner) {
-    TFNItemsDataViewController* dataViewController =
-        BHTTypedDataControllerForURTOwner(owner);
-    if (!dataViewController) return;
-    BHTBindDataControllerToURTOwner(dataViewController, owner);
-}
-
 %hook T1URTViewController
 
-- (void)loadView {
-    BHTRegisterURTController(self);
-    %orig;
-    BHTBindURTDataController(self);
-}
-
-- (void)viewDidLoad {
-    // Register before X configures the inner items controller so its first
-    // section delivery can resolve ownership without UIKit containment.
-    BHTRegisterURTController(self);
-    %orig;
-    BHTBindURTDataController(self);
-}
-
 - (void)viewWillAppear:(BOOL)animated {
-    BHTRegisterURTController(self);
     %orig;
-    // Refresh the exact weak association when X reuses a controller. Filtering
-    // still happens only on X's real section deliveries, and the live URT role
-    // is rechecked every time.
-    BHTBindURTDataController(self);
+
+    // Returning from NeoFreeBird settings must re-evaluate already-loaded
+    // rows after either filter list changes. This reloads only X's local table
+    // snapshot; it does not issue a timeline/network refresh.
+    NSUInteger generation = [BHTForYouKeywordFilter filterGeneration];
+    NSNumber* renderedGeneration =
+        objc_getAssociatedObject(
+            self, &kBHTForYouControllerGenerationKey);
+    objc_setAssociatedObject(
+        self, &kBHTForYouControllerGenerationKey, @(generation),
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (renderedGeneration &&
+        renderedGeneration.unsignedIntegerValue != generation &&
+        self.isViewLoaded &&
+        BHTIsPrimaryForYouURTController(self)) {
+        id tableView = ItemObjectValue(
+            self, @selector(tableView), "tableView");
+        if ([tableView isKindOfClass:UITableView.class]) {
+            [(UITableView*)tableView reloadData];
+            BHTRecordForYouFilterDiagnostic(
+                BHTForYouFilterDiagnosticRenderReloaded);
+        }
+    }
+}
+
+- (double)tableViewHeightForItem:(id)item
+                     atIndexPath:(NSIndexPath*)indexPath {
+    if (BHTShouldHideForYouKeywordItemInURTController(self, item)) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticRenderRowCollapsed);
+        return 0.0;
+    }
+    return %orig;
+}
+
+- (double)estimatedTableViewHeightForItem:(id)item
+                              atIndexPath:(NSIndexPath*)indexPath {
+    if (BHTShouldHideForYouKeywordItemInURTController(self, item)) {
+        BHTRecordForYouFilterDiagnostic(
+            BHTForYouFilterDiagnosticRenderRowCollapsed);
+        return 0.0;
+    }
+    return %orig;
 }
 
 %end

@@ -16,10 +16,14 @@ typedef NS_ENUM(NSUInteger, BHTForYouFilterDiagnosticEvent) {
     BHTForYouFilterDiagnosticTimelineObjectResolved,
     BHTForYouFilterDiagnosticTimelineObjectMissing,
     BHTForYouFilterDiagnosticMissingStatus,
+    BHTForYouFilterDiagnosticTrustedTextCandidateSetNonEmpty,
+    BHTForYouFilterDiagnosticMentionHandleCandidateExtracted,
     BHTForYouFilterDiagnosticDecisionCacheHit,
     BHTForYouFilterDiagnosticUsernameMatch,
     BHTForYouFilterDiagnosticPostTextMatch,
     BHTForYouFilterDiagnosticNoMatch,
+    BHTForYouFilterDiagnosticRenderRowCollapsed,
+    BHTForYouFilterDiagnosticRenderReloaded,
     BHTForYouFilterDiagnosticEventCount,
 };
 
