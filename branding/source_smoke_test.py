@@ -2154,12 +2154,19 @@ def main() -> None:
         reply_application_header + reply_application_source,
         (
             "BHTRecordNativeReplyApplicationResult(",
+            "BHTNativeReplyApplicationRequestURLIsEligible(",
+            "BHTRecordNativeReplyPreparedResponse(",
             "BHTMarkNativeReplyApplicationHookInstalled(void)",
+            "BHTMarkNativeReplyPreparedHookInstalled(void)",
             "BHTNativeReplyApplicationDiagnosticSnapshot(void)",
             "BHTNativeReplyDecodedOutcomeModelPresent",
             "BHTNativeReplyDecodedOutcomeAPIErrors",
             "BHTNativeReplyDecodedOutcomeParseError",
             "BHTNativeReplyDecodedOutcomeEmptyResult",
+            "BHTNativeReplyModelStructureStateUnexpectedModelClass",
+            "BHTNativeReplyModelStructureStateMissingCreateTweet",
+            "BHTNativeReplyModelStructureStateMissingTweetResults",
+            "BHTNativeReplyModelStructureStatePayloadPresent",
             'URL.lastPathComponent',
             'isEqualToString:@"CreateTweet"',
             'isEqualToString:@"CreateTweetWithUndo"',
@@ -2168,9 +2175,26 @@ def main() -> None:
             '@"modelPresent": @(modelPresent)',
             '@"parseErrorPresent": @(parseErrorPresent)',
             '@"apiErrorsState":',
+            '@"modelStructureState":',
+            '@"modelStructureLayoutAvailable":',
+            '@"modelStructureCounters":',
+            '@"effectiveModelPresent": @(effectiveModelPresent)',
+            '@"effectiveParseErrorPresent":',
+            '@"effectiveOperationErrorPresent":',
+            '@"effectiveAPIErrorsState":',
+            '@"effectiveErrorState":',
+            '@"finalModelState":',
+            '@"finalParseErrorState":',
+            '@"finalOperationErrorState":',
+            '@"finalAPIErrorsState":',
+            '@"observationState":',
+            '@"preparedObservationCounters":',
+            '@"prepareHookInstalled":',
+            '@"recentPreparedAttempts": preparedAttempts',
             '@"correlationScope": @"process_temporal_operation_only"',
             '@"requestIdentityBound": @NO',
             '@"applicationSuccessIsNotInferred": @YES',
+            '@"preparedResponseSuccessIsNotInferred": @YES',
             '@"strictHTTPSAPIHostAndOperationAllowlist": @YES',
             '@"sanitizedAttemptsPersistWhenReportIsWritten": @YES',
             '@"capturesResponseBodies": @NO',
@@ -2183,6 +2207,9 @@ def main() -> None:
             '@"capturesIdentifiers": @NO',
             '@"capturesAccountData": @NO',
             '@"inspectsAPIErrorCollectionElements": @NO',
+            '@"inspectsErrorDomainsOrCodes": @NO',
+            '@"inspectsCreateTweetObjectPresence": @YES',
+            '@"inspectsTweetResultsUnionPayload": @NO',
             '@"persistsDecodedObjects": @NO',
             '@"exportsDecodedObjects": @NO',
         ),
@@ -2200,14 +2227,34 @@ def main() -> None:
             "argument[0] != '^'",
             "argument[1] != '@'",
             'BHTReplyApplicationMethodReturnsObjectWithNoArguments(',
+            'BHTReplyApplicationMethodReturnsVoidWithNoArguments(',
+            'BHTReplyApplicationGetObject(',
+            'BHTReplyApplicationResolveSingleObjectIvar(',
+            'class_copyIvarList(cls, &count)',
+            'count == 1',
+            'object_getIvar(',
+            '@"_TtC13GraphQLModels28CreateTweetOperationResponse"',
+            '@"_TtCC13GraphQLModels28CreateTweetOperationResponse11CreateTweet"',
+            '"createTweet", 16',
+            '"tweetResults", 16',
+            'BHTNativeReplyApplicationRequestURLIsEligible(',
+            'BHTMarkNativeReplyModelStructureLayoutAvailable();',
             'NSClassFromString(@"TFSAPIRequest")',
             'NSSelectorFromString(@"originalRequest")',
             'NSSelectorFromString(@"URL")',
             'BHTReplyWorkflowDiagnosticSessionForApplicationResponse(',
             'BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive()',
             'BHTRecordNativeReplyApplicationResult(',
-            '%init(BHTNativeReplyApplicationHooks);',
+            '%init(BHTNativeReplyApplicationDecoderHooks);',
             'BHTMarkNativeReplyApplicationHookInstalled();',
+            '%group BHTNativeReplyApplicationPreparedHooks',
+            '- (void)prepare',
+            'BHTRecordNativeReplyPreparedResponse(',
+            'observationComplete,',
+            '@"finalOperationError"',
+            '@"finalAPIErrors"',
+            '%init(BHTNativeReplyApplicationPreparedHooks);',
+            'BHTMarkNativeReplyPreparedHookInstalled();',
             '@catch (__unused NSException* exception)',
         ),
         "guarded X 12.9 decoded reply application hook",
@@ -2232,17 +2279,25 @@ def main() -> None:
         "%orig(parseError, APIErrors);"
     )
     request_position = decoded_hook_body.find(
-        'NSSelectorFromString(@"originalRequest")'
+        "BHTReplyApplicationRequestURL(self)"
     )
     decoded_error_position = decoded_hook_body.find(
         "id decodedParseError ="
+    )
+    decoded_eligibility_position = decoded_hook_body.find(
+        "BHTNativeReplyApplicationRequestURLIsEligible("
+    )
+    decoded_structure_position = decoded_hook_body.find(
+        "BHTReplyApplicationModelStructureState(model)"
     )
     record_position = decoded_hook_body.find(
         "BHTRecordNativeReplyApplicationResult("
     )
     if not (
         -1 < fast_gate_position < correlation_position < original_position
-        < request_position < decoded_error_position < record_position
+        < request_position < decoded_error_position
+        < decoded_eligibility_position < decoded_structure_position
+        < record_position
     ):
         raise AssertionError(
             "The application hook must capture only the numeric reply "
@@ -2252,6 +2307,51 @@ def main() -> None:
         raise AssertionError(
             "The decoded reply hook must preserve X's model on both the "
             "uncorrelated and correlated paths"
+        )
+    if reply_application_hook.count("object_getIvar(") != 2:
+        raise AssertionError(
+            "The model-structure diagnostic may inspect only the guarded "
+            "createTweet and tweetResults object-presence fields"
+        )
+    prepared_hook_body = source_section(
+        reply_application_hook,
+        "- (void)prepare",
+        "%end",
+        "prepared reply application hook",
+    )
+    prepared_fast_gate_position = prepared_hook_body.find(
+        "BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive()"
+    )
+    prepared_correlation_position = prepared_hook_body.find(
+        "BHTReplyWorkflowDiagnosticSessionForApplicationResponse("
+    )
+    prepared_orig_position = prepared_hook_body.find("%orig;")
+    prepared_request_position = prepared_hook_body.find(
+        "BHTReplyApplicationRequestURL(self)"
+    )
+    prepared_eligibility_position = prepared_hook_body.find(
+        "BHTNativeReplyApplicationRequestURLIsEligible("
+    )
+    prepared_getter_position = prepared_hook_body.find(
+        "BHTReplyApplicationGetObject("
+    )
+    prepared_record_position = prepared_hook_body.rfind(
+        "BHTRecordNativeReplyPreparedResponse("
+    )
+    if not (
+        -1 < prepared_fast_gate_position < prepared_correlation_position
+        < prepared_orig_position < prepared_request_position
+        < prepared_eligibility_position < prepared_getter_position
+        < prepared_record_position
+    ):
+        raise AssertionError(
+            "The prepared-response hook must capture only the numeric "
+            "generation before X, then enforce the exact request allowlist "
+            "before inspecting final presence after X"
+        )
+    if prepared_hook_body.count("%orig;") != 1:
+        raise AssertionError(
+            "The prepared-response diagnostic must call X exactly once"
         )
     application_allowlist = source_section(
         reply_application_source,
@@ -2379,7 +2479,16 @@ def main() -> None:
             '@"modelWithParseError:APIErrors:", NO)',
             'BHTProbe(@"nativeReplyApplication", '
             '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"prepare", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
             '@"originalRequest", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"finalOperationError", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"finalAPIErrors", NO)',
             'BHTProbe(@"nativeReplyApplication", '
             '@"TFSAPIRequest", @"URL", NO)',
         ),
@@ -3375,11 +3484,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.45" not in (
+    if "Version: 6.1.0-beta.46" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The decoded native-reply diagnostics must ship as beta.45"
+            "The prepared native-reply diagnostics must ship as beta.46"
         )
 
     branding_source = (

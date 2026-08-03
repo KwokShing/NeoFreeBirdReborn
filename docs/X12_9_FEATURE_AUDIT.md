@@ -309,6 +309,38 @@ exports decoded objects. The operation-scoped temporal association cannot
 prove application success or distinguish a concurrent CreateTweet from
 another app action, so the report states that limitation explicitly.
 
+Beta 46 follows the beta 45 device result in which the decoded CreateTweet
+model was present and both decoder out-parameter error categories were absent,
+but X still emitted its composition-send failure notification. It adds a
+second X 12.9-only checkpoint after
+`GraphQLEndpointResponse -prepare` has returned. The exact no-argument `void`
+ABI, inherited effective response getters, final override getters, original
+request getter, and request URL getter are all verified before this separate
+hook installs; failure to verify it does not disable beta 45's decoder hook.
+Only the same active reply generation and exact HTTPS API-host CreateTweet
+allowlist may produce a record. Effective model/error values and the override
+values visible when preparation returns are reduced immediately to fixed
+presence states, including the private response's explicit-absence sentinel.
+A getter exception is reported only as a fixed observation failure and is
+never conflated with an absent value. API-error arrays are classified only as
+absent, empty, nonempty, or unexpected without reading any element.
+No error domain, code, message, description, user info, response body, raw URL,
+identifier, tweet text, token, cookie, header, or account value is retained or
+exported. Later finalizers may still replace these sampled override values,
+and these prepared-response states do not prove posting success. They
+distinguish an error already visible after preparation from the next suspected
+typed-model assimilation/outbox layer.
+
+The same beta also gives the existing decoder checkpoint a guarded structural
+presence category for X 12.9's exact `CreateTweetOperationResponse` and nested
+`CreateTweet` classes. Both classes must expose exactly their single expected
+pointer-sized ivar at offset 16 within a 24-byte instance before the check is
+enabled. Only whether `createTweet` and then `tweetResults` are present is
+recorded; the objects are transient and never persisted. The 17-byte Swift
+`TweetResultsFragment.result` union is deliberately not read or invoked, so a
+present structural payload remains an observation rather than proof that the
+server created a tweet.
+
 Beta 40 stopped feeding captured WebKit instrumentation into the native
 password command and restored `uiMetrics:nil`, matching the successful beta 29
 and beta 36 reports. The following beta 40 device report still returned the
