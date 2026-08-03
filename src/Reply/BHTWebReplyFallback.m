@@ -1,5 +1,7 @@
 #import "Reply/BHTWebReplyFallback.h"
 
+#import "Reply/BHTAccountBoundWebReply.h"
+
 #import "Core/BHTBundle.h"
 #import "Core/BHTSettings.h"
 #import "ThemeColor/Palette.h"
@@ -2459,10 +2461,12 @@ static BOOL BHTPresentWebReplyAccountBoundary(
     }
 }
 
-BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
+static BHTWebReplyRouteResult
+BHTTryPresentWebReplyFallbackInternal(
     id sourceObject,
     id nativeAccount,
-    UIViewController* presenter) {
+    UIViewController* presenter,
+    BOOL preferAccountBoundController) {
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticRouteAttempt);
     if (![BHTSettings boolForKey:@"web_reply_fallback"]) {
@@ -2525,6 +2529,25 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
         nativeAccount
             ? BHTWebReplyDiagnosticNativeAccountContextAvailable
             : BHTWebReplyDiagnosticNativeAccountContextUnavailable);
+    BOOL accountBoundAttemptFellBack = NO;
+    if (preferAccountBoundController && nativeAccount) {
+        BHTAccountBoundWebReplyResult nativeResult =
+            BHTTryPresentAccountBoundWebReply(
+                replyURL, nativeAccount, presenter);
+        if (nativeResult ==
+            BHTAccountBoundWebReplyResultPresented) {
+            BHTRecordWebReplyDiagnostic(
+                BHTWebReplyDiagnosticPresented);
+            return BHTWebReplyRouteResultPresented;
+        }
+        if (nativeResult ==
+            BHTAccountBoundWebReplyResultAlreadyPresented) {
+            BHTRecordWebReplyDiagnostic(
+                BHTWebReplyDiagnosticAlreadyPresented);
+            return BHTWebReplyRouteResultAlreadyPresented;
+        }
+        accountBoundAttemptFellBack = YES;
+    }
     if (!nativeAccount) {
         BHTLastWebReplyNativeAccount = nil;
         atomic_store_explicit(
@@ -2549,7 +2572,13 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
         if (BHTPresentWebReplyAccountBoundary(
                 presenter, replyURL, nativeAccount,
                 nativeAccountChanged)) {
+            if (accountBoundAttemptFellBack) {
+                BHTRecordAccountBoundWebReplyCustomFallback(YES);
+            }
             return BHTWebReplyRouteResultPresented;
+        }
+        if (accountBoundAttemptFellBack) {
+            BHTRecordAccountBoundWebReplyCustomFallback(NO);
         }
         BHTRecordWebReplyDiagnostic(
             BHTWebReplyDiagnosticPresentationUnavailable);
@@ -2562,6 +2591,9 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
             @"WEB_REPLY_LOAD_FAILED",
             BHTWebReplyScreenModeReply,
             nil)) {
+        if (accountBoundAttemptFellBack) {
+            BHTRecordAccountBoundWebReplyCustomFallback(NO);
+        }
         BHTRecordWebReplyDiagnostic(
             BHTWebReplyDiagnosticPresentationUnavailable);
         return BHTWebReplyRouteResultPresentationUnavailable;
@@ -2569,7 +2601,27 @@ BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
 
     BHTRecordWebReplyDiagnostic(
         BHTWebReplyDiagnosticPresented);
+    if (accountBoundAttemptFellBack) {
+        BHTRecordAccountBoundWebReplyCustomFallback(YES);
+    }
     return BHTWebReplyRouteResultPresented;
+}
+
+BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
+    id sourceObject,
+    id nativeAccount,
+    UIViewController* presenter) {
+    return BHTTryPresentWebReplyFallbackInternal(
+        sourceObject, nativeAccount, presenter, NO);
+}
+
+BHTWebReplyRouteResult
+BHTTryPresentAccountBoundWebReplyFallback(
+    id sourceObject,
+    id nativeAccount,
+    UIViewController* presenter) {
+    return BHTTryPresentWebReplyFallbackInternal(
+        sourceObject, nativeAccount, presenter, YES);
 }
 
 BOOL BHTPresentWebReplySignInSetup(
@@ -2650,6 +2702,8 @@ NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void) {
     }
     return @{
         @"counters": [counters copy],
+        @"accountBoundNativeRoute":
+            BHTAccountBoundWebReplyDiagnosticSnapshot(),
         @"usesOfficialWebIntent": @YES,
         @"usesDefaultWebsiteDataStore": @YES,
         @"offersVisiblePersistentSignInSetup": @YES,
@@ -2660,7 +2714,7 @@ NSDictionary* BHTWebReplyFallbackDiagnosticSnapshot(void) {
         @"requiresCommittedOrSameDocumentSignedInLanding": @YES,
         @"supportsManualSetupCompletion": @YES,
         @"guardsAccountBoundaryTransitions": @YES,
-        @"usesSingleSharedWebAccountSession": @YES,
+        @"customFallbackUsesSingleSharedWebAccountSession": @YES,
         @"usesIntentForAccountManagement": @YES,
         @"usesLoginFlowForAccountManagement": @NO,
         @"usesOneShotAccountManagerIntentRetry": @YES,

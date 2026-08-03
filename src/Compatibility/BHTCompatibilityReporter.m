@@ -4,6 +4,9 @@
 #import "Likes/BHTLikesTab.h"
 #import "Login/BHTCompatibilityLogin.h"
 #import "MediaActions/BHTMediaActionUtility.h"
+#import "Reply/BHTReplyApplicationDiagnostics.h"
+#import "Reply/BHTReplyFailureDiagnostics.h"
+#import "Reply/BHTReplyRequestDiagnostics.h"
 #import "Reply/BHTWebReplyFallback.h"
 #import "Security/BHTAuthenticationURLUtility.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
@@ -11,6 +14,7 @@
 
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
+#import <float.h>
 #import <objc/runtime.h>
 #import <stdint.h>
 #import <stdatomic.h>
@@ -53,11 +57,18 @@ static BOOL BHTReplyWorkflowComposerVisible;
 static BOOL BHTReplyWorkflowComposerClosed;
 static BOOL BHTReplyWorkflowAwaitingComposerClose;
 static CFAbsoluteTime BHTReplyWorkflowExpiresAt;
+static NSTimeInterval BHTReplyWorkflowSendForwardedAt;
+static atomic_bool BHTReplyWorkflowNetworkWindowOpen;
+static atomic_bool BHTReplyWorkflowApplicationWindowOpen;
 static NSUInteger BHTReplyWorkflowSessionGeneration;
 static NSMutableDictionary<NSString*, id>*
     BHTReplyWorkflowObserverTokens;
 static NSMutableDictionary<NSString*, NSNumber*>*
     BHTReplyWorkflowObserverAvailability;
+static NSMutableArray<NSDictionary*>* BHTReplyWorkflowOrderedTrace;
+static NSTimeInterval BHTReplyWorkflowTraceStartedAt;
+static NSUInteger BHTReplyWorkflowTraceSequence;
+static BOOL BHTReplyWorkflowTraceTruncated;
 
 static NSObject* BHTObservationLock(void) {
     static NSObject* lock;
@@ -87,6 +98,21 @@ void BHTRecordForYouFilterDiagnostic(
 
 static const NSTimeInterval
     BHTReplyWorkflowDiagnosticWindowSeconds = 90.0;
+static const NSTimeInterval
+    BHTReplyWorkflowNetworkCorrelationWindowSeconds = 15.0;
+static const NSTimeInterval
+    BHTReplyWorkflowApplicationCorrelationWindowSeconds = 30.0;
+static const NSUInteger BHTReplyWorkflowTraceLimit = 64;
+
+static void BHTSetReplyWorkflowActiveWindows(BOOL open) {
+    atomic_store_explicit(
+        &BHTReplyWorkflowNetworkWindowOpen,
+        open, memory_order_release);
+    atomic_store_explicit(
+        &BHTReplyWorkflowApplicationWindowOpen,
+        open, memory_order_release);
+}
+
 static NSString* const BHTReplyWorkflowEventNames[] = {
     @"replyActionTapped",
     @"replyActionForwardedToX",
@@ -97,6 +123,12 @@ static NSString* const BHTReplyWorkflowEventNames[] = {
     @"composerClosed",
     @"sendButtonTapped",
     @"sendForwardedToX",
+    @"validationEntered",
+    @"validationReturned",
+    @"sendCompositionsEntered",
+    @"sendCompositionsReturned",
+    @"containerCompleted",
+    @"containerCancelled",
     @"outboxQueued",
     @"outboxProcessing",
     @"outboxProcessed",
@@ -121,11 +153,95 @@ static void BHTStartReplyWorkflowSessionLocked(void) {
     BHTReplyWorkflowComposerVisible = NO;
     BHTReplyWorkflowComposerClosed = NO;
     BHTReplyWorkflowAwaitingComposerClose = NO;
+    BHTReplyWorkflowSendForwardedAt = 0;
+    BHTSetReplyWorkflowActiveWindows(NO);
     BHTReplyWorkflowLastOutcome = @"none";
     BHTReplyWorkflowSessionGeneration++;
+    BHTReplyWorkflowTraceStartedAt =
+        NSProcessInfo.processInfo.systemUptime;
+    BHTReplyWorkflowTraceSequence = 0;
+    BHTReplyWorkflowTraceTruncated = NO;
+    if (!BHTReplyWorkflowOrderedTrace) {
+        BHTReplyWorkflowOrderedTrace =
+            [NSMutableArray arrayWithCapacity:
+                BHTReplyWorkflowTraceLimit];
+    } else {
+        [BHTReplyWorkflowOrderedTrace removeAllObjects];
+    }
     BHTReplyWorkflowExpiresAt =
         CFAbsoluteTimeGetCurrent() +
         BHTReplyWorkflowDiagnosticWindowSeconds;
+}
+
+static NSString* BHTReplyWorkflowTraceSource(
+    BHTReplyWorkflowDiagnosticEvent event) {
+    switch (event) {
+        case BHTReplyWorkflowDiagnosticWebFallbackPresented:
+            return @"route_hook";
+        case BHTReplyWorkflowDiagnosticPersistentComposerPresented:
+        case BHTReplyWorkflowDiagnosticComposerPresented:
+        case BHTReplyWorkflowDiagnosticComposerDisappeared:
+        case BHTReplyWorkflowDiagnosticComposerClosed:
+        case BHTReplyWorkflowDiagnosticContainerCompleted:
+        case BHTReplyWorkflowDiagnosticContainerCancelled:
+        case BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented:
+        case BHTReplyWorkflowDiagnosticUnattributedComposerPresented:
+            return @"lifecycle_hook";
+        case BHTReplyWorkflowDiagnosticValidationEntered:
+        case BHTReplyWorkflowDiagnosticValidationReturned:
+        case BHTReplyWorkflowDiagnosticSendCompositionsEntered:
+        case BHTReplyWorkflowDiagnosticSendCompositionsReturned:
+            return @"composer_hook";
+        case BHTReplyWorkflowDiagnosticOutboxQueued:
+        case BHTReplyWorkflowDiagnosticOutboxProcessing:
+        case BHTReplyWorkflowDiagnosticOutboxProcessed:
+        case BHTReplyWorkflowDiagnosticSendCompleted:
+        case BHTReplyWorkflowDiagnosticOutboxProcessFailed:
+        case BHTReplyWorkflowDiagnosticCompositionSendFailed:
+            return @"notification";
+        case BHTReplyWorkflowDiagnosticReplyActionTapped:
+        case BHTReplyWorkflowDiagnosticReplyActionForwarded:
+        case BHTReplyWorkflowDiagnosticSendButtonTapped:
+        case BHTReplyWorkflowDiagnosticSendForwardedToX:
+        case BHTReplyWorkflowDiagnosticUnattributedSendButtonTapped:
+        case BHTReplyWorkflowDiagnosticUnattributedSendForwardedToX:
+            return @"ui_hook";
+        case BHTReplyWorkflowDiagnosticEventCount:
+            return @"unknown";
+    }
+    return @"unknown";
+}
+
+static void BHTAppendReplyWorkflowTraceLocked(
+    BHTReplyWorkflowDiagnosticEvent event) {
+    if (event >= BHTReplyWorkflowDiagnosticEventCount) return;
+    if (!BHTReplyWorkflowOrderedTrace) {
+        BHTReplyWorkflowOrderedTrace =
+            [NSMutableArray arrayWithCapacity:
+                BHTReplyWorkflowTraceLimit];
+    }
+    if (BHTReplyWorkflowTraceStartedAt <= 0) {
+        BHTReplyWorkflowTraceStartedAt =
+            NSProcessInfo.processInfo.systemUptime;
+    }
+    if (BHTReplyWorkflowOrderedTrace.count >=
+        BHTReplyWorkflowTraceLimit) {
+        [BHTReplyWorkflowOrderedTrace removeObjectAtIndex:0];
+        BHTReplyWorkflowTraceTruncated = YES;
+    }
+    NSTimeInterval elapsed = MAX(
+        0.0,
+        NSProcessInfo.processInfo.systemUptime -
+            BHTReplyWorkflowTraceStartedAt);
+    [BHTReplyWorkflowOrderedTrace addObject:@{
+        @"sequence": @(BHTReplyWorkflowTraceSequence++),
+        @"event": BHTReplyWorkflowEventNames[event],
+        @"source": BHTReplyWorkflowTraceSource(event),
+        @"relativeMillisecondsBucket":
+            @(((NSUInteger)(elapsed * 10.0)) * 100),
+        @"sessionGeneration":
+            @(BHTReplyWorkflowSessionGeneration),
+    }];
 }
 
 static void BHTRefreshReplyWorkflowExpiryLocked(void) {
@@ -145,6 +261,8 @@ static void BHTExpireReplyWorkflowSessionIfNeededLocked(void) {
     BHTReplyWorkflowSessionActive = NO;
     BHTReplyWorkflowSendForwarded = NO;
     BHTReplyWorkflowAwaitingComposerClose = NO;
+    BHTReplyWorkflowSendForwardedAt = 0;
+    BHTSetReplyWorkflowActiveWindows(NO);
     BHTReplyWorkflowExpiresAt = 0;
     BHTReplyWorkflowLastOutcome = @"timed_out";
 }
@@ -179,6 +297,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                 BHTReplyWorkflowComposerVisible = NO;
                 BHTReplyWorkflowComposerClosed = NO;
                 BHTReplyWorkflowAwaitingComposerClose = NO;
+                BHTSetReplyWorkflowActiveWindows(NO);
                 BHTReplyWorkflowExpiresAt = 0;
                 break;
             case BHTReplyWorkflowDiagnosticPersistentComposerPresented:
@@ -254,6 +373,8 @@ void BHTRecordReplyWorkflowDiagnostic(
                 } else {
                     BHTReplyWorkflowSendForwarded = NO;
                     BHTReplyWorkflowAwaitingComposerClose = NO;
+                    BHTReplyWorkflowSendForwardedAt = 0;
+                    BHTSetReplyWorkflowActiveWindows(NO);
                     BHTReplyWorkflowLastOutcome = @"none";
                 }
                 break;
@@ -263,6 +384,37 @@ void BHTRecordReplyWorkflowDiagnostic(
                         BHTReplyWorkflowDiagnosticUnattributedSendForwardedToX;
                 } else {
                     BHTReplyWorkflowSendForwarded = YES;
+                    BHTReplyWorkflowSendForwardedAt =
+                        NSProcessInfo.processInfo.systemUptime;
+                    BHTSetReplyWorkflowActiveWindows(YES);
+                }
+                break;
+            case BHTReplyWorkflowDiagnosticValidationEntered:
+            case BHTReplyWorkflowDiagnosticValidationReturned:
+            case BHTReplyWorkflowDiagnosticSendCompositionsEntered:
+            case BHTReplyWorkflowDiagnosticSendCompositionsReturned:
+                shouldRecord =
+                    BHTReplyWorkflowSessionActive &&
+                    BHTReplyWorkflowSendForwarded;
+                break;
+            case BHTReplyWorkflowDiagnosticContainerCompleted:
+            case BHTReplyWorkflowDiagnosticContainerCancelled:
+                shouldRecord =
+                    BHTReplyWorkflowSessionActive ||
+                    BHTReplyWorkflowAwaitingComposerClose;
+                if (shouldRecord) {
+                    BHTReplyWorkflowComposerVisible = NO;
+                    BHTReplyWorkflowComposerClosed = YES;
+                    BHTReplyWorkflowAwaitingComposerClose = NO;
+                    if (event ==
+                            BHTReplyWorkflowDiagnosticContainerCancelled &&
+                        !BHTReplyWorkflowSendForwarded) {
+                        BHTReplyWorkflowSessionActive = NO;
+                        BHTSetReplyWorkflowActiveWindows(NO);
+                        BHTReplyWorkflowExpiresAt = 0;
+                        BHTReplyWorkflowLastOutcome =
+                            @"container_cancelled_before_send";
+                    }
                 }
                 break;
             case BHTReplyWorkflowDiagnosticOutboxQueued:
@@ -281,6 +433,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                         !BHTReplyWorkflowComposerClosed;
                     BHTReplyWorkflowSessionActive = NO;
                     BHTReplyWorkflowSendForwarded = NO;
+                    BHTSetReplyWorkflowActiveWindows(NO);
                     BHTReplyWorkflowExpiresAt = 0;
                 } else {
                     shouldRecord = NO;
@@ -297,6 +450,7 @@ void BHTRecordReplyWorkflowDiagnostic(
                             : @"composition_send_failed";
                     BHTReplyWorkflowSessionActive = NO;
                     BHTReplyWorkflowSendForwarded = NO;
+                    BHTSetReplyWorkflowActiveWindows(NO);
                     BHTReplyWorkflowAwaitingComposerClose =
                         BHTReplyWorkflowComposerPresented &&
                         !BHTReplyWorkflowComposerClosed;
@@ -319,7 +473,101 @@ void BHTRecordReplyWorkflowDiagnostic(
             memory_order_relaxed);
         BHTReplyWorkflowLastStage =
             BHTReplyWorkflowEventNames[recordedEvent];
+        BHTAppendReplyWorkflowTraceLocked(recordedEvent);
         BHTRefreshReplyWorkflowExpiryLocked();
+    }
+}
+
+BOOL BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive(void) {
+    return atomic_load_explicit(
+        &BHTReplyWorkflowNetworkWindowOpen,
+        memory_order_acquire);
+}
+
+BOOL BHTReplyWorkflowDiagnosticSessionForNetworkRequest(
+    NSUInteger* generation) {
+    @synchronized(BHTObservationLock()) {
+        BHTExpireReplyWorkflowSessionIfNeededLocked();
+        NSTimeInterval elapsedSinceSend =
+            BHTReplyWorkflowSendForwardedAt > 0
+                ? NSProcessInfo.processInfo.systemUptime -
+                    BHTReplyWorkflowSendForwardedAt
+                : DBL_MAX;
+        BOOL active =
+            BHTReplyWorkflowSessionActive &&
+            BHTReplyWorkflowSendForwarded &&
+            BHTReplyWorkflowComposerPresented &&
+            BHTReplyWorkflowSendForwardedAt > 0 &&
+            elapsedSinceSend <=
+                BHTReplyWorkflowNetworkCorrelationWindowSeconds;
+        if (!active &&
+            elapsedSinceSend >
+                BHTReplyWorkflowNetworkCorrelationWindowSeconds) {
+            atomic_store_explicit(
+                &BHTReplyWorkflowNetworkWindowOpen,
+                false, memory_order_release);
+        }
+        if (generation) {
+            *generation = active
+                ? BHTReplyWorkflowSessionGeneration
+                : 0;
+        }
+        return active;
+    }
+}
+
+BOOL BHTReplyWorkflowDiagnosticSessionForApplicationResponse(
+    NSUInteger* generation) {
+    @synchronized(BHTObservationLock()) {
+        BHTExpireReplyWorkflowSessionIfNeededLocked();
+        NSTimeInterval elapsedSinceSend =
+            BHTReplyWorkflowSendForwardedAt > 0
+                ? NSProcessInfo.processInfo.systemUptime -
+                    BHTReplyWorkflowSendForwardedAt
+                : DBL_MAX;
+        BOOL active =
+            BHTReplyWorkflowSessionActive &&
+            BHTReplyWorkflowSendForwarded &&
+            BHTReplyWorkflowComposerPresented &&
+            BHTReplyWorkflowSessionGeneration > 0 &&
+            BHTReplyWorkflowSendForwardedAt > 0 &&
+            elapsedSinceSend <=
+                BHTReplyWorkflowApplicationCorrelationWindowSeconds;
+        if (!active &&
+            elapsedSinceSend >
+                BHTReplyWorkflowApplicationCorrelationWindowSeconds) {
+            atomic_store_explicit(
+                &BHTReplyWorkflowApplicationWindowOpen,
+                false, memory_order_release);
+        }
+        if (generation) {
+            *generation = active
+                ? BHTReplyWorkflowSessionGeneration
+                : 0;
+        }
+        return active;
+    }
+}
+
+BOOL BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void) {
+    return atomic_load_explicit(
+        &BHTReplyWorkflowApplicationWindowOpen,
+        memory_order_acquire);
+}
+
+// Capture only the process-local generation while the workflow is still
+// active. Failure notification handling calls this before the ordinary stage
+// recorder closes the terminal session.
+static NSUInteger
+BHTReplyWorkflowGenerationForFailureNotification(void) {
+    @synchronized(BHTObservationLock()) {
+        BHTExpireReplyWorkflowSessionIfNeededLocked();
+        BOOL active =
+            BHTReplyWorkflowSessionActive &&
+            BHTReplyWorkflowSendForwarded &&
+            BHTReplyWorkflowComposerPresented &&
+            BHTReplyWorkflowSessionGeneration > 0;
+        return active ? BHTReplyWorkflowSessionGeneration : 0;
     }
 }
 
@@ -327,6 +575,8 @@ typedef struct {
     const char* symbol;
     const char* key;
     BHTReplyWorkflowDiagnosticEvent event;
+    BOOL observesFailure;
+    BHTNativeReplyFailureSource failureSource;
 } BHTReplyNotificationObserverSpec;
 
 static const BHTReplyNotificationObserverSpec
@@ -335,31 +585,43 @@ static const BHTReplyNotificationObserverSpec
             "TFNTwitterCompositionOutboxDidAddCompositionNotification",
             "outboxQueued",
             BHTReplyWorkflowDiagnosticOutboxQueued,
+            NO,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionOutboxWillProcessCompositionNotification",
             "outboxProcessing",
             BHTReplyWorkflowDiagnosticOutboxProcessing,
+            NO,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionOutboxDidProcessCompositionNotification",
             "outboxProcessed",
             BHTReplyWorkflowDiagnosticOutboxProcessed,
+            NO,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionDidSendNotification",
             "sendCompleted",
             BHTReplyWorkflowDiagnosticSendCompleted,
+            NO,
+            BHTNativeReplyFailureSourceCompositionSend,
         },
         {
             "TFNTwitterCompositionOutboxDidFailProcessCompositionNotification",
             "outboxFailed",
             BHTReplyWorkflowDiagnosticOutboxProcessFailed,
+            YES,
+            BHTNativeReplyFailureSourceOutboxProcess,
         },
         {
             "TFNTwitterCompositionSendDidFailNotification",
             "sendFailed",
             BHTReplyWorkflowDiagnosticCompositionSendFailed,
+            YES,
+            BHTNativeReplyFailureSourceCompositionSend,
         },
 };
 
@@ -403,6 +665,8 @@ void BHTInstallReplyWorkflowDiagnosticObservers(void) {
         return;
     }
 
+    BHTPrepareNativeReplyFailureDiagnostics();
+
     @synchronized(BHTObservationLock()) {
         if (!BHTReplyWorkflowObserverTokens) {
             BHTReplyWorkflowObserverTokens =
@@ -435,9 +699,28 @@ void BHTInstallReplyWorkflowDiagnosticObservers(void) {
                             object:nil
                              queue:nil
                         usingBlock:^(
-                            __unused NSNotification* notification) {
+                            NSNotification* notification) {
+                            NSUInteger failureGeneration = 0;
+                            if (spec.observesFailure) {
+                                @try {
+                                    failureGeneration =
+                                        BHTReplyWorkflowGenerationForFailureNotification();
+                                } @catch (__unused NSException* exception) {
+                                }
+                            }
                             BHTRecordReplyWorkflowDiagnostic(
                                 spec.event);
+                            if (spec.observesFailure) {
+                                @try {
+                                    BHTObserveNativeReplyFailureNotification(
+                                        failureGeneration,
+                                        spec.failureSource,
+                                        notification);
+                                } @catch (__unused NSException* exception) {
+                                    // Diagnostics must never suppress X's
+                                    // ordinary terminal workflow stage.
+                                }
+                            }
                         }];
             if (token) {
                 BHTReplyWorkflowObserverTokens[key] = token;
@@ -602,6 +885,8 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
     BOOL composerClosed;
     BOOL awaitingComposerClose;
     NSUInteger sessionGeneration;
+    NSArray<NSDictionary*>* orderedTrace;
+    BOOL traceTruncated;
     @synchronized(BHTObservationLock()) {
         BHTExpireReplyWorkflowSessionIfNeededLocked();
         for (NSUInteger index = 0;
@@ -626,6 +911,9 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
             BHTReplyWorkflowAwaitingComposerClose;
         sessionGeneration =
             BHTReplyWorkflowSessionGeneration;
+        orderedTrace =
+            [BHTReplyWorkflowOrderedTrace copy] ?: @[];
+        traceTruncated = BHTReplyWorkflowTraceTruncated;
     }
     return @{
         @"lastStage": lastStage,
@@ -642,7 +930,15 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
             @"process_level_temporal_heuristic",
         @"diagnosticWindowSeconds":
             @(BHTReplyWorkflowDiagnosticWindowSeconds),
+        @"networkCorrelationWindowSeconds":
+            @(BHTReplyWorkflowNetworkCorrelationWindowSeconds),
+        @"applicationCorrelationWindowSeconds":
+            @(BHTReplyWorkflowApplicationCorrelationWindowSeconds),
         @"counters": [counters copy],
+        @"orderedTrace": orderedTrace,
+        @"orderedTraceLimit": @(BHTReplyWorkflowTraceLimit),
+        @"orderedTraceTruncated": @(traceTruncated),
+        @"orderedTraceClock": @"process_monotonic_relative",
         @"notificationObservers":
             BHTReplyWorkflowObserverAvailabilitySnapshot(),
         @"notificationResolution":
@@ -654,12 +950,16 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
         @"capturesIdentifiers": @NO,
         @"capturesNotificationPayloads": @NO,
         @"capturesRawErrors": @NO,
+        @"failureErrorClassificationIncludedSeparately": @YES,
+        @"networkCorrelationRequiresActiveForwardedSession": @YES,
     };
 }
 
 static NSDictionary* BHTForYouControllerRuntimeShape(void) {
     Class controllerClass = NSClassFromString(@"T1URTViewController");
     if (!controllerClass) return @{@"classPresent": @NO};
+    Class itemsControllerClass =
+        NSClassFromString(@"TFNItemsDataViewController");
 
     NSMutableSet<NSString*>* methods = [NSMutableSet set];
     NSMutableArray<NSDictionary*>* ivars = [NSMutableArray array];
@@ -717,6 +1017,11 @@ static NSDictionary* BHTForYouControllerRuntimeShape(void) {
     }];
     return @{
         @"classPresent": @YES,
+        @"superclass":
+            NSStringFromClass(class_getSuperclass(controllerClass)) ?: @"none",
+        @"inheritsItemsDataViewController":
+            @(itemsControllerClass &&
+              [controllerClass isSubclassOfClass:itemsControllerClass]),
         @"dataViewControllerAccessorPresent":
             @([controllerClass instancesRespondToSelector:
                   NSSelectorFromString(@"dataViewController")]),
@@ -730,6 +1035,34 @@ static NSDictionary* BHTForYouControllerRuntimeShape(void) {
                 sortedArrayUsingSelector:
                     @selector(localizedCaseInsensitiveCompare:)],
         @"timelineIvars": [ivars copy],
+        @"renderCallbacks": @{
+            @"tableViewCellForItem":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableViewCellForItem:atIndexPath:")]),
+            @"rowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableView:heightForRowAtIndexPath:")]),
+            @"estimatedRowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableView:estimatedHeightForRowAtIndexPath:")]),
+            @"itemRowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"tableViewHeightForItem:atIndexPath:")]),
+            @"estimatedItemRowHeight":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(
+                          @"estimatedTableViewHeightForItem:atIndexPath:")]),
+            @"itemAtIndexPath":
+                @([controllerClass instancesRespondToSelector:
+                      NSSelectorFromString(@"itemAtIndexPath:")]),
+        },
+        @"filterExecutionPolicy":
+            @"verified_urt_role_section_then_exact_urt_item_height_fallback",
+        @"unknownSectionOwnerFailsOpen": @YES,
     };
 }
 
@@ -745,10 +1078,14 @@ static NSDictionary* BHTForYouFilterDiagnosticSnapshot(void) {
         @"timelineObjectResolvedChecks",
         @"timelineObjectMissingChecks",
         @"missingStatusItems",
+        @"trustedTextCandidateSetsNonEmpty",
+        @"mentionHandleCandidatesExtracted",
         @"decisionCacheHits",
         @"usernameMatches",
         @"postTextMatches",
         @"noMatches",
+        @"renderRowCollapses",
+        @"renderReloads",
     ];
     NSMutableDictionary* snapshot =
         [NSMutableDictionary dictionaryWithCapacity:names.count];
@@ -1322,6 +1659,29 @@ static NSArray* BHTRuntimeProbes(void) {
         BHTProbe(@"replyWorkflow", @"T1ComposePresenter", @"presentComposer", NO),
         BHTProbe(@"replyWorkflow", @"T1TweetComposeReplyContextViewController", @"setReplyToStatus:", NO),
         BHTProbe(@"replyWorkflow", @"T1TweetComposeReplyContextViewController", @"setReplyToStatusInfo:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"NSURLSession", @"dataTaskWithRequest:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"NSURLSession", @"dataTaskWithRequest:completionHandler:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"NSURLSession", @"uploadTaskWithRequest:fromData:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"NSURLSession", @"uploadTaskWithRequest:fromData:completionHandler:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"NSURLSession", @"uploadTaskWithRequest:fromFile:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"NSURLSession", @"uploadTaskWithRequest:fromFile:completionHandler:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"TNLURLSessionTaskOperation", @"_network_finalizeDidCompleteTask:URLSession:error:", NO),
+        BHTProbe(@"nativeReplyNetwork", @"TNLURLSessionTaskOperation", @"URLSession:task:didCompleteWithError:", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"modelWithParseError:APIErrors:", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"prepare", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"originalRequest", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"model", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"parseError", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"operationError", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"APIErrors", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"finalModel", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"finalParseError", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"finalOperationError", NO),
+        BHTProbe(@"nativeReplyApplication", @"_TtC14GraphQLActions23GraphQLEndpointResponse", @"finalAPIErrors", NO),
+        BHTProbe(@"nativeReplyApplication", @"TFSAPIRequest", @"URL", NO),
+        BHTProbe(@"webReplyAccountBound", @"T1WebViewController", @"initWithRootURL:account:shouldAuthenticate:shouldPresentAsNativePage:sourceStatus:scribeComponent:scribeParameters:", NO),
+        BHTProbe(@"webReplyAccountBound", @"T1WebViewController", @"account", NO),
+        BHTProbe(@"webReplyAccountBound", @"T1WebViewController", @"doesURLResultTypeOpenInWebview:", NO),
 
         BHTProbe(@"compatibilitySignIn", @"TFSTwitterAPIXAuthPasswordCommand", @"initWithContext:accountID:authContext:identifier:password:simCountryCode:httpRequestConfiguration:supportOneFactorAuthorization:knownDeviceToken:uiMetrics:authTokenStorage:source:responseModelBuilder:completionBlock:", NO),
         BHTProbe(@"compatibilitySignIn", @"TFSTwitterServiceRunner", @"APICommandContext", YES),
@@ -1472,6 +1832,12 @@ static NSURL* BHTWriteCompatibilityReportNow(void) {
             BHTCompatibilitySignInDiagnosticSnapshot(),
         @"replyWorkflow":
             BHTReplyWorkflowDiagnosticSnapshot(),
+        @"nativeReplyNetwork":
+            BHTReplyRequestDiagnosticSnapshot(),
+        @"nativeReplyApplication":
+            BHTNativeReplyApplicationDiagnosticSnapshot(),
+        @"nativeReplyFailure":
+            BHTNativeReplyFailureDiagnosticSnapshot(),
         @"webReplyFallback":
             BHTWebReplyFallbackDiagnosticSnapshot(),
         @"forYouFilterRuntime": BHTForYouFilterDiagnosticSnapshot(),

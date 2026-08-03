@@ -41,9 +41,9 @@ FOUNDATION_EXPORT const NSUInteger BHTForYouKeywordMaximumLength;
 + (BOOL)hasPostTextFilters;
 + (BOOL)hasActiveFilters;
 
-// Username filtering is a literal substring match against both the @handle and
-// display name. This array form is useful for reposts, where both the visible
-// author and reposting account may be supplied.
+// Account filtering is a literal substring match against author/reposter
+// handles and display names. Timeline callers may also supply bounded @handle
+// tokens extracted from the trusted post-text models.
 + (BOOL)matchesUsername:(nullable NSString*)username
             displayName:(nullable NSString*)displayName;
 + (BOOL)matchesAnyUsernameCandidate:

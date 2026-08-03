@@ -113,6 +113,60 @@ static id BHTCurrentNativeAccountForWebReply(void) {
 
 %end
 
+%group BHTReplyValidationCheckpointHooks
+
+%hook T1TweetComposeViewController
+
+- (void)_t1_checkForValidTweetsAndSend {
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticValidationEntered);
+    %orig;
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticValidationReturned);
+}
+
+%end
+
+%end
+
+%group BHTReplySendCompositionsCheckpointHooks
+
+%hook T1TweetComposeViewController
+
+- (void)_t1_sendCompositions:(__unsafe_unretained id)compositions {
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticSendCompositionsEntered);
+    %orig(compositions);
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticSendCompositionsReturned);
+}
+
+%end
+
+%end
+
+%group BHTReplyContainerLifecycleHooks
+
+%hook T1TweetComposeContainerViewController
+
+- (void)tweetComposeViewControllerDidCompleteComposing:
+    (__unsafe_unretained id)composer {
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticContainerCompleted);
+    %orig(composer);
+}
+
+- (void)tweetComposeViewControllerDidCancelComposing:
+    (__unsafe_unretained id)composer {
+    BHTRecordReplyWorkflowDiagnostic(
+        BHTReplyWorkflowDiagnosticContainerCancelled);
+    %orig(composer);
+}
+
+%end
+
+%end
+
 %group BHTReplyActionDiagnosticHooks
 
 %hook T1StatusViewInlineActionTapEventHandler
@@ -125,7 +179,7 @@ static id BHTCurrentNativeAccountForWebReply(void) {
                            parameters:(__unsafe_unretained id)parameters
                        originalStatus:(__unsafe_unretained id)originalStatus {
     BHTWebReplyRouteResult routeResult =
-        BHTTryPresentWebReplyFallback(
+        BHTTryPresentAccountBoundWebReplyFallback(
             originalStatus, account, topMostController());
     if (BHTWebReplyRouteResultConsumesTap(routeResult)) {
         BHTRecordReplyWorkflowDiagnostic(
@@ -250,6 +304,32 @@ static id BHTCurrentNativeAccountForWebReply(void) {
         BHTReplyDiagnosticMethodHasShape(
             composer, @selector(viewDidDisappear:), 1)) {
         %init(BHTReplyComposerDiagnosticHooks);
+    }
+    if (BHTReplyDiagnosticMethodHasShape(
+            composer,
+            NSSelectorFromString(
+                @"_t1_checkForValidTweetsAndSend"),
+            0)) {
+        %init(BHTReplyValidationCheckpointHooks);
+    }
+    if (BHTReplyDiagnosticMethodHasObjectArguments(
+            composer,
+            NSSelectorFromString(@"_t1_sendCompositions:"),
+            1)) {
+        %init(BHTReplySendCompositionsCheckpointHooks);
+    }
+
+    Class container = NSClassFromString(
+        @"T1TweetComposeContainerViewController");
+    SEL completedSelector = NSSelectorFromString(
+        @"tweetComposeViewControllerDidCompleteComposing:");
+    SEL cancelledSelector = NSSelectorFromString(
+        @"tweetComposeViewControllerDidCancelComposing:");
+    if (BHTReplyDiagnosticMethodHasObjectArguments(
+            container, completedSelector, 1) &&
+        BHTReplyDiagnosticMethodHasObjectArguments(
+            container, cancelledSelector, 1)) {
+        %init(BHTReplyContainerLifecycleHooks);
     }
 
     Class persistentComposer =

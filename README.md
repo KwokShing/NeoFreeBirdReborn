@@ -45,8 +45,9 @@ preserved where possible.
 
 - Layered promoted-content filtering across timelines, profiles, search,
   Explore, cards, articles, and supported video paths.
-- Separate **For You** filters for usernames/display names and post text,
-  including `@mentions`. Following is never filtered by these lists.
+- Separate **For You** filters for accounts/`@mentions` and post text. Account
+  entries also catch matching handles mentioned in a post; Following is never
+  filtered by either list.
 - A Posts/Media selector in Likes with an adaptive, pinch-adjustable waterfall
   that respects each item's aspect ratio.
 - Full-window photo and video viewing on iPhone and iPad, original-quality
@@ -85,17 +86,47 @@ password command. Timeline, posting, media, and all other API traffic remain
 untouched.
 
 The default-off **Compatibility reply composer** is available when sideloaded
-builds reject native replies. It opens X's official reply page in a visible,
-in-app web surface and never posts automatically. Compatibility replies for
-every native app account use the same persistent x.com session, which does not
-switch with the account selected inside X. NeoFreeBird asks you to review that
-session before the first compatibility reply after each launch and when it
-detects a native-account context change. NeoFreeBird does not read or export
-web credentials, cookies, page account data, or reply text, and it cannot match
-the web account to the account selected in X. After visually checking X, you
-can optionally save a local **Last confirmed: @handle** label. That
-user-provided label is not verified and is excluded from preference profiles
-and compatibility reports.
+builds reject native replies. For an inline reply, beta 44 first asks X 12.9's
+own visible web controller to authenticate with the exact native account object
+supplied for that tap. NeoFreeBird verifies that the controller retained that
+same object; X still decides which server-side web account is active, so this
+path must be checked with both accounts on-device. The controller is
+runtime-checked, never hidden, and never posts automatically. If that private
+controller is unavailable or fails a guard, NeoFreeBird falls back to its
+existing visible x.com Web Intent.
+Only that custom fallback uses one persistent web session for every app
+account, so it still asks you to review the web account when needed. NeoFreeBird
+does not inspect or export web credentials, cookies, page account data, or
+reply text, and it does not separately persist, log, or export post identifiers.
+The tapped identifier necessarily remains in X's official visible reply URL
+while that screen is open. An optional local **Last confirmed: @handle** label
+for the custom session is unverified and excluded from profiles and reports.
+
+Beta 44 expanded native-reply troubleshooting without changing the native
+request. Reports now include an ordered, monotonic send-stage trace and fixed
+categories for known `CreateTweet` task constructors, first-party host class,
+HTTP result class, network-error class, and coarse duration. Per-overload
+availability and fixed rejection counters distinguish a missed networking seam
+from a request that simply did not match the strict policy. The observer is
+active only during a short forwarded-reply window. During that window it
+transiently classifies the HTTP method, URL scheme, exact first-party host, and
+operation name; those values are reduced to fixed counters and are never logged
+or retained as raw URLs. It never reads headers, bodies, cookies, tokens,
+response contents, reply text, identifiers, or account data.
+
+Beta 45 adds a second, narrower checkpoint after X 12.9 decodes a GraphQL
+response. It distinguishes a decoded model, API-error presence, parse-error
+presence, combinations of those states, and an empty decoded result. This is
+needed because HTTP 2xx only confirms transport; it does not prove that X
+accepted or assimilated the reply. A lock-free hint first avoids work during
+ordinary GraphQL traffic, and only the numeric active-reply generation is
+captured before X's decoder runs. Decoded presence is inspected only after X
+returns. The checkpoint is restricted to a 30-second temporal reply window and
+exact HTTPS API-host `CreateTweet` operations, and it preserves the response
+unchanged. It records only fixed presence categories and never reads or exports
+error messages, response bodies, raw URLs, headers, cookies, tokens, tweet
+text, identifiers, or account data. This operation-scoped temporal result is a
+diagnostic clue, not proof that X accepted the reply.
 
 ## Where to find things
 

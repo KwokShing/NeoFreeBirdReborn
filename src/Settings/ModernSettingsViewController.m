@@ -554,7 +554,8 @@ static NSCache<NSString*, UIImage*>* BHTDeveloperAvatarCache(void) {
                  @"titleKey": @"FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE",
                  @"detailKey": @"FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER",
                  @"synonyms":
-                     @"author account handle username display name user"
+                     @"author account handle username display name user "
+                      @"mention mentioned @mention"
              },
              @{
                  @"identifier": BHTForYouFiltersPostTextSearchTarget,
