@@ -45,7 +45,7 @@ def main():
         info = {
             "CFBundleDisplayName": "X",
             "CFBundleIdentifier": "com.atebits.Tweetie2",
-            "CFBundleShortVersionString": "12.9",
+            "CFBundleShortVersionString": "13.0",
             "CFBundleVersion": "10",
             "CFBundleURLTypes": [
                 {
@@ -86,7 +86,7 @@ def main():
                 output,
                 fmt=plistlib.FMT_BINARY,
             )
-        # X 12.9's compiled launch nib refers to the stock image by this exact
+        # The audited launch nib shape refers to the stock image by this exact
         # archive string. A synthetic same-shape fixture keeps the
         # pre-injection replacement covered without redistributing the app.
         (app / "LaunchScreen.nib").write_bytes(

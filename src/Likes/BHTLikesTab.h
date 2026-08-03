@@ -4,7 +4,8 @@
 // Grok) remain separate and can be selected/reordered independently.
 NSArray* BHTEntriesByInstallingLikesDestination(NSArray* entries);
 
-// The Likes entry is created by X's own 12.9 navigation-entry factory. These
+// The Likes entry is created by the compatible host runtime's audited
+// navigation-entry factory. These
 // helpers let the hooks identify its genuine Bookmarks carrier and replace only
 // that carrier's content with the Likes surface.
 BOOL BHTIsNativeLikesEntry(id entry);

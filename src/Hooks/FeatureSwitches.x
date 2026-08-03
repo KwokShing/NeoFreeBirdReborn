@@ -56,7 +56,7 @@ static NSNumber* FeatureSwitchOverrideValueForKey(NSString* key) {
     }
 
     // Legacy BHTwitter feature unlocks, updated for the keyed switch funnel used
-    // by X 12.9. Disabled preferences leave the account's native value intact.
+    // by the compatible host runtime. Disabled preferences leave the account's native value intact.
     if ([key isEqualToString:@"voice_replies_enabled"] ||
         [key isEqualToString:@"voice_creation_enabled"]) {
         return [BHTSettings boolForKey:@"voice_creation_enabled"] ? @YES : nil;
@@ -318,7 +318,7 @@ static NSNumber* FeatureSwitchOverrideValueForKey(NSString* key) {
     }
 
     // Older and newly introduced ad experiments still follow these families.
-    // This complements the exact X 12.9 keys above without changing any value
+    // This complements the exact audited runtime keys above without changing any value
     // while the No ads toggle is off.
     if ([BHTSettings boolForKey:@"hide_promoted"] &&
         ([key hasPrefix:@"ad_formats_"] ||

@@ -20,7 +20,7 @@
 - (UIFont*)monospacedDigitFontOfSize:(CGFloat)size weight:(CGFloat)weight;
 @end
 
-// X 12.9's SwiftUI text and newer timeline surfaces use this catalog instead
+// The compatible host runtime's SwiftUI text and newer timeline surfaces use this catalog instead
 // of TFNUIDefaultFontGroup.
 @interface XFontCatalog : NSObject
 + (UIFont*)fontForToken:(NSInteger)token;

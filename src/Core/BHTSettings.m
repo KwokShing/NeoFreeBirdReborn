@@ -741,14 +741,14 @@ static BOOL BHTIsValidKeywordArray(id value, BOOL usernameKeywords) {
 
     NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
     if (![defaults boolForKey:@"nfb_key_migration_v2_done"]) {
-        NSDictionary<NSString*, NSString*>* x129RenamedKeys = @{
+        NSDictionary<NSString*, NSString*>* compatibilityRenamedKeys = @{
             @"dis_VODCaptions": @"disable_video_captions",
             @"strip_tracking_params": @"strip_share_tracking",
-            // X 12.9 exposes bio translation through the same native Grok
+            // The compatible host runtime exposes bio translation through the same native Grok
             // translation controls as posts, polls and Community Notes.
             @"bio_translate": @"enable_grok_translations",
         };
-        [x129RenamedKeys enumerateKeysAndObjectsUsingBlock:^(
+        [compatibilityRenamedKeys enumerateKeysAndObjectsUsingBlock:^(
                             NSString* oldKey, NSString* newKey, BOOL* stop) {
             id value = [defaults objectForKey:oldKey];
             if (value != nil && [defaults objectForKey:newKey] == nil) {

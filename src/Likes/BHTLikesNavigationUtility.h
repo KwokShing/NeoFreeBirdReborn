@@ -21,7 +21,7 @@ extern NSString* const BHTLikesNavigationSettingsDidChangeNotification;
 + (BOOL)waterfallEnabled;
 + (void)setWaterfallEnabled:(BOOL)enabled;
 
-// X 12.9 builds Activity History in this canonical order. These helpers map
+// The audited runtime builds Activity History in this canonical order. These helpers map
 // the editor's visible order onto the native data-source indices.
 + (NSInteger)originalIndexForPageID:(NSString*)pageID;
 + (NSInteger)originalIndexForVisibleIndex:(NSInteger)visibleIndex

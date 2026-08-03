@@ -54,8 +54,8 @@ public final class BHTSidebarRuntime: NSObject {
     }
 
     // T1DashContentController is an Objective-C-visible Swift class, but its
-    // private TwitterDash.DashDataSource property is not KVC-compliant in X
-    // 12.9. Resolve the retained Swift object through reflection instead of
+    // private TwitterDash.DashDataSource property is not KVC-compliant in the
+    // audited runtime. Resolve the retained Swift object through reflection instead of
     // assuming valueForKey:@"dataSource" can cross that boundary.
     @objc(applyToDashContentController:)
     public static func apply(

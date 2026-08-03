@@ -244,7 +244,7 @@ static BOOL BHTInvokeGuardedVoidGetter(id target, SEL selector) {
 
 static NSNotificationName BHTDynamicColorNotificationName(
     const char* symbolName, NSNotificationName fallbackName) {
-    // These notification constants are exported by TFNUI in X 12.9. Resolve
+    // These notification constants are exported by TFNUI in the audited runtime. Resolve
     // them dynamically so an older/newer host that omits the symbols still
     // gets the harmless string-name fallback rather than a load failure.
     void* address = dlsym(RTLD_DEFAULT, symbolName);

@@ -120,7 +120,7 @@ static char kCopyProviderKey;
 
 // MARK: - Native profile bio translation
 
-// X 12.9 exposes this selector. Let X render and perform its own translation;
+// The compatible host runtime exposes this selector. Let X render and perform its own translation;
 // no credentials or out-of-process requests are involved. Do not add the older
 // isProfileTranslationEnabled selector to builds where it is absent, because a
 // disabled preference would have no native implementation to call through to.

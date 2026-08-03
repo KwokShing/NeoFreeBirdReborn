@@ -2,7 +2,7 @@ Package: com.vicitiniman.neofreebird
 Name: NeoFreeBird
 Version: 6.1.0-beta.43
 Architecture: iphoneos-arm
-Description: A modular X client enhancement tweak with X 12.9 compatibility.
+Description: A modular X client enhancement tweak with runtime-compatible, host-version-neutral guards.
 Maintainer: Vicitiniman
 Author: BHTwitter and NeoFreeBird contributors
 Section: Tweaks

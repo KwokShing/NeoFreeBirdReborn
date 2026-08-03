@@ -12,12 +12,11 @@
 #import <stdint.h>
 #import <string.h>
 
-static NSString* const BHTCompatibilityTargetVersion = @"12.9";
 static NSString* const BHTMetricsHandlerName = @"bht";
 static const NSTimeInterval BHTCompatibilityMinimumPreflightDuration = 12.0;
 
 @protocol BHTXAuthPasswordCommandInitializing <NSObject>
-// X 12.9 encodes this completion block as v28@?0B8@12@20.
+// The audited runtime encodes this completion block as v28@?0B8@12@20.
 - (instancetype)
     initWithContext:(id)context
           accountID:(id)accountID
@@ -237,17 +236,6 @@ static NSString* BHTNormalizedCompatibilityIdentifier(
     }
     if (didNormalize) *didNormalize = YES;
     return candidate;
-}
-
-static NSString* BHTAppVersion(void) {
-    id value = [NSBundle.mainBundle
-        objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    return [value isKindOfClass:NSString.class] ? value : @"";
-}
-
-static BOOL BHTCompatibilityVersionIsSupported(void) {
-    return [BHTAppVersion()
-        isEqualToString:BHTCompatibilityTargetVersion];
 }
 
 static void BHTLoadCompatibilityFrameworkIfNeeded(void) {
@@ -499,7 +487,7 @@ static BOOL BHTNativeAddAccountCompletionGetterIsSupported(void) {
            returnType && returnType[0] == '@';
 }
 
-// This is X 12.9's own JetX/Jetfuel login entry. Keep the guard exact because
+// This is the compatible host runtime's own JetX/Jetfuel login entry. Keep the guard exact because
 // the selector is private and must never be called against an unexpected ABI.
 static BOOL BHTNativeInitialSignInSignatureIsSupported(void) {
     Class hostClass = NSClassFromString(@"T1HostViewController");
@@ -520,7 +508,7 @@ static BOOL BHTNativeInitialSignInSignatureIsSupported(void) {
 }
 
 // X's existing-account action owns all registration and switching callbacks.
-// BOOL NO selects sign-in while YES selects sign-up in X 12.9.
+// BOOL NO selects sign-in while YES selects sign-up in the audited runtime.
 static BOOL BHTNativeAddAccountSignInSignatureIsSupported(void) {
     Class accountsClass =
         NSClassFromString(@"T1AccountsViewController");
@@ -540,10 +528,6 @@ static NSArray<NSString*>*
 BHTMissingNativeCompatibilityRequirements(void) {
     NSMutableArray<NSString*>* missing =
         [NSMutableArray array];
-    if (!BHTCompatibilityVersionIsSupported()) {
-        [missing addObject:@"appVersion"];
-        return [missing copy];
-    }
     Class hostClass = NSClassFromString(@"T1HostViewController");
     if (!hostClass) {
         [missing addObject:@"hostControllerClass"];
@@ -564,10 +548,6 @@ static NSArray<NSString*>*
 BHTMissingCompatibilityRequirements(void) {
     NSMutableArray<NSString*>* missing =
         [NSMutableArray array];
-    if (!BHTCompatibilityVersionIsSupported()) {
-        [missing addObject:@"appVersion"];
-        return [missing copy];
-    }
 
     BHTLoadCompatibilityFrameworkIfNeeded();
     if (!BHTGuestAccountIdentifier()) {
@@ -1016,7 +996,7 @@ static id BHTCreatePasswordCommand(
     id knownDeviceToken = BHTSendObject(
         accountClass, NSSelectorFromString(@"knownDeviceToken"));
     id authTokenStorage = [[storageClass alloc] init];
-    // X 12.9 encodes source: as NSUInteger; native-compatible callers use 0.
+    // The audited runtime encodes source: as NSUInteger; native-compatible callers use 0.
     NSUInteger source = 0;
     id responseBuilder = [[builderClass alloc] init];
     id completionBlock = [completion copy];
@@ -1323,7 +1303,7 @@ static void BHTCompleteAddAccountFlow(
                 &BHTCompatibilityAccountHandoffAttempted, 1,
                 memory_order_relaxed);
             @try {
-                // X 12.9's native completion uses
+                // The audited runtime's native completion uses
                 // (accountsController, account). Its encoded block ABI is
                 // validated above before this private callback is invoked.
                 didAddAccount(accountsController, account);
@@ -1875,10 +1855,6 @@ static BOOL BHTPresentNativeLoginChallenge(
 }
 
 - (NSString*)messageForFailureCategory:(NSString*)category {
-    if ([category isEqualToString:@"unsupported_version"]) {
-        return BHTCompatibilityLocalized(
-            @"COMPATIBILITY_SIGN_IN_VERSION_ERROR");
-    }
     if ([category isEqualToString:@"missing_runtime"]) {
         return BHTCompatibilityLocalized(
             @"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR");
@@ -2118,11 +2094,6 @@ static BOOL BHTPresentNativeLoginChallenge(
         self.metricsCollector || self.sharingReport) {
         return;
     }
-    if (!BHTCompatibilityVersionIsSupported()) {
-        [self finishWithSuccess:NO
-               failureCategory:@"unsupported_version"];
-        return;
-    }
     if (!BHTCompatibilityRuntimeIsAvailable()) {
         self.runtimeAvailable = NO;
         [self finishWithSuccess:NO
@@ -2195,7 +2166,7 @@ static BOOL BHTPresentNativeLoginChallenge(
 @end
 
 // Compatibility Sign-in is deliberately separate from X's normal onboarding.
-// It uses the guarded X 12.9 password command and hands successful accounts
+// It uses the guarded compatible-host password command and hands successful accounts
 // back to X's own account service without changing the native sign-in action.
 static void BHTPresentCompatibilitySignInForContext(
     UIViewController* presenter,
@@ -2209,27 +2180,6 @@ static void BHTPresentCompatibilitySignInForContext(
             BHTTopViewController(presenter) ?:
             BHTActiveViewController();
         if (!source) return;
-
-        if (!BHTCompatibilityVersionIsSupported()) {
-            UIAlertController* alert = [UIAlertController
-                alertControllerWithTitle:
-                    BHTCompatibilityLocalized(
-                        @"COMPATIBILITY_SIGN_IN_TITLE")
-                                 message:BHTCompatibilityLocalized(
-                                             @"COMPATIBILITY_SIGN_IN_VERSION_ERROR")
-                          preferredStyle:
-                              UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction
-                actionWithTitle:
-                    BHTCompatibilityLocalized(
-                        @"COMPATIBILITY_SIGN_IN_OK")
-                          style:UIAlertActionStyleDefault
-                        handler:nil]];
-            [source presentViewController:alert
-                                 animated:YES
-                               completion:nil];
-            return;
-        }
 
         BHTCompatibilityRecord(
             BHTCompatibilityLoginEventPresented,
@@ -2353,11 +2303,8 @@ static void BHTPresentCompatibilityUnavailableAlert(
         BHTTopViewController(presenter) ?:
         BHTActiveViewController();
     if (!source) return;
-    NSString* message = BHTCompatibilityVersionIsSupported()
-        ? BHTCompatibilityLocalized(
-              @"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR")
-        : BHTCompatibilityLocalized(
-              @"COMPATIBILITY_SIGN_IN_VERSION_ERROR");
+    NSString* message = BHTCompatibilityLocalized(
+        @"COMPATIBILITY_SIGN_IN_RUNTIME_ERROR");
     UIAlertController* alert = [UIAlertController
         alertControllerWithTitle:
             BHTCompatibilityLocalized(
@@ -2460,8 +2407,7 @@ static void BHTPresentNativeInitialCompatibilitySignIn(
             BHTCompatibilityLoginEventPresented,
             @"native_initial_requested", @"none");
 
-        if (!BHTCompatibilityVersionIsSupported() ||
-            !BHTNativeInitialSignInSignatureIsSupported()) {
+        if (!BHTNativeInitialSignInSignatureIsSupported()) {
             atomic_fetch_add_explicit(
                 &BHTCompatibilityNativeInitialFailed, 1,
                 memory_order_relaxed);
@@ -2564,8 +2510,7 @@ static void BHTPresentNativeAddAccountCompatibilitySignIn(
             NSClassFromString(@"T1AccountsViewController");
         SEL selector =
             NSSelectorFromString(@"_addAccount:sender:");
-        if (!BHTCompatibilityVersionIsSupported() ||
-            !accountsClass ||
+        if (!accountsClass ||
             !accountsController ||
             ![accountsController isKindOfClass:accountsClass] ||
             !BHTNativeAddAccountSignInSignatureIsSupported() ||
@@ -2646,8 +2591,7 @@ void BHTPresentCompatibilitySignInForAddingAccount(
 
 void BHTInstallCompatibilitySignInEntry(
     UIViewController* onboardingController) {
-    if (!onboardingController ||
-        !BHTCompatibilityVersionIsSupported()) {
+    if (!onboardingController) {
         return;
     }
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -2909,9 +2853,6 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
                            @selector(viewDidAppear:)] &&
         nativeAddAccountCompletionSelectorAvailable;
     return @{
-        @"targetAppVersion": BHTCompatibilityTargetVersion,
-        @"appVersionSupported":
-            @(BHTCompatibilityVersionIsSupported()),
         @"runtimeAvailable":
             @(missingRequirements.count == 0),
         @"missingRuntimeRequirements":
@@ -2920,8 +2861,7 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
             @(missingRequirements.count == 0),
         @"legacyPasswordMissingRuntimeRequirements":
             missingRequirements,
-        @"preLoginDiagnosticsEligible":
-            @(BHTCompatibilityVersionIsSupported()),
+        @"preLoginDiagnosticsEligible": @YES,
         @"addAccountEntryAvailable":
             @(addAccountEntryAvailable),
         @"nativeAddAccountCompletionSelectorAvailable":
@@ -2944,15 +2884,13 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"credentialEntryOwner": @"compatibility_screen_ephemeral",
         @"credentialPersistence": @"x_native_account_storage",
         @"xAuthClientMetadataPolicy":
-            @"native_x_12_9",
-        @"xAuthClientMetadataTargetVersion":
-            BHTCompatibilityTargetVersion,
+            @"native_runtime_compatible",
         @"xAuthClientMetadataOverrideInstalled": @NO,
         @"xAuthClientMetadataOverrideClaimed": @0,
         @"xAuthClientMetadataOverrideApplied": @0,
         @"xAuthClientMetadataScopeTimedOut": @0,
         @"compatibilityRequestProfile":
-            @"beta29_native_12_9_preflight",
+            @"native_runtime_guarded_preflight",
         @"preflightPolicy":
             @"minimum_12_second_then_nil_metrics",
         @"preflightMinimumDelaySeconds":

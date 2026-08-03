@@ -369,9 +369,9 @@ static NSString* BHTReplyNotificationNameForSymbol(
     void* address = dlsym(RTLD_DEFAULT, symbol);
     if (!address) return nil;
 
-    // These exact allowlisted X 12.9 symbols are NSString* constants. Avoid
-    // ARC touching their storage until both the symbol and pointed-to object
-    // resolve to mapped images.
+    // Resolve only allowlisted NSString* constants. Avoid ARC touching their
+    // storage until both the symbol and pointed-to object resolve to mapped
+    // images.
     Dl_info symbolInfo = {0};
     if (dladdr(address, &symbolInfo) == 0) return nil;
     uintptr_t candidateBits = 0;
@@ -396,13 +396,6 @@ static NSString* BHTReplyNotificationNameForSymbol(
 }
 
 void BHTInstallReplyWorkflowDiagnosticObservers(void) {
-    NSString* version = [NSBundle.mainBundle
-        objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    if (![version isKindOfClass:NSString.class] ||
-        ![version isEqualToString:@"12.9"]) {
-        return;
-    }
-
     @synchronized(BHTObservationLock()) {
         if (!BHTReplyWorkflowObserverTokens) {
             BHTReplyWorkflowObserverTokens =
@@ -646,7 +639,7 @@ static NSDictionary* BHTReplyWorkflowDiagnosticSnapshot(void) {
         @"notificationObservers":
             BHTReplyWorkflowObserverAvailabilitySnapshot(),
         @"notificationResolution":
-            @"x_12_9_allowlist_mapped_constants",
+            @"allowlist_mapped_constants",
         @"runtimeShape": BHTReplyWorkflowRuntimeShape(),
         @"runtimeShapeContainsPrivateAPIMetadata": @YES,
         @"capturesTweetOrReplyText": @NO,
@@ -1136,7 +1129,8 @@ NSURL* BHTCompatibilityReportURL(void) {
     NSURL* caches = [[[NSFileManager defaultManager]
         URLsForDirectory:NSCachesDirectory
                inDomains:NSUserDomainMask] firstObject];
-    return [caches URLByAppendingPathComponent:@"BHTwitter-X12.9-Compatibility.json"];
+    return [caches
+        URLByAppendingPathComponent:@"BHTTwitter-Compatibility.json"];
 }
 
 static NSDictionary* BHTProbe(NSString* feature, NSString* className,

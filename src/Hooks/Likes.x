@@ -105,7 +105,7 @@ static char kBHTActivityAppliedSignatureKey;
 static NSInteger BHTActivityOriginalCount(UIViewController* controller) {
     NSNumber* count =
         objc_getAssociatedObject(controller, &kBHTActivityOriginalCountKey);
-    // The compatibility report and the decrypted X 12.9 implementation both
+    // The compatibility report and the decrypted audited runtime implementation both
     // confirm four pages. This fallback is used only if the V1/V2 count method
     // has not yet run.
     return count ? count.integerValue : 4;
@@ -349,7 +349,7 @@ void BHTRefreshLikesActivityHistoryConfiguration(
 
 %end
 
-// X 12.9's navigation registry rejects an independently implemented
+// The audited runtime's navigation registry rejects an independently implemented
 // Objective-C entry before sending it any protocol messages. The Likes entry is
 // therefore a genuine BookmarksAppNavigationTabEntry made by X's own factory.
 // These hooks keep its native lifecycle intact and replace only its controller.

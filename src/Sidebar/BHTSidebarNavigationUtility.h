@@ -28,7 +28,7 @@ FOUNDATION_EXPORT void BHTRecordSidebarAddAccountRefreshRequested(void);
 + (void)setVisibleItemIDs:(NSArray<NSString*>*)visible;
 + (void)resetSelection;
 
-// X 12.9's sidebar is a SwiftUI view backed by a retained
+// The compatible host runtime's sidebar is a SwiftUI view backed by a retained
 // TwitterDash.DashDataSource. These helpers keep weak references to its
 // content controllers and reapply the user's layout after native rebuilds.
 + (void)registerDashContentController:(id)controller;

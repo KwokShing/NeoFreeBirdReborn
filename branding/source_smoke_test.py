@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check source invariants that protect the X 12.9 compatibility fixes."""
+"""Check source invariants that protect runtime-compatible hooks."""
 
 from collections import Counter
 from pathlib import Path
@@ -197,7 +197,7 @@ def main() -> None:
         encoding="utf-8"
     )
     if "- (BOOL)isProfileTranslationEnabled" in profile_source:
-        raise AssertionError("Unavailable X 12.9 profile selector is hooked")
+        raise AssertionError("Unavailable host-version-specific profile selector is hooked")
 
     page_source = (
         ROOT / "src" / "Settings" / "ModernSettingsPageViewController.m"
@@ -401,22 +401,15 @@ def main() -> None:
             "BHTInstallCompatibilitySignInEntry",
             "BHTInstallCompatibilityAddAccountSignInEntry",
             "BHTCompatibilitySignInDiagnosticSnapshot",
-            "guarded X 12.9 compatibility password flow",
+            "guarded runtime-compatible password flow",
             "Successful accounts are registered and switched through X's account APIs",
         ),
         "compatibility sign-in public contract",
     )
 
-    version_gate = source_section(
-        compatibility_login_source,
-        "static BOOL BHTCompatibilityVersionIsSupported(void)",
-        "static BOOL BHTClassResponds(",
-        "compatibility sign-in version gate",
-    )
     require_source_tokens(
         compatibility_login_source,
         (
-            'BHTCompatibilityTargetVersion = @"12.9"',
             "static void BHTLoadCompatibilityFrameworkIfNeeded(void)",
             '@"TwitterSPMMigration.framework"',
             '@"TwitterSPMMigration"',
@@ -425,22 +418,32 @@ def main() -> None:
             "static NSArray<NSString*>*\n"
             "BHTMissingCompatibilityRequirements(void)",
             "static BOOL BHTCompatibilityRuntimeIsAvailable(void)",
-            "if (!BHTCompatibilityVersionIsSupported()) {",
             "BHTLoadCompatibilityFrameworkIfNeeded();",
             "return "
             "BHTMissingCompatibilityRequirements().count == 0;",
             "return BHTCompatibilityRuntimeIsAvailable();",
         ),
-        "hard X 12.9 compatibility gate",
+        "runtime-capability compatibility gate",
     )
-    require_source_tokens(
-        version_gate,
-        (
-            "BHTAppVersion()",
-            "isEqualToString:BHTCompatibilityTargetVersion",
-        ),
-        "exact X 12.9 version comparison",
-    )
+    for removed_version_gate in (
+        "BHTCompatibilityTargetVersion",
+        "BHTCompatibilityVersionIsSupported",
+        "CFBundleShortVersionString",
+        '@"appVersion"',
+    ):
+        if removed_version_gate in compatibility_login_source:
+            raise AssertionError(
+                "Compatibility sign-in must not be gated by the host app "
+                f"version: {removed_version_gate}"
+            )
+    if re.search(
+        r'isEqualToString:@"\d+(?:\.\d+)+"',
+        compatibility_login_source,
+    ):
+        raise AssertionError(
+            "Compatibility sign-in must not compare a hard-coded host "
+            "app version"
+        )
 
     missing_runtime_requirements = source_section(
         compatibility_login_source,
@@ -450,7 +453,6 @@ def main() -> None:
         "privacy-safe compatibility runtime requirements",
     )
     expected_requirement_ids = [
-        "appVersion",
         "guestIdentifier",
         "commandClass",
         "serviceRunnerClass",
@@ -505,6 +507,11 @@ def main() -> None:
     require_source_tokens(
         compatibility_login_hook,
         (
+            '#import <objc/runtime.h>',
+            "BHTCompatibilityHookMethodHasBlockArgument(",
+            "BHTCompatibilityHookMethodHasBooleanArgument(",
+            "method_getNumberOfArguments(method) != 3",
+            'strcmp(type, "@?") == 0',
             '#import "Sidebar/BHTSidebarNavigationUtility.h"',
             "%hook T1HostViewController",
             "makeOnboardingViewControllerWithCompletion:",
@@ -522,13 +529,18 @@ def main() -> None:
             "refreshRegisteredDashContentControllers",
             "%init(BHTCompatibilityAddAccountHooks);",
         ),
-        "native onboarding and add-account entry wrappers",
+        "runtime-guarded onboarding and add-account entry wrappers",
     )
+    if "CFBundleShortVersionString" in compatibility_login_hook:
+        raise AssertionError(
+            "Compatibility hooks must be initialized by runtime method "
+            "shape, not host app version"
+        )
     if "BHTInstallCompatibilityXAuthClientMetadataOverride" in (
         compatibility_login_header + compatibility_login_hook
     ):
         raise AssertionError(
-            "Beta 43 must not install the experimental X 12.3 metadata "
+            "Beta 43 must not install the experimental client-metadata "
             "override"
         )
     if "private_startLoginFlowWithSender:" in compatibility_login_hook:
@@ -560,7 +572,7 @@ def main() -> None:
     ):
         if removed_metadata_token in compatibility_login_source:
             raise AssertionError(
-                "Beta 43 must use X 12.9's native password-request "
+                "Beta 43 must use the host's native password-request "
                 f"metadata: {removed_metadata_token}"
             )
     if "T1APIRequestHeaderProvider" in compatibility_login_source:
@@ -663,7 +675,7 @@ def main() -> None:
     ):
         if stale_source_contract in compatibility_login_source:
             raise AssertionError(
-                "X 12.9 source: must remain an NSUInteger with the "
+                "The host source ABI must remain an NSUInteger with the "
                 f"native-compatible value 0: {stale_source_contract}"
             )
     require_source_tokens(
@@ -856,10 +868,9 @@ def main() -> None:
         (compatibility_presenter, "sign-in presenter"),
         (compatibility_entry, "onboarding entry"),
     ):
-        if "BHTCompatibilityVersionIsSupported()" not in diagnostic_path:
+        if "BHTCompatibilityVersionIsSupported()" in diagnostic_path:
             raise AssertionError(
-                f"The {description} must remain behind the exact X 12.9 "
-                "version gate"
+                f"The {description} must not be gated by host app version"
             )
         if "BHTCompatibilityRuntimeIsAvailable()" in diagnostic_path:
             raise AssertionError(
@@ -871,7 +882,6 @@ def main() -> None:
         compatibility_presenter,
         (
             "BHTCompatibilityPresentedSignInController",
-            "BHTCompatibilityVersionIsSupported()",
             "BHTCompatibilityLoginViewController* login =",
             "login.addAccountController = addAccountController;",
             "UIModalPresentationFormSheet",
@@ -1256,9 +1266,6 @@ def main() -> None:
             "Compatibility sign-in must not start while a report "
             "snapshot is being prepared"
         )
-    version_check_position = sign_in_action.index(
-        "if (!BHTCompatibilityVersionIsSupported())"
-    )
     runtime_check_position = sign_in_action.index(
         "if (!BHTCompatibilityRuntimeIsAvailable())"
     )
@@ -1272,8 +1279,7 @@ def main() -> None:
         "self.metricsCollector ="
     )
     if not (
-        version_check_position
-        < runtime_check_position
+        runtime_check_position
         < password_copy_position
         < password_clear_position
         < metrics_request_position
@@ -1380,14 +1386,13 @@ def main() -> None:
             '@"credentialEntryOwner": @"compatibility_screen_ephemeral"',
             '@"credentialPersistence": @"x_native_account_storage"',
             '@"xAuthClientMetadataPolicy":',
-            '@"native_x_12_9"',
-            '@"xAuthClientMetadataTargetVersion":',
+            '@"native_runtime_compatible"',
             '@"xAuthClientMetadataOverrideInstalled": @NO',
             '@"xAuthClientMetadataOverrideClaimed": @0',
             '@"xAuthClientMetadataOverrideApplied": @0',
             '@"xAuthClientMetadataScopeTimedOut": @0',
             '@"compatibilityRequestProfile":',
-            '@"beta29_native_12_9_preflight"',
+            '@"native_runtime_guarded_preflight"',
             '@"preflightPolicy":',
             '@"minimum_12_second_then_nil_metrics"',
             '@"preflightMinimumDelaySeconds":',
@@ -1553,12 +1558,16 @@ def main() -> None:
                 "Reply observers must count fixed stages without reading "
                 f"notification or account data: {private_value}"
             )
+    if "CFBundleShortVersionString" in reply_observer_source:
+        raise AssertionError(
+            "Reply observers must resolve allowlisted runtime symbols without "
+            "a host app version gate"
+        )
     require_source_tokens(
         reply_hook_source,
         (
             "BHTReplyDiagnosticMethodHasShape(",
             "BHTReplyDiagnosticMethodHasObjectArguments(",
-            'isEqualToString:@"12.9"',
             "method_getNumberOfArguments(method)",
             "if (*type != '@') return NO;",
             "BHTInstallReplyWorkflowDiagnosticObservers();",
@@ -1573,8 +1582,13 @@ def main() -> None:
             "%hook T1PersistentComposeViewController",
             "BHTReplyWorkflowDiagnosticPersistentComposerPresented",
         ),
-        "guarded X 12.9 reply workflow hooks",
+        "runtime-guarded reply workflow hooks",
     )
+    if "CFBundleShortVersionString" in reply_hook_source:
+        raise AssertionError(
+            "Reply workflow hooks must be initialized by runtime method "
+            "shape, not host app version"
+        )
     reply_forwarding_body = source_section(
         reply_hook_source,
         "originalStatus:(__unsafe_unretained id)originalStatus {",

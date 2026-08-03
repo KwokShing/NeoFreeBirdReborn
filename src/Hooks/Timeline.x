@@ -351,9 +351,9 @@ static void SyncHomeAddTabButton(id container, BOOL hidden) {
 
 %end
 
-// X 12.9 also registers an Objective-C-visible compatibility name for the Home
+// The audited runtime also registers an Objective-C-visible compatibility name for the Home
 // container.  Keep the same safe, non-persisting behavior on that path.
-%group BHTX129HomeContainer
+%group BHTCompatibilityHomeContainer
 
 %hook HomeTimelineContainerViewController
 
@@ -809,7 +809,7 @@ static UIViewController* NearestURTTimelineController(
         current = next;
     }
 
-    // X 12.9 delivers sections through an inner items controller. Its UIKit
+    // The audited runtime delivers sections through an inner items controller. Its UIKit
     // containment metadata can be temporarily incomplete during setup, while
     // the loaded view's responder chain still reaches the owning URT
     // controller. Keep this bounded and accept only the exact runtime class.
@@ -873,7 +873,7 @@ static BOOL IsPrimaryForYouTimelineController(
         return NO;
     }
 
-    // X 12.9 exposes `urtTimeline` as a Swift-backed ivar with an empty
+    // The audited runtime exposes `urtTimeline` as a Swift-backed ivar with an empty
     // Objective-C type encoding and no accessor. A typed future accessor/ivar
     // remains preferred. For this exact runtime shape, compare the raw pointer
     // with the weak registry of objects returned by X's verified deserializer
@@ -918,7 +918,7 @@ static id StatusFromTimelineItem(id item) {
         return nil;
     }
 
-    // Prefer X 12.9's compatibility accessor because its Objective-C return
+    // Prefer the audited runtime's compatibility accessor because its Objective-C return
     // signature can be verified before messaging it.
     id tweet =
         ItemObjectValue(viewModel, NSSelectorFromString(@"tweet"), "tweet");
@@ -1383,6 +1383,6 @@ static void BHTBindURTDataController(id owner) {
     Class swiftClass = NSClassFromString(
         @"TwitterHomeFeatureImplementation.HomeTimelineContainerViewController");
     if (compatibilityClass && compatibilityClass != swiftClass) {
-        %init(BHTX129HomeContainer);
+        %init(BHTCompatibilityHomeContainer);
     }
 }

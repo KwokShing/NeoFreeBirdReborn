@@ -97,7 +97,7 @@
 @end
 
 // Each entry backs one tab and owns its T1TabView; the app orders both the tab
-// buttons and their content view controllers from this single array. X 12.9
+// buttons and their content view controllers from this single array. The compatible host runtime
 // asks every entry for a content-controller factory before it asks that
 // factory for either controller, so all three methods are required.
 @protocol T1AppNavigationTabEntry <NSObject>
@@ -251,12 +251,12 @@
 @property (nonatomic, readonly) NSArray* inlineMediaInfos;
 @end
 
-// X 12.9 can still use the legacy inline player for timeline VOD, depending on
+// The compatible host runtime can still use the legacy inline player for timeline VOD, depending on
 // the post and feature switches.
 @interface T1InlineMediaView : UIView
 @end
 
-// X 12.9 routes its native Blue-only video action through this model. NeoFreeBird
+// The compatible host runtime routes its native Blue-only video action through this model. NeoFreeBird
 // associates the originating entity with it and substitutes its own quality
 // picker when video downloads are enabled.
 @interface T1VideoDownloadViewModel : NSObject
