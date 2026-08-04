@@ -9,6 +9,7 @@ on:
       - "deps/**"
       - "layout/**"
       - "branding/**"
+      - "patches/**"
       - "Makefile"
       - "build.sh"
       - "rebrand.sh"
@@ -46,6 +47,11 @@ on:
         default: ""
         required: false
         type: string
+      apply_patches:
+        description: "Apply the source patches in patches/ before building"
+        default: true
+        required: false
+        type: boolean
       upload_artifact:
         description: "Upload package as an artifact"
         default: true
@@ -71,6 +77,9 @@ jobs:
       BUILD_SDK_VERSION: ${{ inputs.sdk_version || '16.5' }}
       BUILD_TARGET_VERSION: ${{ inputs.target_version || '15.0' }}
       BUILD_DEPLOY_FORMAT: ${{ inputs.deploy_format || 'rootless' }}
+      # Patches are on by default; only an explicit "false" from a manual run
+      # turns them off. Other events do not provide inputs at all.
+      BUILD_APPLY_PATCHES: ${{ (github.event_name == 'workflow_dispatch' && inputs.apply_patches == false) && 'false' || 'true' }}
 
     steps:
       - name: Checkout Main
@@ -79,6 +88,30 @@ jobs:
           path: main
           ref: ${{ github.event.inputs.commit_id || github.ref }}
           submodules: recursive
+
+      - name: Apply Source Patches
+        if: env.BUILD_APPLY_PATCHES == 'true'
+        working-directory: main
+        run: |
+          shopt -s nullglob
+          patches=(patches/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo "No patches found in patches/, building the tree as checked out."
+            exit 0
+          fi
+          for patch in "${patches[@]}"; do
+            echo "::group::Applying ${patch}"
+            # A plain apply is all-or-nothing, so try it first. Only fall back
+            # to --3way, which can leave conflict markers behind, when the
+            # context has drifted after an upstream sync.
+            if ! git apply -p1 --verbose "$patch"; then
+              echo "Context drifted for ${patch}, retrying with --3way" >&2
+              git apply -p1 --3way --verbose "$patch"
+            fi
+            echo "::endgroup::"
+          done
+          echo "Patched files:"
+          git --no-pager diff --stat
 
       - name: Install Dependencies
         run: |

@@ -1,0 +1,78 @@
+diff --git a/branding/source_smoke_test.py b/branding/source_smoke_test.py
+index 138ed7d..effa2bd 100644
+--- a/branding/source_smoke_test.py
++++ b/branding/source_smoke_test.py
+@@ -431,18 +431,26 @@ def main() -> None:
+             "BHTMissingCompatibilityRequirements().count == 0;",
+             "return BHTCompatibilityRuntimeIsAvailable();",
+         ),
+         "hard X 12.9 compatibility gate",
+     )
++    # Patched build: the host version no longer gates Compatibility Sign-in.
++    # Assert the bypass is in place while the call sites above remain, so the
++    # class/selector/ABI guards stay the only availability decision.
+     require_source_tokens(
+         version_gate,
+         (
+             "BHTAppVersion()",
+-            "isEqualToString:BHTCompatibilityTargetVersion",
++            "return YES;",
+         ),
+-        "exact X 12.9 version comparison",
++        "patched host-version bypass",
+     )
++    if "isEqualToString:BHTCompatibilityTargetVersion" in version_gate:
++        raise AssertionError(
++            "Compatibility sign-in must not compare "
++            "CFBundleShortVersionString in a patched build"
++        )
+ 
+     missing_runtime_requirements = source_section(
+         compatibility_login_source,
+         "static NSArray<NSString*>*\n"
+         "BHTMissingCompatibilityRequirements(void)",
+diff --git a/src/Hooks/CompatibilityLogin.x b/src/Hooks/CompatibilityLogin.x
+index c6348da..9832f65 100644
+--- a/src/Hooks/CompatibilityLogin.x
++++ b/src/Hooks/CompatibilityLogin.x
+@@ -55,11 +55,15 @@
+ %end
+ 
+ %ctor {
+     NSString* version = [NSBundle.mainBundle
+         objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+-    if ([version isEqualToString:@"12.9"]) {
++    (void)version;
++    // NeoFreeBirdReborn build patch: install the compatibility sign-in hooks
++    // on any host that still exposes the classes they hook, instead of only
++    // on X 12.9.
++    if (NSClassFromString(@"T1HostViewController")) {
+         %init(BHTCompatibilityLoginHooks);
+ 
+         Class accountsController =
+             NSClassFromString(@"T1AccountsViewController");
+         if (accountsController &&
+diff --git a/src/Login/BHTCompatibilityLogin.m b/src/Login/BHTCompatibilityLogin.m
+index 1a83296..1f90894 100644
+--- a/src/Login/BHTCompatibilityLogin.m
++++ b/src/Login/BHTCompatibilityLogin.m
+@@ -244,12 +244,17 @@ static NSString* BHTAppVersion(void) {
+         objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+     return [value isKindOfClass:NSString.class] ? value : @"";
+ }
+ 
+ static BOOL BHTCompatibilityVersionIsSupported(void) {
+-    return [BHTAppVersion()
+-        isEqualToString:BHTCompatibilityTargetVersion];
++    // NeoFreeBirdReborn build patch: do not gate Compatibility Sign-in on
++    // CFBundleShortVersionString. Every call site below is still protected by
++    // the exact class, selector and ABI guards, so an unexpected host runtime
++    // is rejected by those checks instead of by the version string alone.
++    (void)BHTAppVersion();
++    (void)BHTCompatibilityTargetVersion;
++    return YES;
+ }
+ 
+ static void BHTLoadCompatibilityFrameworkIfNeeded(void) {
+     if (NSClassFromString(
+             @"TFSTwitterAPIXAuthPasswordCommand")) {

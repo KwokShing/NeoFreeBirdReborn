@@ -1,0 +1,174 @@
+name: Daily Upstream Sync
+
+on:
+  schedule:
+    # 05:00 UTC every day. Cron on GitHub is best-effort, not exact.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_repository:
+        description: "Upstream repository to sync from"
+        default: "Vicitiniman/NeoFreeBirdReborn"
+        required: true
+        type: string
+      upstream_branch:
+        description: "Upstream branch to sync from"
+        default: "master"
+        required: true
+        type: string
+      target_branch:
+        description: "Branch in this fork to sync into"
+        default: "master"
+        required: true
+        type: string
+
+concurrency:
+  group: daily-upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository || 'Vicitiniman/NeoFreeBirdReborn' }}
+  UPSTREAM_BRANCH: ${{ inputs.upstream_branch || 'master' }}
+  TARGET_BRANCH: ${{ inputs.target_branch || 'master' }}
+
+jobs:
+  sync:
+    name: Sync from upstream
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Target Branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          # Full history is required for a real merge against upstream.
+          fetch-depth: 0
+
+      - name: Configure Git Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch Upstream
+        id: fetch
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null \
+            || git remote set-url upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream "${UPSTREAM_BRANCH}"
+
+          upstream_head=$(git rev-parse "upstream/${UPSTREAM_BRANCH}")
+          echo "upstream_head=${upstream_head}" >> "$GITHUB_OUTPUT"
+          echo "upstream_short=$(git rev-parse --short "${upstream_head}")" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "${upstream_head}" HEAD; then
+            echo "already_synced=true" >> "$GITHUB_OUTPUT"
+            echo "Already contains upstream ${upstream_head}, nothing to do."
+          else
+            echo "already_synced=false" >> "$GITHUB_OUTPUT"
+            echo "New upstream commits:"
+            git --no-pager log --oneline "HEAD..upstream/${UPSTREAM_BRANCH}"
+          fi
+
+      - name: Merge Upstream
+        id: merge
+        if: steps.fetch.outputs.already_synced == 'false'
+        run: |
+          if git merge --no-edit \
+              -m "Merge upstream ${UPSTREAM_REPOSITORY}@${UPSTREAM_BRANCH} (${{ steps.fetch.outputs.upstream_short }})" \
+              "upstream/${UPSTREAM_BRANCH}"; then
+            echo "conflicted=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "conflicted=true" >> "$GITHUB_OUTPUT"
+            echo "Conflicting paths:"
+            git --no-pager diff --name-only --diff-filter=U
+            git merge --abort
+          fi
+
+      - name: Verify Build Patches Still Apply
+        id: patches
+        if: steps.merge.outputs.conflicted == 'false'
+        run: |
+          shopt -s nullglob
+          patches=(patches/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo "applies=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          failed=()
+          for patch in "${patches[@]}"; do
+            if git apply --check -p1 "$patch"; then
+              echo "OK   ${patch}"
+            else
+              echo "FAIL ${patch}"
+              failed+=("$patch")
+            fi
+          done
+          if [ ${#failed[@]} -eq 0 ]; then
+            echo "applies=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "applies=false" >> "$GITHUB_OUTPUT"
+            printf 'failed_patches=%s\n' "${failed[*]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push Merge to Target Branch
+        if: steps.patches.outputs.applies == 'true'
+        run: |
+          git push origin "HEAD:refs/heads/${TARGET_BRANCH}"
+          echo "Synced ${TARGET_BRANCH} to upstream ${{ steps.fetch.outputs.upstream_short }}."
+
+      # A conflict, or a patch that no longer applies, needs a human. Park the
+      # work on a branch and open a pull request instead of touching the target
+      # branch, so the fork is never left in a state that cannot be built.
+      - name: Open Sync Pull Request
+        if: ${{ steps.merge.outputs.conflicted == 'true' || steps.patches.outputs.applies == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_HEAD: ${{ steps.fetch.outputs.upstream_head }}
+          UPSTREAM_SHORT: ${{ steps.fetch.outputs.upstream_short }}
+          MERGE_CONFLICTED: ${{ steps.merge.outputs.conflicted }}
+          FAILED_PATCHES: ${{ steps.patches.outputs.failed_patches }}
+        run: |
+          branch="upstream-sync/${UPSTREAM_SHORT}"
+
+          if [ "$MERGE_CONFLICTED" = "true" ]; then
+            reason="the merge hit conflicts"
+            details="Resolve the conflicts against \`upstream/${UPSTREAM_BRANCH}\` on this branch."
+            # The merge was aborted, so push the upstream tip and let the pull
+            # request surface the conflicts against the target branch.
+            git branch -f "$branch" "upstream/${UPSTREAM_BRANCH}"
+          else
+            reason="a build patch no longer applies"
+            details="Regenerate these patches, then update this branch: \`${FAILED_PATCHES}\`"
+            git branch -f "$branch" HEAD
+          fi
+
+          git push --force origin "refs/heads/${branch}:refs/heads/${branch}"
+
+          existing=$(gh pr list --head "$branch" --base "$TARGET_BRANCH" --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "Pull request #${existing} already tracks ${branch}."
+            exit 0
+          fi
+
+          {
+            echo "Automated upstream sync could not update \`${TARGET_BRANCH}\` because ${reason}."
+            echo
+            echo "Upstream: \`${UPSTREAM_REPOSITORY}@${UPSTREAM_BRANCH}\` (\`${UPSTREAM_HEAD}\`)"
+            echo
+            echo "${details}"
+          } > /tmp/sync-pr-body.md
+
+          gh pr create \
+            --base "$TARGET_BRANCH" \
+            --head "$branch" \
+            --title "Sync upstream ${UPSTREAM_SHORT} (needs attention)" \
+            --body-file /tmp/sync-pr-body.md
+
+      - name: Fail When Attention Is Needed
+        if: ${{ steps.merge.outputs.conflicted == 'true' || steps.patches.outputs.applies == 'false' }}
+        run: |
+          echo "Upstream sync needs manual attention; see the pull request above." >&2
+          exit 1
