@@ -85,7 +85,7 @@ Status meanings:
 | Timeline | `hide_spaces` | Updated | Fleet-line visibility seam; runtime checked |
 | Timeline | `hide_custom_timelines` | Updated | Hides without persisting an empty pinned list |
 | Timeline | `remember_timeline_tab` | Updated | Disabled preference now leaves X's native value alone |
-| Timeline | For You keyword filters | New/runtime check | Two independent, bounded literal-substring lists match usernames/display names or primary visible post text. Cached normalized terms and per-item generation decisions keep section updates light. The gate carries an explicit primary-Home model marker through `TFNTwitterHomeTimeline-deserializeStream`, binds X's inner data controller to its exact live `T1URTViewController`, and requires that owner's timeline to be positively marked; Following and every unknown runtime state fail open |
+| Timeline | For You keyword filters | New/runtime check | Two independent, bounded lists match authors/reposters, real `@handle` tokens, or primary visible post text. Cached normalized terms and content-aware per-item decisions keep repeated layout checks light. The gate carries an explicit primary-Home model marker through `TFNTwitterHomeTimeline-deserializeStream`; section filtering accepts only a verified T1URT owner, while exact `T1URTViewController` row-height callbacks provide the X 12.9 render fallback. Following and every unknown runtime state fail open |
 | Timeline | `enable_likes_tab` | New/runtime check | Independent bottom destination backed by native Likes history; opens raw Activity History tab 4 on X 12.9, guards against delayed native offset restoration on its first presentation without a loading cover, preserves position on later tab switches, and retains Profile, History, Lists, and other native destinations pushed from X's side drawer |
 | Timeline | `likes_media_waterfall` | New/runtime check | Newest-first extraction from the same ad-filtered native section snapshot, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, a window-level edge-to-edge viewer on iPhone and iPad, a Posts/Media selector with native segmented-control artwork and a guarded 32-point minimum navigation-title height, Apple-style contextual Photo/Video/GIF previews and action menus in both surfaces (with the guarded TFN sheet retained only as a legacy fallback), and percent-driven modal swipe-down dismissal |
 | Grok | `enable_grok_translations` | Updated | Manual translation gates are no longer forced globally |
@@ -119,7 +119,7 @@ Status meanings:
 | Profile | `square_avatars` | Ported | Live avatar/image/shadow restyling |
 | Profile | `full_profile_counts` | Updated | Previously always on; now opt-in |
 | Account access | Compatibility Sign-in | New/runtime check | Explicit X 12.9-only fallback available from signed-out onboarding, Profiles settings, and Add Account; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
-| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps that opens X's visible Web Intent in a native-themed in-app WebKit shell. Setup and replies use the same app-wide persistent x.com WebKit session, warn when its active account may differ from the native account, never capture native draft text or auto-post, and fall through to native behavior when the route cannot be presented |
+| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps. Inline replies first try X's guarded visible web controller with the exact hook account object and requested authentication, then fall back to the native-themed Web Intent shell. Persistent-compose replies retain the shared-session shell because that path has no authoritative hook account. Neither route captures native draft text or auto-posts, and both fall through to native behavior when they cannot be presented |
 | Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; only X 12.9's available canonical-user selector is hooked |
 | Tweets | `enable_edit_tweet` | Updated | Exposes native UI only; server eligibility still applies |
 | Tweets | undo timeout | Ported | Unified timeout picker and old-key migration |
@@ -168,19 +168,21 @@ change the FFmpeg TLS backend without a demonstrated build need.
   subscription spoofing, and attestation evasion remain excluded. The guarded
   Compatibility Sign-in fallback is not a web-session replacement and stores
   the resulting account only through X's native account service.
-- The optional Compatibility reply composer is a visible, in-app x.com screen
-  for sideloaded installs where native replies fail. One persistent WebKit
-  session is shared by all native app accounts and remains separate from X's
-  native account store. The first reply after launch and each process-local
-  native-account context change that NeoFreeBird detects displays an explicit
-  review/continue boundary. A missing account context remains conservative and
-  asks again on the next reply. On the iOS 15 deployment target, safely binding
-  separate persistent WebKit profiles would require reading or copying session
-  data, so NeoFreeBird instead lets the user visibly switch the web account and
-  never reads cookies or stores or exports credentials, page account data, raw
-  URLs, or reply text. A user may save an optional local account label after
-  visually confirming the account. The label is explicitly unverified and is
-  excluded from preference profiles and compatibility reports.
+- The optional Compatibility reply composer is always visible and never posts
+  automatically. On the verified inline-reply path, beta 44 first attempts X
+  12.9's guarded `T1WebViewController`, passes the exact account argument X
+  supplied for that tap, requests authentication, and verifies that the
+  controller retained the same object. This verifies wiring, not the
+  server-side web account, which requires two-account device testing. If the class, initializer ABI,
+  keep-in-webview selector, account getter, or UIKit presentation check fails,
+  it falls back to the existing visible x.com Web Intent. Only the custom
+  fallback shares one persistent WebKit session across native app accounts and
+  therefore retains the explicit account-review boundary and optional local,
+  unverified account label. Neither route inspects or exports cookies,
+  credentials, page account data, or reply text, and neither separately
+  persists, logs, or exports raw URLs or identifiers. The tapped status
+  identifier necessarily remains in X's official visible reply URL while that
+  screen is open.
 
 ## Device validation
 
@@ -242,9 +244,9 @@ account review, and provides an explicit native **Use This Web Account**
 confirmation instead of relying on X's committed login shell. Confirmation is
 blocked while a navigation is pending, an error is visible, or X is still on a
 login URL. A `/home` landing or return to the intent after a visible login
-transition can confirm automatically. It also resolves For You ownership through a unique, exact
-URT-to-data-controller relationship before comparing keywords, while every
-missing, ambiguous, or Following identity still fails open.
+transition can confirm automatically. Its original For You owner bridge was
+later replaced in beta 48 after device diagnostics proved X 12.9 has no such
+declared inner-controller relationship.
 
 Beta 39 hardens Compatibility Add Account for account-specific authentication
 responses. It checks a returned native verification challenge before treating
@@ -271,6 +273,112 @@ password command, reproducing the timing and `uiMetrics:nil` request profile
 recorded by the successful beta 29 and beta 36 reports. Reports identify this
 fixed request profile and elapsed preflight without recording headers,
 credentials, account identifiers, or response contents.
+
+Beta 44 adds an ordered monotonic trace for native reply validation, composition
+handoff, outbox notifications, and composer closure. It also tags only exact
+`CreateTweet` and `CreateTweetWithUndo` tasks created during a short active
+reply window and observes their completion at a runtime-guarded TNL seam. X
+12.9's verified URL-session delegate callback is used when the private
+finalizer candidate is absent. Reports contain fixed constructor, host,
+HTTP-class, error-class,
+and duration buckets only. While the short correlation window is active, the
+observer transiently classifies the HTTP method, URL scheme, exact first-party
+host, and operation name. Requests are forwarded unchanged; bodies, headers,
+cookies, tokens, raw URLs, identifiers, response contents, account data, and
+raw errors are never retained or exported. The same beta introduces the
+guarded account-aware visible web controller described above, with the custom
+Web Intent retained as the pre-presentation fallback.
+
+Beta 45 follows the beta 44 device result that recorded an exact CreateTweet
+request with HTTP 2xx and no transport error even though X later emitted its
+composition-send failure notification and the reply was absent when checked.
+It adds one X 12.9-only checkpoint at
+`GraphQLEndpointResponse -modelWithParseError:APIErrors:`. The exact method ABI,
+inherited `originalRequest` getter, and request `URL` getter are all verified
+before the hook installs. A lock-free window hint keeps ordinary GraphQL
+traffic off the reply-state lock. Only the numeric active-reply generation is
+captured before X's decoder, which is then called exactly once and remains
+unchanged. Afterward, only a 30-second active reply window and an exact HTTPS
+API-host `CreateTweet` or `CreateTweetWithUndo` URL may produce a record.
+The report reduces the result to fixed booleans and enums for model presence,
+parse-error presence, and whether the API-error collection is absent, empty,
+nonempty, or an unexpected present object. It never reads collection elements,
+error messages or descriptions, response bodies, raw URLs, headers, cookies,
+tokens, tweet text, identifiers, or account data, and it never persists or
+exports decoded objects. The operation-scoped temporal association cannot
+prove application success or distinguish a concurrent CreateTweet from
+another app action, so the report states that limitation explicitly.
+
+Beta 46 follows the beta 45 device result in which the decoded CreateTweet
+model was present and both decoder out-parameter error categories were absent,
+but X still emitted its composition-send failure notification. It adds a
+second X 12.9-only checkpoint after
+`GraphQLEndpointResponse -prepare` has returned. The exact no-argument `void`
+ABI, inherited effective response getters, final override getters, original
+request getter, and request URL getter are all verified before this separate
+hook installs; failure to verify it does not disable beta 45's decoder hook.
+Only the same active reply generation and exact HTTPS API-host CreateTweet
+allowlist may produce a record. Effective model/error values and the override
+values visible when preparation returns are reduced immediately to fixed
+presence states, including the private response's explicit-absence sentinel.
+A getter exception is reported only as a fixed observation failure and is
+never conflated with an absent value. API-error arrays are classified only as
+absent, empty, nonempty, or unexpected without reading any element.
+No error domain, code, message, description, user info, response body, raw URL,
+identifier, tweet text, token, cookie, header, or account value is retained or
+exported. Later finalizers may still replace these sampled override values,
+and these prepared-response states do not prove posting success. They
+distinguish an error already visible after preparation from the next suspected
+typed-model assimilation/outbox layer.
+
+The same beta also gave the existing decoder checkpoint a guarded structural
+presence category for X 12.9's exact `CreateTweetOperationResponse` and nested
+`CreateTweet` classes. Both classes must expose exactly their single expected
+pointer-sized ivar at offset 16 within a 24-byte instance before the direct
+model check is enabled. The beta 46 device result was initially reported as an
+unexpected model class, but later binary verification showed that this
+Objective-C seam normally returns the outer Swift
+`GraphQLActionResponse<CreateTweetOperationResponse>` value in an opaque
+`__SwiftValue` box rather than returning the generated operation model
+directly. Beta 47 therefore recognizes only that exact wrapper class as
+`opaqueSwiftValueBox` before considering the defensive direct-model layout.
+It never unboxes, reflects on, or reads the wrapper. The direct fallback still
+records only whether `createTweet` and then `tweetResults` are present. The
+objects are transient and never persisted, and the 17-byte Swift
+`TweetResultsFragment.result` union remains deliberately unread. Neither an
+opaque box nor a present direct payload proves that the server created a
+tweet.
+
+Beta 47 also follows a controlled Undo Tweet comparison. With Undo set to ten
+seconds, the reply reached the outbox after the expected delay; with Undo off,
+it reached the outbox immediately. Both attempts still used the ordinary
+`CreateTweet` operation, received HTTP 2xx with an effective prepared model and
+no surfaced prepared parse, operation, or API error, and then ended in the
+same composition-send failure. Undo scheduling is therefore not the root
+cause, and this beta does not change it.
+
+To identify the next layer without changing reply behavior, beta 47 observes
+only X 12.9's two allowlisted terminal reply-failure notifications while an
+active, forwarded native-reply generation still exists. It captures only that
+process-local generation before the ordinary workflow recorder closes the
+session, records the existing terminal stage first, and then reads only the
+value associated with
+X's exact exported
+`TFNTwitterCompositionOutboxNotificationErrorUserInfoKey`. An all-or-nothing,
+same-image set of X's exported `HTTPRequestActionResponseError` classifier
+bridges is called only when that value has the exact opaque `__SwiftValue`
+wrapper expected by the exported Swift ABI, and reduces it to fixed API, REST,
+parse, authentication, operation, invalid-response-model, internal,
+response-without-data-or-error, multiple, or unclassified categories. The
+wrapper itself is never opened; an `NSError` or any other object type is
+reported only as a fixed type state and is never passed to those bridges. The
+notification dictionary is never enumerated, and account, composition,
+status, and index keys are never read. The diagnostic does not retain or
+export the notification, dictionary, error object, API-error elements,
+descriptions, domains, codes, error user info, reply text, identifiers,
+accounts, request or response contents, headers, cookies, or tokens. Its
+process-temporal correlation is not request-identity-bound, and its category
+cannot by itself establish whether a reply was persisted.
 
 Beta 40 stopped feeding captured WebKit instrumentation into the native
 password command and restored `uiMetrics:nil`, matching the successful beta 29
@@ -325,3 +433,16 @@ zoom, video playback, and percent-driven dismissal. Equal URL/size-bucket
 requests are coalesced across prefetching, visible cells, contextual previews,
 and the close-up viewer; each consumer can cancel independently, and the shared
 transfer is cancelled only when no consumer remains.
+
+Beta 48 repairs the For You filter at the runtime path actually used by X
+12.9. Device diagnostics showed that section deliveries could arrive through
+a helper controller with no declared owner link, so that path now fails open
+instead of scanning nonexistent ownership fields. The structurally verified
+`T1URTViewController` row-height callbacks recheck the explicit primary-Home
+timeline marker and collapse matching rows without changing reusable cell
+visibility state. The Following timeline therefore remains untouched. Account
+filters now also parse bounded, valid `@handle` tokens from X's trusted full
+text/display-text models, making an entry such as `grok` catch `@grok` without
+treating the ordinary body word “grok” as an account mention. Returning from
+settings reloads only the already-loaded primary For You table when the filter
+generation changed; it does not make a network request.

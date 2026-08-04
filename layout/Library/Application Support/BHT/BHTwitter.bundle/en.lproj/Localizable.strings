@@ -159,14 +159,14 @@
 "RESTORE_REPLY_CONTEXT_DETAIL" = "Shows the people that are being replied to under Tweets.";
 
 "WEB_REPLY_FALLBACK_TITLE" = "Compatibility reply composer";
-"WEB_REPLY_FALLBACK_DETAIL" = "Opens replies with X's official web reply screen inside the app when sideloaded X rejects native replies.";
-"WEB_REPLY_FALLBACK_DISCLOSURE" = "All app accounts use the same persistent x.com session for compatibility replies. It does not switch with the account selected in X, and NeoFreeBird cannot automatically verify the active web account. Posting stays visible on x.com. After checking the account yourself, you can save an optional local account label. You will be asked to review the web session before the first compatibility reply after each launch and when an account change is detected.";
+"WEB_REPLY_FALLBACK_DETAIL" = "Uses X's visible account-aware web reply screen, with a visible compatibility browser as backup, when sideloaded X rejects native replies.";
+"WEB_REPLY_FALLBACK_DISCLOSURE" = "Inline replies first ask X's visible web screen to authenticate with the native account from that tap. X still decides which server-side web account is active. If that guarded screen is unavailable, NeoFreeBird uses the visible compatibility browser. Only that backup browser shares one persistent x.com session across app accounts, so it may ask you to review the active web account. NeoFreeBird never posts in the background or reads cookies, credentials, reply text, or page account data.";
 "WEB_REPLY_FALLBACK_KEEP_ENABLED" = "Keep Enabled";
-"WEB_REPLY_FALLBACK_SIGN_IN_NOW" = "Set Up Sign-In";
+"WEB_REPLY_FALLBACK_SIGN_IN_NOW" = "Set Up Backup Browser";
 "WEB_REPLY_FALLBACK_NOT_NOW" = "Not Now";
 "WEB_REPLY_FALLBACK_TURN_OFF" = "Turn Off";
 "WEB_REPLY_SIGN_IN_SETUP_TITLE" = "Manage Web Reply Account";
-"WEB_REPLY_SIGN_IN_SETUP_DETAIL" = "Review or switch the active account in the shared x.com session used by compatibility replies. You can save a local label after confirming the account yourself.";
+"WEB_REPLY_SIGN_IN_SETUP_DETAIL" = "Review or switch the active account in the shared x.com session used only by the backup compatibility browser. You can save a local label after confirming the account yourself.";
 "WEB_REPLY_SIGN_IN_TITLE" = "Web Reply Account";
 "WEB_REPLY_SIGN_IN_LOAD_FAILED" = "The x.com account page could not be loaded.";
 "WEB_REPLY_PREPARING" = "Preparing reply…";
@@ -622,15 +622,15 @@
 
 /* For You keyword filters */
 "FOR_YOU_KEYWORD_FILTERS_TITLE" = "For You keyword filters";
-"FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE" = "Usernames & display names";
-"FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER" = "Hides a For You post when the visible author or reposting account's username or display name contains a match. Changes apply the next time For You refreshes. Following is never filtered.";
+"FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE" = "Accounts & @mentions";
+"FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER" = "Hides a For You post when the visible author or reposting account's username or display name contains a match, or when the post mentions a matching @handle. Changes apply when you return to For You or it refreshes. Following is never filtered.";
 "FOR_YOU_FILTERS_POST_TEXT_SECTION_TITLE" = "Post text & @mentions";
-"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER" = "Hides a For You post when any version of its primary text, including leading @mentions, contains one of these words or phrases. Changes apply the next time For You refreshes. Following is never filtered.";
+"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER" = "Hides a For You post when any version of its primary text, including leading @mentions, contains one of these words or phrases. Changes apply when you return to For You or it refreshes. Following is never filtered.";
 "FOR_YOU_FILTERS_ADD_KEYWORD" = "Add keyword...";
 "FOR_YOU_FILTERS_TAP_TO_EDIT" = "Tap to edit";
 "FOR_YOU_FILTERS_EDIT_KEYWORD_TITLE" = "Edit keyword";
 "FOR_YOU_FILTERS_ADD_KEYWORD_TITLE" = "Add keyword";
-"FOR_YOU_FILTERS_USERNAME_EDITOR_DETAIL" = "Matches literal text in usernames and display names. An optional leading @ is ignored.";
+"FOR_YOU_FILTERS_USERNAME_EDITOR_DETAIL" = "Matches literal text in author and reposter usernames or display names, plus @handles mentioned in the post. An optional leading @ is ignored.";
 "FOR_YOU_FILTERS_POST_TEXT_EDITOR_DETAIL" = "Matches literal text in the primary post, including @mentions.";
 "FOR_YOU_FILTERS_KEYWORD_PLACEHOLDER" = "Word or phrase";
 "FOR_YOU_FILTERS_SAVE" = "Save";

@@ -264,6 +264,15 @@ def main() -> None:
         '@"dataViewControllerIvarPresent"',
         '@"directOwnerResolvedChecks"',
         '@"directOwnerMissingChecks"',
+        '@"trustedTextCandidateSetsNonEmpty"',
+        '@"mentionHandleCandidatesExtracted"',
+        '@"renderRowCollapses"',
+        '@"renderReloads"',
+        '@"inheritsItemsDataViewController"',
+        '@"itemRowHeight"',
+        '@"estimatedItemRowHeight"',
+        '@"filterExecutionPolicy"',
+        '@"unknownSectionOwnerFailsOpen"',
         '@"configurationGeneration"',
         '@"seenPaletteCount"',
         '@"providerClasses"',
@@ -1485,6 +1494,12 @@ def main() -> None:
             "BHTReplyWorkflowDiagnosticComposerClosed",
             "BHTReplyWorkflowDiagnosticSendButtonTapped",
             "BHTReplyWorkflowDiagnosticSendForwardedToX",
+            "BHTReplyWorkflowDiagnosticValidationEntered",
+            "BHTReplyWorkflowDiagnosticValidationReturned",
+            "BHTReplyWorkflowDiagnosticSendCompositionsEntered",
+            "BHTReplyWorkflowDiagnosticSendCompositionsReturned",
+            "BHTReplyWorkflowDiagnosticContainerCompleted",
+            "BHTReplyWorkflowDiagnosticContainerCancelled",
             "BHTReplyWorkflowDiagnosticOutboxQueued",
             "BHTReplyWorkflowDiagnosticOutboxProcessing",
             "BHTReplyWorkflowDiagnosticOutboxProcessed",
@@ -1494,6 +1509,10 @@ def main() -> None:
             "BHTReplyWorkflowDiagnosticUnattributedPersistentComposerPresented",
             "BHTRecordReplyWorkflowDiagnostic(",
             "BHTInstallReplyWorkflowDiagnosticObservers(void)",
+            "BHTReplyWorkflowDiagnosticSessionForNetworkRequest(",
+            "BHTReplyWorkflowDiagnosticSessionForApplicationResponse(",
+            "BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void)",
+            "BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive(void)",
         ),
         "privacy-preserving reply workflow diagnostic API",
     )
@@ -1514,7 +1533,10 @@ def main() -> None:
             "TFNTwitterCompositionDidSendNotification",
             "TFNTwitterCompositionOutboxDidFailProcessCompositionNotification",
             "TFNTwitterCompositionSendDidFailNotification",
-            "__unused NSNotification* notification",
+            "NSNotification* notification",
+            "if (spec.observesFailure)",
+            "BHTReplyWorkflowGenerationForFailureNotification()",
+            "BHTObserveNativeReplyFailureNotification(",
             '@"replyWorkflow":',
             "BHTReplyWorkflowDiagnosticSnapshot()",
             '@"capturesTweetOrReplyText": @NO',
@@ -1522,10 +1544,18 @@ def main() -> None:
             '@"capturesIdentifiers": @NO',
             '@"capturesNotificationPayloads": @NO',
             '@"capturesRawErrors": @NO',
+            '@"failureErrorClassificationIncludedSeparately": @YES',
             '@"correlation":',
             '@"process_level_temporal_heuristic"',
             '@"diagnosticWindowSeconds":',
             '@"runtimeShapeContainsPrivateAPIMetadata": @YES',
+            "BHTReplyWorkflowOrderedTrace",
+            '@"orderedTrace": orderedTrace',
+            '@"orderedTraceClock": @"process_monotonic_relative"',
+            '@"relativeMillisecondsBucket":',
+            '@"networkCorrelationRequiresActiveForwardedSession": @YES',
+            '@"nativeReplyNetwork":',
+            "BHTReplyRequestDiagnosticSnapshot()",
         ),
         "redacted reply workflow report integration",
     )
@@ -1570,6 +1600,15 @@ def main() -> None:
             "BHTReplyWorkflowDiagnosticComposerPresented",
             "BHTReplyWorkflowDiagnosticComposerDisappeared",
             "BHTReplyWorkflowDiagnosticComposerClosed",
+            'NSSelectorFromString(\n                @"_t1_checkForValidTweetsAndSend")',
+            'NSSelectorFromString(@"_t1_sendCompositions:")',
+            "BHTReplyWorkflowDiagnosticValidationEntered",
+            "BHTReplyWorkflowDiagnosticValidationReturned",
+            "BHTReplyWorkflowDiagnosticSendCompositionsEntered",
+            "BHTReplyWorkflowDiagnosticSendCompositionsReturned",
+            "%hook T1TweetComposeContainerViewController",
+            "BHTReplyWorkflowDiagnosticContainerCompleted",
+            "BHTReplyWorkflowDiagnosticContainerCancelled",
             "%hook T1PersistentComposeViewController",
             "BHTReplyWorkflowDiagnosticPersistentComposerPresented",
         ),
@@ -1717,11 +1756,1036 @@ def main() -> None:
             "instead of installing a competing hook"
         )
 
+    reply_network_header = (
+        ROOT / "src" / "Reply" / "BHTReplyRequestDiagnostics.h"
+    ).read_text(encoding="utf-8")
+    reply_network_source = (
+        ROOT / "src" / "Reply" / "BHTReplyRequestDiagnostics.m"
+    ).read_text(encoding="utf-8")
+    reply_network_hook = (
+        ROOT / "src" / "Hooks" / "ReplyNetworkDiagnostics.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        reply_network_header + reply_network_source,
+        (
+            "BHTTagPotentialNativeReplyRequest(",
+            "BHTCompletePotentialNativeReplyRequest(",
+            "BHTReplyRequestDiagnosticSnapshot(void)",
+            'URL.lastPathComponent',
+            '@"CreateTweet"',
+            '@"CreateTweetWithUndo"',
+            'NSProcessInfo.processInfo.systemUptime',
+            'BHTReplyRequestRecentAttemptLimit = 16',
+            '@"activeForwardedReplyWindow": @YES',
+            '@"sessionGeneration": @(tag.sessionGeneration)',
+            '@"constructorHookAvailability":',
+            '@"constructorCallsWhileWindowHintOpen":',
+            '@"candidateRejectionCounters":',
+            '@"duplicateTaskAlreadyTagged"',
+            '@"taggedTasksWithoutObservedCompletion":',
+            '@"correlationScope": @"process_temporal_strict"',
+            '@"constructorToCompletionTimingIncludesQueueDelay": @YES',
+            '@"graphQLApplicationErrorsInsideHTTP2xxAreUnobservedByThisLayer":',
+            '@"graphQLApplicationDiagnosticIncludedSeparately": @YES',
+            '@"strictHTTPSHostAllowlist": @YES',
+            '@"requestForwardedUnchanged": @YES',
+            '@"capturesRequestBodies": @NO',
+            '@"capturesUploadDataOrFileURLs": @NO',
+            '@"capturesRequestHeaders": @NO',
+            '@"capturesCookiesOrTokens": @NO',
+            '@"capturesURLs": @NO',
+            '@"capturesResponseContents": @NO',
+            '@"capturesAccountData": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesRawErrors": @NO',
+        ),
+        "metadata-only native reply request diagnostics",
+    )
+    require_source_tokens(
+        reply_network_hook,
+        (
+            'isEqualToString:@"12.9"',
+            "%hook NSURLSession",
+            "dataTaskWithRequest:(NSURLRequest*)request",
+            "uploadTaskWithRequest:(NSURLRequest*)request",
+            "fromData:(NSData*)bodyData",
+            "fromFile:(NSURL*)fileURL",
+            "completionHandler:(id)completionHandler",
+            "%hook TNLURLSessionTaskOperation",
+            "_network_finalizeDidCompleteTask:",
+            "URLSession:(NSURLSession*)session",
+            "didCompleteWithError:(NSError*)error",
+            "BHTReplyNetworkMethodHasObjectShape(",
+            "method_getNumberOfArguments(method)",
+            "BHTMarkReplyRequestConstructorHookInstalled(",
+            "BHTMarkReplyRequestCompletionHookInstalled(",
+            "BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive()",
+            "@catch (__unused NSException* exception)",
+        ),
+        "guarded X 12.9 reply request hooks",
+    )
+    if reply_network_hook.count("%orig(") != 8:
+        raise AssertionError(
+            "Reply request diagnostics must forward each of the six "
+            "constructors and both guarded TNL completion candidates "
+            "exactly once"
+        )
+    for unsafe_network_value in (
+        "absoluteString",
+        "pathComponents",
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "valueForHTTPHeaderField",
+        "httpCookieStore",
+        "NSHTTPCookieStorage",
+        "auth_token",
+        '"ct0"',
+        "localizedDescription",
+        ".userInfo",
+    ):
+        if unsafe_network_value in (
+            reply_network_source + reply_network_hook
+        ):
+            raise AssertionError(
+                "Native reply request diagnostics must not inspect or "
+                f"rewrite sensitive traffic: {unsafe_network_value}"
+            )
+
+    reply_failure_header = (
+        ROOT / "src" / "Reply" / "BHTReplyFailureDiagnostics.h"
+    ).read_text(encoding="utf-8")
+    reply_failure_source = (
+        ROOT / "src" / "Reply" / "BHTReplyFailureDiagnostics.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        reply_failure_header + reply_failure_source,
+        (
+            "BHTNativeReplyFailureSourceOutboxProcess",
+            "BHTNativeReplyFailureSourceCompositionSend",
+            "BHTPrepareNativeReplyFailureDiagnostics(void)",
+            "BHTObserveNativeReplyFailureNotification(",
+            "BHTNativeReplyFailureDiagnosticSnapshot(void)",
+            'isEqualToString:@"12.9"',
+            '"TFNTwitterCompositionOutboxNotificationErrorUserInfoKey"',
+            '"HTTPRequestActionResponseErrorGetAPIErrors"',
+            '"HTTPRequestActionResponseErrorGetRestErrors"',
+            '"HTTPRequestActionResponseErrorGetParseError"',
+            '"HTTPRequestActionResponseErrorGetAuthenticationError"',
+            '"HTTPRequestActionResponseErrorGetOperationError"',
+            '"HTTPRequestActionResponseErrorGetInvalidResponseModelError"',
+            '"HTTPRequestActionResponseErrorGetInternalError"',
+            '"HTTPRequestActionResponseErrorIsResponseWithoutDataOrErrorError"',
+            'isEqualToString:@"TwitterSPMMigration"',
+            "BHTReplyFailureClassifiersAvailable",
+            "BHTReplyFailureGetAPIErrors = NULL",
+            "BHTReplyFailureGetRESTError = NULL",
+            "BHTReplyFailureGetParseError = NULL",
+            "BHTReplyFailureGetAuthenticationError = NULL",
+            "BHTReplyFailureGetOperationError = NULL",
+            "BHTReplyFailureGetInvalidResponseModelError = NULL",
+            "BHTReplyFailureGetInternalError = NULL",
+            "BHTReplyFailureIsResponseWithoutDataOrError = NULL",
+            "BHTReplyFailureRecentAttemptLimit = 8",
+            "BHTReplyFailureSourceNames[]",
+            "BHTReplyFailureObservationStateNames[]",
+            "BHTReplyFailureErrorCategoryNames[]",
+            "BHTReplyFailureAPIErrorStateNames[]",
+            "BHTReplyFailureErrorObjectStateNames[]",
+            "_Static_assert(",
+            "if (sessionGeneration == 0)",
+            "[userInfo objectForKey:",
+            "BHTReplyFailureErrorUserInfoKey]",
+            'NSClassFromString(@"__SwiftValue")',
+            "object_getClass(error) ==",
+            "BHTReplyFailureSwiftValueClass",
+            "BHTReplyFailureAPIErrorStateNonemptyCollection",
+            '@"sessionGeneration": @(sessionGeneration)',
+            '@"source": BHTReplyFailureSourceNames[source]',
+            '@"errorObjectState":',
+            '@"failureErrorKeyAvailable":',
+            '@"allClassifiersAvailable":',
+            '@"swiftValueBoxRecognitionAvailable":',
+            '@"recentAttemptLimit":',
+            '@"errorObjectCounters":',
+            '@"correlationScope":',
+            '@"process_temporal_failure_notification"',
+            '@"requestIdentityBound": @NO',
+            '@"strictX12_9Only": @YES',
+            '@"usesExportedActionErrorClassifierBridges": @YES',
+            '@"inspectsFailureNotificationErrorMetadata": @YES',
+            '@"inspectsOnlyExactFailureErrorUserInfoKey": @YES',
+            '@"classifiesOnlyExactOpaqueSwiftValueWrapper": @YES',
+            '@"inspectsOpaqueSwiftValueContents": @NO',
+            '@"enumeratesNotificationUserInfo": @NO',
+            '@"capturesNotificationPayloads": @NO',
+            '@"capturesRawErrors": @NO',
+            '@"capturesErrorDescriptionsOrUserInfo": @NO',
+            '@"inspectsErrorDomainsOrCodes": @NO',
+            '@"inspectsAPIErrorCollectionElements": @NO',
+            '@"capturesTweetOrReplyText": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesAccountData": @NO',
+            '@"persistsNotificationOrErrorObjects": @NO',
+            '@"exportsNotificationOrErrorObjects": @NO',
+            '@"modifiesErrorsNotificationsOrCompletions": @NO',
+            '@"failureClassificationDoesNotInferPostingSuccess": @YES',
+        ),
+        "strict fixed-category native reply failure diagnostics",
+    )
+    failure_observer = source_section(
+        reply_failure_source,
+        "void BHTObserveNativeReplyFailureNotification(",
+        "static NSDictionary* BHTReplyFailureCounterDictionary(",
+        "native reply failure notification classifier",
+    )
+    if failure_observer.find("if (sessionGeneration == 0)") > (
+        failure_observer.find("notification.userInfo")
+    ):
+        raise AssertionError(
+            "Uncorrelated reply failure notifications must be rejected "
+            "before their user-info dictionary is touched"
+        )
+    if failure_observer.count("notification.userInfo") != 1:
+        raise AssertionError(
+            "Reply failure diagnostics may access only one notification "
+            "user-info dictionary"
+        )
+    swift_error_guard = (
+        "BHTReplyFailureSwiftValueClass &&\n"
+        "                       object_getClass(error) ==\n"
+        "                           BHTReplyFailureSwiftValueClass"
+    )
+    swift_guard_index = failure_observer.find(swift_error_guard)
+    first_classifier_index = failure_observer.find(
+        "BHTReplyFailureGetAPIErrors(error)"
+    )
+    ns_error_index = failure_observer.find(
+        "[error isKindOfClass:NSError.class]"
+    )
+    if not (
+        0 <= swift_guard_index < first_classifier_index < ns_error_index
+    ):
+        raise AssertionError(
+            "Private action-error classifiers must run only inside the "
+            "exact opaque Swift-value wrapper branch"
+        )
+    for private_value in (
+        "notification.object",
+        "allKeys",
+        "allValues",
+        "keyEnumerator",
+        "objectEnumerator",
+        "objectAtIndex:",
+        "firstObject",
+        "lastObject",
+        "enumerateObjectsUsingBlock:",
+        "enumerateKeysAndObjectsUsingBlock:",
+        "valueForKey:",
+        "isKindOfClass:BHTReplyFailureSwiftValueClass",
+        "class_getName(error)",
+        "object_getClassName",
+        "NSStringFromClass",
+        "class_copyIvarList",
+        "object_getIvar",
+        "methodForSelector:",
+        "performSelector:",
+        "Mirror",
+        "__SwiftValue.store",
+        "localizedDescription",
+        "debugDescription",
+        "failureReason",
+        "recoverySuggestion",
+        "helpAnchor",
+        "error.domain",
+        "error.code",
+        "error.userInfo",
+        "NSLog",
+        "TFNTwitterCompositionAccountIDUserInfoKey",
+        "TFNTwitterCompositionNotificationStatusKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionIndexUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionsCountUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionsUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationCompositionUserInfoKey",
+        "TFNTwitterCompositionOutboxNotificationStatusUserInfoKey",
+        "tweetText",
+        "statusID",
+        "userID",
+        "accountID",
+        "absoluteString",
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "cookie",
+        "authToken",
+    ):
+        if private_value in reply_failure_source:
+            raise AssertionError(
+                "Reply failure diagnostics must not inspect or retain "
+                f"private notification/error data: {private_value}"
+            )
+    require_source_tokens(
+        compatibility_source,
+        (
+            '#import "Reply/BHTReplyFailureDiagnostics.h"',
+            '@"nativeReplyFailure":',
+            "BHTNativeReplyFailureDiagnosticSnapshot()",
+        ),
+        "native reply failure report integration",
+    )
+    failure_spec_section = source_section(
+        compatibility_source,
+        "BHTReplyNotificationObserverSpecs[] = {",
+        "static NSString* BHTReplyNotificationNameForSymbol(",
+        "reply failure observer allowlist",
+    )
+    if failure_spec_section.count("YES,") != 2:
+        raise AssertionError(
+            "Exactly the two terminal reply-failure notification specs may "
+            "enable error classification"
+        )
+    failure_observer_integration = source_section(
+        compatibility_source,
+        "usingBlock:^(\n                            NSNotification* notification)",
+        "if (token)",
+        "native reply failure observer integration",
+    )
+    capture_index = failure_observer_integration.find(
+        "BHTReplyWorkflowGenerationForFailureNotification()"
+    )
+    classify_index = failure_observer_integration.find(
+        "BHTObserveNativeReplyFailureNotification("
+    )
+    record_index = failure_observer_integration.find(
+        "BHTRecordReplyWorkflowDiagnostic("
+    )
+    if not (0 <= capture_index < record_index < classify_index):
+        raise AssertionError(
+            "Failure observers must capture correlation, preserve the "
+            "terminal workflow record, then reduce the transient error"
+        )
+    if "@catch (__unused NSException* exception)" not in (
+        failure_observer_integration
+    ):
+        raise AssertionError(
+            "A failure diagnostic exception must not suppress the ordinary "
+            "terminal workflow record"
+        )
+    network_allowlist = source_section(
+        reply_network_source,
+        "static BOOL BHTReplyRequestHostKindForURL(",
+        "static BOOL BHTReplyRequestOperationKindForURL(",
+        "native reply exact host allowlist",
+    )
+    require_source_tokens(
+        network_allowlist,
+        (
+            'isEqualToString:@"https"',
+            'isEqualToString:@"api.twitter.com"',
+            'isEqualToString:@"api.x.com"',
+            'isEqualToString:@"twitter.com"',
+            'isEqualToString:@"www.twitter.com"',
+            'isEqualToString:@"x.com"',
+            'isEqualToString:@"www.x.com"',
+        ),
+        "native reply exact host allowlist",
+    )
+    if (
+        network_allowlist.count("return YES;") != 2
+        or any(
+            fuzzy in network_allowlist
+            for fuzzy in ("hasSuffix:", "hasPrefix:", "containsString:")
+        )
+    ):
+        raise AssertionError(
+            "The native reply network allowlist must use only the two "
+            "explicit API/web host branches"
+        )
+    network_allowlist_literals = set(
+        re.findall(r'@"([^"]+)"', network_allowlist)
+    )
+    if network_allowlist_literals != {
+        "https",
+        "api.twitter.com",
+        "api.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "x.com",
+        "www.x.com",
+    }:
+        raise AssertionError(
+            "The native reply network allowlist contains an unexpected "
+            f"scheme or host: {sorted(network_allowlist_literals)}"
+        )
+    request_tagger = source_section(
+        reply_network_source,
+        "void BHTTagPotentialNativeReplyRequest(",
+        "void BHTCompletePotentialNativeReplyRequest(",
+        "native reply task tagger",
+    )
+    require_source_tokens(
+        request_tagger,
+        (
+            "BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive()",
+            "BHTReplyWorkflowDiagnosticSessionForNetworkRequest(",
+            "&sessionGeneration",
+            'request.HTTPMethod.uppercaseString',
+            'isEqualToString:@"POST"',
+            "tag.sessionGeneration = sessionGeneration",
+        ),
+        "strict reply task tagging",
+    )
+    if request_tagger.find(
+        "BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive()"
+    ) > request_tagger.find("request.URL"):
+        raise AssertionError(
+            "The lock-free native reply gate must run before URL metadata "
+            "is inspected"
+        )
+    fast_gate = source_section(
+        compatibility_source,
+        "BOOL BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive(void)",
+        "BOOL BHTReplyWorkflowDiagnosticSessionForNetworkRequest(",
+        "lock-free native reply hint",
+    )
+    require_source_tokens(
+        fast_gate,
+        (
+            "atomic_load_explicit(",
+            "&BHTReplyWorkflowNetworkWindowOpen",
+            "memory_order_acquire",
+        ),
+        "lock-free native reply hint",
+    )
+    for forbidden in (
+        "@synchronized",
+        "BHTObservationLock",
+        "request",
+        "URL",
+        "dispatch_",
+    ):
+        if forbidden in fast_gate:
+            raise AssertionError(
+                "The app-global native reply hint must remain a single "
+                f"lock-free atomic read: {forbidden}"
+            )
+    fail_open_tagger = source_section(
+        reply_network_hook,
+        "static void BHTReplyNetworkTagFailOpen(",
+        "%group BHTNativeReplyDataRequestHook",
+        "fail-open native reply tag helper",
+    )
+    gate_position = fail_open_tagger.find(
+        "BHTReplyWorkflowNetworkDiagnosticWindowMayBeActive()"
+    )
+    try_position = fail_open_tagger.find("@try {")
+    tag_position = fail_open_tagger.find(
+        "BHTTagPotentialNativeReplyRequest("
+    )
+    catch_position = fail_open_tagger.find(
+        "@catch (__unused NSException* exception)"
+    )
+    if not (
+        -1 < gate_position < try_position < tag_position < catch_position
+    ):
+        raise AssertionError(
+            "The constructor helper must fast-gate first and contain all "
+            "tagging work inside its exception guard"
+        )
+    constructor_groups = (
+        (
+            "BHTNativeReplyDataRequestHook",
+            "BHTNativeReplyDataRequestCompletionHook",
+            "dataTaskWithRequest:(NSURLRequest*)request",
+            "%orig(request);",
+            "BHTReplyRequestConstructorData",
+        ),
+        (
+            "BHTNativeReplyDataRequestCompletionHook",
+            "BHTNativeReplyUploadDataHook",
+            "completionHandler:(id)completionHandler",
+            "%orig(request, completionHandler);",
+            "BHTReplyRequestConstructorDataCompletion",
+        ),
+        (
+            "BHTNativeReplyUploadDataHook",
+            "BHTNativeReplyUploadDataCompletionHook",
+            "fromData:(NSData*)bodyData",
+            "%orig(request, bodyData);",
+            "BHTReplyRequestConstructorUploadData",
+        ),
+        (
+            "BHTNativeReplyUploadDataCompletionHook",
+            "BHTNativeReplyUploadFileHook",
+            "completionHandler:(id)completionHandler",
+            "%orig(request, bodyData, completionHandler);",
+            "BHTReplyRequestConstructorUploadDataCompletion",
+        ),
+        (
+            "BHTNativeReplyUploadFileHook",
+            "BHTNativeReplyUploadFileCompletionHook",
+            "fromFile:(NSURL*)fileURL",
+            "%orig(request, fileURL);",
+            "BHTReplyRequestConstructorUploadFile",
+        ),
+        (
+            "BHTNativeReplyUploadFileCompletionHook",
+            "BHTNativeReplyTNLCompletionHooks",
+            "completionHandler:(id)completionHandler",
+            "%orig(request, fileURL, completionHandler);",
+            "BHTReplyRequestConstructorUploadFileCompletion",
+        ),
+    )
+    for (
+        group_name,
+        next_group,
+        selector_fragment,
+        orig_call,
+        constructor_kind,
+    ) in constructor_groups:
+        group = source_section(
+            reply_network_hook,
+            f"%group {group_name}",
+            f"%group {next_group}",
+            f"fail-open reply constructor {group_name}",
+        )
+        if (
+            group.count("%orig(") != 1
+            or group.count("BHTReplyNetworkTagFailOpen(") != 1
+            or group.find("%orig(") > group.find("BHTReplyNetworkTagFailOpen(")
+            or selector_fragment not in group
+            or orig_call not in group
+            or constructor_kind not in group
+        ):
+            raise AssertionError(
+                "Each native reply constructor must call X first, then "
+                f"run one fail-open diagnostic: {group_name}"
+            )
+    completion_groups = (
+        (
+            "BHTNativeReplyTNLCompletionHooks",
+            "BHTNativeReplyTNLDelegateCompletionHooks",
+            "%orig(task, session, error);",
+        ),
+        (
+            "BHTNativeReplyTNLDelegateCompletionHooks",
+            None,
+            "%orig(session, task, error);",
+        ),
+    )
+    for group_name, next_group, orig_call in completion_groups:
+        end_marker = (
+            f"%group {next_group}" if next_group else "%ctor {"
+        )
+        completion_group = source_section(
+            reply_network_hook,
+            f"%group {group_name}",
+            end_marker,
+            f"fail-open native reply completion hook {group_name}",
+        )
+        if (
+            completion_group.count("%orig(") != 1
+            or orig_call not in completion_group
+            or completion_group.find("%orig(")
+            > completion_group.find("@try {")
+            or "BHTCompletePotentialNativeReplyRequest(task, error);"
+            not in completion_group
+            or "@catch (__unused NSException* exception)"
+            not in completion_group
+        ):
+            raise AssertionError(
+                "Each TNL completion hook must call X first and contain "
+                "all diagnostic work inside an exception guard: "
+                f"{group_name}"
+            )
+    network_ctor = reply_network_hook.split("%ctor {", 1)[1]
+    private_init = network_ctor.find(
+        "%init(BHTNativeReplyTNLCompletionHooks);"
+    )
+    exclusive_else = network_ctor.find("} else {", private_init)
+    delegate_init = network_ctor.find(
+        "%init(BHTNativeReplyTNLDelegateCompletionHooks);"
+    )
+    if not (-1 < private_init < exclusive_else < delegate_init):
+        raise AssertionError(
+            "Exactly one TNL completion seam must install: use the private "
+            "finalizer when present, otherwise the verified delegate seam"
+        )
+    constructor_install_specs = (
+        (
+            "dataTaskWithRequest:",
+            "BHTNativeReplyDataRequestHook",
+            "BHTReplyRequestConstructorData",
+        ),
+        (
+            "dataTaskWithRequest:completionHandler:",
+            "BHTNativeReplyDataRequestCompletionHook",
+            "BHTReplyRequestConstructorDataCompletion",
+        ),
+        (
+            "uploadTaskWithRequest:fromData:",
+            "BHTNativeReplyUploadDataHook",
+            "BHTReplyRequestConstructorUploadData",
+        ),
+        (
+            "uploadTaskWithRequest:fromData:completionHandler:",
+            "BHTNativeReplyUploadDataCompletionHook",
+            "BHTReplyRequestConstructorUploadDataCompletion",
+        ),
+        (
+            "uploadTaskWithRequest:fromFile:",
+            "BHTNativeReplyUploadFileHook",
+            "BHTReplyRequestConstructorUploadFile",
+        ),
+        (
+            "uploadTaskWithRequest:fromFile:completionHandler:",
+            "BHTNativeReplyUploadFileCompletionHook",
+            "BHTReplyRequestConstructorUploadFileCompletion",
+        ),
+    )
+    for selector, group_name, constructor_kind in constructor_install_specs:
+        pattern = re.compile(
+            rf"@selector\({re.escape(selector)}\)[\s\S]*?"
+            rf"%init\({re.escape(group_name)}\);[\s\S]*?"
+            r"BHTMarkReplyRequestConstructorHookInstalled\(\s*"
+            rf"{re.escape(constructor_kind)}\s*\);"
+        )
+        if not pattern.search(network_ctor):
+            raise AssertionError(
+                "The guarded constructor install does not match its exact "
+                f"selector/group/counter mapping: {selector}"
+            )
+    correlation_helper = source_section(
+        compatibility_source,
+        "BOOL BHTReplyWorkflowDiagnosticSessionForNetworkRequest(",
+        "typedef struct {",
+        "strict native reply network correlation window",
+    )
+    require_source_tokens(
+        correlation_helper,
+        (
+            "BHTReplyWorkflowSessionActive &&",
+            "BHTReplyWorkflowSendForwarded &&",
+            "BHTReplyWorkflowComposerPresented &&",
+            "BHTReplyWorkflowSendForwardedAt > 0",
+            "BHTReplyWorkflowNetworkCorrelationWindowSeconds",
+            "*generation = active",
+            "BHTReplyWorkflowNetworkWindowOpen",
+        ),
+        "strict native reply network correlation window",
+    )
+
+    reply_application_header = (
+        ROOT / "src" / "Reply" / "BHTReplyApplicationDiagnostics.h"
+    ).read_text(encoding="utf-8")
+    reply_application_source = (
+        ROOT / "src" / "Reply" / "BHTReplyApplicationDiagnostics.m"
+    ).read_text(encoding="utf-8")
+    reply_application_hook = (
+        ROOT / "src" / "Hooks" / "ReplyApplicationDiagnostics.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        reply_application_header + reply_application_source,
+        (
+            "BHTRecordNativeReplyApplicationResult(",
+            "BHTNativeReplyApplicationRequestURLIsEligible(",
+            "BHTRecordNativeReplyPreparedResponse(",
+            "BHTMarkNativeReplyApplicationHookInstalled(void)",
+            "BHTMarkNativeReplyPreparedHookInstalled(void)",
+            "BHTMarkNativeReplySwiftValueBoxRecognitionAvailable(void)",
+            "BHTNativeReplyApplicationDiagnosticSnapshot(void)",
+            "BHTNativeReplyDecodedOutcomeModelPresent",
+            "BHTNativeReplyDecodedOutcomeAPIErrors",
+            "BHTNativeReplyDecodedOutcomeParseError",
+            "BHTNativeReplyDecodedOutcomeEmptyResult",
+            "BHTNativeReplyModelStructureStateUnexpectedModelClass",
+            "BHTNativeReplyModelStructureStateOpaqueSwiftValueBox",
+            '@"opaqueSwiftValueBox"',
+            "BHTNativeReplyModelStructureStateMissingCreateTweet",
+            "BHTNativeReplyModelStructureStateMissingTweetResults",
+            "BHTNativeReplyModelStructureStatePayloadPresent",
+            'URL.lastPathComponent',
+            'isEqualToString:@"CreateTweet"',
+            'isEqualToString:@"CreateTweetWithUndo"',
+            'BHTNativeReplyApplicationAttemptLimit = 8',
+            '@"sessionGeneration": @(sessionGeneration)',
+            '@"modelPresent": @(modelPresent)',
+            '@"parseErrorPresent": @(parseErrorPresent)',
+            '@"apiErrorsState":',
+            '@"modelStructureState":',
+            '@"modelStructureLayoutAvailable":',
+            '@"swiftValueBoxRecognitionAvailable":',
+            '@"modelStructureCounters":',
+            '@"effectiveModelPresent": @(effectiveModelPresent)',
+            '@"effectiveParseErrorPresent":',
+            '@"effectiveOperationErrorPresent":',
+            '@"effectiveAPIErrorsState":',
+            '@"effectiveErrorState":',
+            '@"finalModelState":',
+            '@"finalParseErrorState":',
+            '@"finalOperationErrorState":',
+            '@"finalAPIErrorsState":',
+            '@"observationState":',
+            '@"preparedObservationCounters":',
+            '@"prepareHookInstalled":',
+            '@"recentPreparedAttempts": preparedAttempts',
+            '@"correlationScope": @"process_temporal_operation_only"',
+            '@"requestIdentityBound": @NO',
+            '@"applicationSuccessIsNotInferred": @YES',
+            '@"preparedResponseSuccessIsNotInferred": @YES',
+            '@"strictHTTPSAPIHostAndOperationAllowlist": @YES',
+            '@"sanitizedAttemptsPersistWhenReportIsWritten": @YES',
+            '@"capturesResponseBodies": @NO',
+            '@"capturesResponseMessages": @NO',
+            '@"capturesRawErrors": @NO',
+            '@"capturesErrorDescriptionsOrUserInfo": @NO',
+            '@"capturesURLs": @NO',
+            '@"capturesHeadersCookiesOrTokens": @NO',
+            '@"capturesTweetOrReplyText": @NO',
+            '@"capturesIdentifiers": @NO',
+            '@"capturesAccountData": @NO',
+            '@"inspectsAPIErrorCollectionElements": @NO',
+            '@"inspectsErrorDomainsOrCodes": @NO',
+            '@"inspectsCreateTweetObjectPresence": @YES',
+            '@"inspectsOpaqueSwiftValueContents": @NO',
+            '@"opaqueBoxDoesNotImplyApplicationSuccess": @YES',
+            '@"inspectsTweetResultsUnionPayload": @NO',
+            '@"persistsDecodedObjects": @NO',
+            '@"exportsDecodedObjects": @NO',
+        ),
+        "fixed-category native reply application diagnostics",
+    )
+    require_source_tokens(
+        reply_application_hook,
+        (
+            'isEqualToString:@"12.9"',
+            '%hook _TtC14GraphQLActions23GraphQLEndpointResponse',
+            'modelWithParseError:(id __autoreleasing*)parseError',
+            'APIErrors:(id __autoreleasing*)APIErrors',
+            'BHTReplyApplicationMethodHasDecoderABI(',
+            'method_getNumberOfArguments(method) != 4',
+            "argument[0] != '^'",
+            "argument[1] != '@'",
+            'BHTReplyApplicationMethodReturnsObjectWithNoArguments(',
+            'BHTReplyApplicationMethodReturnsVoidWithNoArguments(',
+            'BHTReplyApplicationGetObject(',
+            'BHTReplyApplicationResolveSingleObjectIvar(',
+            'class_copyIvarList(cls, &count)',
+            'count == 1',
+            'object_getIvar(',
+            'NSClassFromString(@"__SwiftValue")',
+            'object_getClass(model) ==',
+            'BHTReplyApplicationSwiftValueClass',
+            '@"_TtC13GraphQLModels28CreateTweetOperationResponse"',
+            '@"_TtCC13GraphQLModels28CreateTweetOperationResponse11CreateTweet"',
+            '"createTweet", 16',
+            '"tweetResults", 16',
+            'BHTNativeReplyApplicationRequestURLIsEligible(',
+            'BHTMarkNativeReplyModelStructureLayoutAvailable();',
+            'BHTMarkNativeReplySwiftValueBoxRecognitionAvailable();',
+            'NSClassFromString(@"TFSAPIRequest")',
+            'NSSelectorFromString(@"originalRequest")',
+            'NSSelectorFromString(@"URL")',
+            'BHTReplyWorkflowDiagnosticSessionForApplicationResponse(',
+            'BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive()',
+            'BHTRecordNativeReplyApplicationResult(',
+            '%init(BHTNativeReplyApplicationDecoderHooks);',
+            'BHTMarkNativeReplyApplicationHookInstalled();',
+            '%group BHTNativeReplyApplicationPreparedHooks',
+            '- (void)prepare',
+            'BHTRecordNativeReplyPreparedResponse(',
+            'observationComplete,',
+            '@"finalOperationError"',
+            '@"finalAPIErrors"',
+            '%init(BHTNativeReplyApplicationPreparedHooks);',
+            'BHTMarkNativeReplyPreparedHookInstalled();',
+            '@catch (__unused NSException* exception)',
+        ),
+        "guarded X 12.9 decoded reply application hook",
+    )
+    for forbidden in (
+        "class_getName(model",
+        "NSStringFromClass(object_getClass(model))",
+        "valueForKey:",
+        "Mirror",
+        "_bridgeAnythingToObjectiveC",
+        "__SwiftValue.store",
+    ):
+        if forbidden in reply_application_hook:
+            raise AssertionError(
+                "The native reply diagnostic must recognize but never "
+                f"inspect the opaque Swift value box: {forbidden}"
+            )
+    model_state_section = source_section(
+        reply_application_hook,
+        "BHTReplyApplicationModelStructureState(id model)",
+        "static NSURL* BHTReplyApplicationRequestURL(",
+        "opaque native reply response representation guard",
+    )
+    swift_identity_index = model_state_section.find(
+        "object_getClass(model) =="
+    )
+    opaque_return_index = model_state_section.find(
+        "BHTNativeReplyModelStructureStateOpaqueSwiftValueBox"
+    )
+    layout_index = model_state_section.find(
+        "BHTReplyApplicationModelLayoutAvailable"
+    )
+    if not (
+        0 <= swift_identity_index < opaque_return_index < layout_index
+    ):
+        raise AssertionError(
+            "The exact opaque Swift-value representation must return before "
+            "any direct generated-model layout inspection"
+        )
+    if reply_application_hook.count("%orig(") != 1:
+        raise AssertionError(
+            "The decoded reply diagnostic must forward to X exactly once"
+        )
+    decoded_hook_body = source_section(
+        reply_application_hook,
+        "- (id)modelWithParseError:",
+        "%end",
+        "decoded reply application hook",
+    )
+    fast_gate_position = decoded_hook_body.find(
+        "BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive()"
+    )
+    correlation_position = decoded_hook_body.find(
+        "BHTReplyWorkflowDiagnosticSessionForApplicationResponse("
+    )
+    original_position = decoded_hook_body.find(
+        "%orig(parseError, APIErrors);"
+    )
+    request_position = decoded_hook_body.find(
+        "BHTReplyApplicationRequestURL(self)"
+    )
+    decoded_error_position = decoded_hook_body.find(
+        "id decodedParseError ="
+    )
+    decoded_eligibility_position = decoded_hook_body.find(
+        "BHTNativeReplyApplicationRequestURLIsEligible("
+    )
+    decoded_structure_position = decoded_hook_body.find(
+        "BHTReplyApplicationModelStructureState(model)"
+    )
+    record_position = decoded_hook_body.find(
+        "BHTRecordNativeReplyApplicationResult("
+    )
+    if not (
+        -1 < fast_gate_position < correlation_position < original_position
+        < request_position < decoded_error_position
+        < decoded_eligibility_position < decoded_structure_position
+        < record_position
+    ):
+        raise AssertionError(
+            "The application hook must capture only the numeric reply "
+            "generation before X, then inspect decoded presence after X"
+        )
+    if decoded_hook_body.count("return model;") != 2:
+        raise AssertionError(
+            "The decoded reply hook must preserve X's model on both the "
+            "uncorrelated and correlated paths"
+        )
+    if reply_application_hook.count("object_getIvar(") != 2:
+        raise AssertionError(
+            "The model-structure diagnostic may inspect only the guarded "
+            "createTweet and tweetResults object-presence fields"
+        )
+    prepared_hook_body = source_section(
+        reply_application_hook,
+        "- (void)prepare",
+        "%end",
+        "prepared reply application hook",
+    )
+    prepared_fast_gate_position = prepared_hook_body.find(
+        "BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive()"
+    )
+    prepared_correlation_position = prepared_hook_body.find(
+        "BHTReplyWorkflowDiagnosticSessionForApplicationResponse("
+    )
+    prepared_orig_position = prepared_hook_body.find("%orig;")
+    prepared_request_position = prepared_hook_body.find(
+        "BHTReplyApplicationRequestURL(self)"
+    )
+    prepared_eligibility_position = prepared_hook_body.find(
+        "BHTNativeReplyApplicationRequestURLIsEligible("
+    )
+    prepared_getter_position = prepared_hook_body.find(
+        "BHTReplyApplicationGetObject("
+    )
+    prepared_record_position = prepared_hook_body.rfind(
+        "BHTRecordNativeReplyPreparedResponse("
+    )
+    if not (
+        -1 < prepared_fast_gate_position < prepared_correlation_position
+        < prepared_orig_position < prepared_request_position
+        < prepared_eligibility_position < prepared_getter_position
+        < prepared_record_position
+    ):
+        raise AssertionError(
+            "The prepared-response hook must capture only the numeric "
+            "generation before X, then enforce the exact request allowlist "
+            "before inspecting final presence after X"
+        )
+    if prepared_hook_body.count("%orig;") != 1:
+        raise AssertionError(
+            "The prepared-response diagnostic must call X exactly once"
+        )
+    application_allowlist = source_section(
+        reply_application_source,
+        "static BOOL BHTNativeReplyApplicationOperationForURL(",
+        "static BHTNativeReplyAPIErrorState",
+        "decoded reply exact URL allowlist",
+    )
+    application_allowlist_literals = set(
+        re.findall(r'@"([^"]+)"', application_allowlist)
+    )
+    if application_allowlist_literals != {
+        "https",
+        "CreateTweet",
+        "CreateTweetWithUndo",
+        "api.twitter.com",
+        "api.x.com",
+    }:
+        raise AssertionError(
+            "The decoded reply allowlist contains an unexpected scheme, "
+            f"host, or operation: {sorted(application_allowlist_literals)}"
+        )
+    for fuzzy in ("hasSuffix:", "hasPrefix:", "containsString:"):
+        if fuzzy in application_allowlist:
+            raise AssertionError(
+                "The decoded reply allowlist must use exact comparisons: "
+                f"{fuzzy}"
+            )
+    for unsafe_application_value in (
+        "absoluteString",
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "valueForHTTPHeaderField",
+        "httpCookieStore",
+        "NSHTTPCookieStorage",
+        "localizedDescription",
+        ".userInfo",
+        "statusID",
+        "userID",
+        "fromUserName",
+        "objectAtIndex:",
+        "firstObject",
+        "enumerateObjects",
+        "valueForKey:",
+        "JSONObjectWithData:",
+        "dataWithJSONObject:",
+    ):
+        if unsafe_application_value in (
+            reply_application_source + reply_application_hook
+        ):
+            raise AssertionError(
+                "Decoded reply diagnostics must not inspect response or "
+                f"account contents: {unsafe_application_value}"
+            )
+    application_correlation_helper = source_section(
+        compatibility_source,
+        "BOOL BHTReplyWorkflowDiagnosticSessionForApplicationResponse(",
+        "typedef struct {",
+        "native reply application correlation",
+    )
+    require_source_tokens(
+        application_correlation_helper,
+        (
+            "BHTReplyWorkflowSessionActive &&",
+            "BHTReplyWorkflowSendForwarded &&",
+            "BHTReplyWorkflowComposerPresented &&",
+            "BHTReplyWorkflowSessionGeneration > 0",
+            "BHTReplyWorkflowSendForwardedAt > 0",
+            "BHTReplyWorkflowApplicationCorrelationWindowSeconds",
+            "*generation = active",
+        ),
+        "active native reply application correlation",
+    )
+    if application_correlation_helper.find(
+        "BHTExpireReplyWorkflowSessionIfNeededLocked();"
+    ) > application_correlation_helper.find(
+        "BOOL active ="
+    ):
+        raise AssertionError(
+            "Application correlation must expire stale workflow state "
+            "before accepting a generation"
+        )
+    if "BHTReplyWorkflowNetworkCorrelationWindowSeconds" in (
+        application_correlation_helper
+    ):
+        raise AssertionError(
+            "Decoded application correlation must survive Undo Tweet's "
+            "deferred outbox interval"
+        )
+    application_fast_gate = source_section(
+        compatibility_source,
+        "BOOL BHTReplyWorkflowApplicationDiagnosticWindowMayBeActive(void)",
+        "static NSUInteger\nBHTReplyWorkflowGenerationForFailureNotification",
+        "lock-free native reply application hint",
+    )
+    require_source_tokens(
+        application_fast_gate,
+        (
+            "atomic_load_explicit(",
+            "&BHTReplyWorkflowApplicationWindowOpen",
+            "memory_order_acquire",
+        ),
+        "lock-free native reply application hint",
+    )
+    for forbidden in (
+        "@synchronized",
+        "BHTObservationLock",
+        "request",
+        "URL",
+        "dispatch_",
+    ):
+        if forbidden in application_fast_gate:
+            raise AssertionError(
+                "The app-global decoded reply hint must remain a single "
+                f"lock-free atomic read: {forbidden}"
+            )
+    require_source_tokens(
+        compatibility_source,
+        (
+            '#import "Reply/BHTReplyApplicationDiagnostics.h"',
+            '@"nativeReplyApplication":',
+            'BHTNativeReplyApplicationDiagnosticSnapshot()',
+            '@"applicationCorrelationWindowSeconds":',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"modelWithParseError:APIErrors:", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"prepare", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"originalRequest", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"finalOperationError", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"_TtC14GraphQLActions23GraphQLEndpointResponse", '
+            '@"finalAPIErrors", NO)',
+            'BHTProbe(@"nativeReplyApplication", '
+            '@"TFSAPIRequest", @"URL", NO)',
+        ),
+        "decoded reply application report integration",
+    )
+
     web_reply_header = (
         ROOT / "src" / "Reply" / "BHTWebReplyFallback.h"
     ).read_text(encoding="utf-8")
     web_reply_source = (
         ROOT / "src" / "Reply" / "BHTWebReplyFallback.m"
+    ).read_text(encoding="utf-8")
+    account_bound_reply_header = (
+        ROOT / "src" / "Reply" / "BHTAccountBoundWebReply.h"
+    ).read_text(encoding="utf-8")
+    account_bound_reply_source = (
+        ROOT / "src" / "Reply" / "BHTAccountBoundWebReply.m"
+    ).read_text(encoding="utf-8")
+    account_bound_reply_hook = (
+        ROOT / "src" / "Hooks" / "AccountBoundWebReply.x"
     ).read_text(encoding="utf-8")
     tweets_settings_source = (
         ROOT
@@ -1743,6 +2807,7 @@ def main() -> None:
             "BHTWebReplyRouteResultPresented",
             "BHTWebReplyRouteResultAlreadyPresented",
             "BHTTryPresentWebReplyFallback(",
+            "BHTTryPresentAccountBoundWebReplyFallback(",
             "id _Nullable nativeAccount",
             "BHTPresentWebReplySignInSetup(",
             "BHTPresentWebReplyAccountManager(",
@@ -1890,7 +2955,7 @@ def main() -> None:
             '@"requiresCommittedOrSameDocumentSignedInLanding": @YES',
             '@"supportsManualSetupCompletion": @YES',
             '@"guardsAccountBoundaryTransitions": @YES',
-            '@"usesSingleSharedWebAccountSession": @YES',
+            '@"customFallbackUsesSingleSharedWebAccountSession": @YES',
             '@"usesIntentForAccountManagement": @YES',
             '@"usesLoginFlowForAccountManagement": @NO',
             '@"usesOneShotAccountManagerIntentRetry": @YES',
@@ -1922,6 +2987,136 @@ def main() -> None:
         ),
         "privacy-safe native-style web reply composer",
     )
+    require_source_tokens(
+        account_bound_reply_header + account_bound_reply_source,
+        (
+            "BHTTryPresentAccountBoundWebReply(",
+            "BHTAccountBoundInitializerHasExactABI(",
+            "method_getNumberOfArguments(method) != 9",
+            "const char expectedTypes[] = {'@', '@', 'B', 'B', '@', '@', '@'}",
+            'NSClassFromString(@"T1WebViewController")',
+            'NSClassFromString(@"T1BaseWebViewController")',
+            'NSClassFromString(@"T1WebNavigationController")',
+            'isEqualToString:@"12.9"',
+            "replyURL, account, YES, NO,",
+            "nil, nil, nil",
+            "controllerAccount != account",
+            "OBJC_ASSOCIATION_RETAIN_NONATOMIC",
+            "UIAdaptivePresentationControllerDelegate",
+            "BHTAccountBoundWebReplyEventCustomFallbackUsed",
+            "BHTAccountBoundWebReplyEventCustomFallbackFailed",
+            '@"passesHookAccountByObjectIdentity": @YES',
+            '@"usesVisibleHostController": @YES',
+            '@"providesVisibleCloseControl": @YES',
+            "UIBarButtonSystemItemDone",
+            "@selector(dismissVisibleReply:)",
+            '@"accessesHostWebView": @NO',
+            '@"readsCookiesOrTokens": @NO',
+            '@"injectsPageScripts": @NO',
+            '@"inspectsRequestBodies": @NO',
+            '@"capturesAccountData": @NO',
+            '@"capturesStatusIdentifiers": @NO',
+            '@"capturesRawErrors": @NO',
+            '@"observesSendCompletion": @NO',
+            '@"postsThroughHiddenWebView": @NO',
+        ),
+        "guarded account-bound visible X reply controller",
+    )
+    account_bound_url_allowlist = source_section(
+        account_bound_reply_source,
+        "static BOOL BHTAccountBoundReplyURLIsAllowed(NSURL* URL)",
+        "static BOOL BHTAccountBoundPresenterIsAvailable(",
+        "account-aware visible reply URL allowlist",
+    )
+    require_source_tokens(
+        account_bound_url_allowlist,
+        (
+            'isEqualToString:@"https"',
+            'isEqualToString:@"x.com"',
+            'isEqualToString:@"tweet"',
+        ),
+        "account-aware visible reply URL allowlist",
+    )
+    if (
+        account_bound_url_allowlist.count("return YES;") != 1
+        or any(
+            fuzzy in account_bound_url_allowlist
+            for fuzzy in ("hasSuffix:", "hasPrefix:", "containsString:")
+        )
+        or set(
+            re.findall(r'@"([^"]+)"', account_bound_url_allowlist)
+        )
+        != {"https", "x.com", "tweet"}
+    ):
+        raise AssertionError(
+            "The account-aware reply route must accept only the exact "
+            "HTTPS x.com intent/tweet boundary"
+        )
+    account_bound_close = source_section(
+        account_bound_reply_source,
+        "@implementation BHTAccountBoundWebReplyDismissalDelegate",
+        "@end",
+        "account-aware visible reply close target",
+    )
+    require_source_tokens(
+        account_bound_close,
+        (
+            "- (void)dismissVisibleReply:",
+            "BHTActiveAccountBoundWebReplyNavigationController = nil;",
+            "&BHTAccountBoundWebReplyTransitionPending",
+            "false, memory_order_release",
+            "dismissViewControllerAnimated:YES",
+            "BHTAccountBoundWebReplyEventDismissed",
+        ),
+        "account-aware visible reply close target",
+    )
+    if (
+        "webController.navigationItem.leftBarButtonItem = closeItem;"
+        not in account_bound_reply_source
+        or "action:@selector(dismissVisibleReply:)"
+        not in account_bound_reply_source
+    ):
+        raise AssertionError(
+            "The account-aware visible reply must wire its retained close "
+            "target into the navigation item"
+        )
+    require_source_tokens(
+        account_bound_reply_hook,
+        (
+            "%hook T1WebViewController",
+            "doesURLResultTypeOpenInWebview:(NSInteger)resultType",
+            "BHTAccountBoundWebReplyOwnsController(self)",
+            "return %orig(resultType);",
+            "BHTAccountBoundKeepMethodHasExactABI(",
+            "method_getNumberOfArguments(method) != 3",
+            "*result == 'B'",
+            "*argument == 'q'",
+            "BHTMarkAccountBoundWebReplyKeepInWebviewHookInstalled();",
+        ),
+        "scoped account-bound keep-in-webview hook",
+    )
+    for unsafe_account_bound_value in (
+        "evaluateJavaScript",
+        "WKUserScript",
+        "httpCookieStore",
+        "NSHTTPCookieStorage",
+        "auth_token",
+        '"ct0"',
+        "HTTPBody",
+        "allHTTPHeaderFields",
+        "localizedDescription",
+        "absoluteString",
+        "currentAccount",
+        "sharedHostViewController",
+    ):
+        if unsafe_account_bound_value in (
+            account_bound_reply_source + account_bound_reply_hook
+        ):
+            raise AssertionError(
+                "The account-bound host controller must stay visible and "
+                "must not inspect web authentication or page data: "
+                f"{unsafe_account_bound_value}"
+            )
     if (
         "self.navigationItem.prompt =" in web_reply_source
         or "setToolbarHidden:NO" in web_reply_source
@@ -2255,8 +3450,9 @@ def main() -> None:
 
     web_route_source = source_section(
         web_reply_source,
+        "static BHTWebReplyRouteResult\n"
+        "BHTTryPresentWebReplyFallbackInternal(",
         "BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(",
-        "BOOL BHTWebReplyRouteResultConsumesTap(",
         "web reply route",
     )
     if web_route_source.find(
@@ -2341,6 +3537,7 @@ def main() -> None:
         (
             '#import "Reply/BHTWebReplyFallback.h"',
             "BHTTryPresentWebReplyFallback(",
+            "BHTTryPresentAccountBoundWebReplyFallback(",
             "BHTWebReplyRouteResultConsumesTap(routeResult)",
             "BHTReplyWorkflowDiagnosticWebFallbackPresented",
             "BHTCurrentNativeAccountForWebReply",
@@ -2363,12 +3560,15 @@ def main() -> None:
         "primary reply fallback account context",
     )
     if (
+        "BHTTryPresentAccountBoundWebReplyFallback("
+        not in primary_reply_fallback
+        or
         "originalStatus, account, topMostController()"
         not in primary_reply_fallback
     ):
         raise AssertionError(
-            "The primary reply fallback must forward X's account argument "
-            "with the status object"
+            "The primary reply fallback must prefer X's account-bound "
+            "controller and forward the hook account with the status object"
         )
     persistent_fallback = source_section(
         reply_hook_source,
@@ -2465,8 +3665,9 @@ def main() -> None:
             '"WEB_REPLY_CANCEL"',
             '"WEB_REPLY_LOAD_FAILED"',
             '"WEB_REPLY_BLOCKED_LINK_DETAIL"',
-            '"All app accounts use the same persistent x.com session',
-            "does not switch with the account selected in X",
+            '"Inline replies first ask X\'s visible web screen to authenticate',
+            "Only that backup browser shares one persistent x.com session",
+            "does not switch with it",
             "after this app launch",
             "may have changed",
         ),
@@ -2560,11 +3761,11 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.43" not in (
+    if "Version: 6.1.0-beta.48" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "The beta 29 request-profile test must ship as beta.43"
+            "The For You filter render fallback must ship as beta.48"
         )
 
     branding_source = (
@@ -3675,17 +4876,21 @@ def main() -> None:
             "matchesAnyPostTextCandidate:",
             "filterGenerationWithUsernameFilters:",
             "ItemObjectValueAllowingUntypedIvar",
-            "BHTRegisterURTController",
-            "BHTDirectURTOwnerForDataController",
-            "BHTBindURTDataController",
             "NearestURTTimelineController",
+            "BHTIsPrimaryForYouURTController",
             "IsPrimaryForYouTimelineController",
+            "BHTShouldHideForYouKeywordItemInURTController",
         ),
         "strict For You-only runtime filtering",
     )
     for forbidden in (
         "lastSelectedTimelineTabIdentifier",
         "kBHTForYouControllerKey",
+        'NSSelectorFromString(@"dataViewController")',
+        '"_dataViewController"',
+        "BHTRegisterURTController",
+        "BHTDirectURTOwnerForDataController",
+        "BHTBindURTDataController",
     ):
         if forbidden in timeline_source:
             raise AssertionError(
@@ -3718,6 +4923,28 @@ def main() -> None:
             "representation instead of selecting one visible string"
         )
 
+    username_mention_candidates = source_section(
+        timeline_source,
+        "static void AddUsernameCandidates",
+        "static void AddPostTextCandidate",
+        "bounded username-filter @mention extraction",
+    )
+    require_source_tokens(
+        username_mention_candidates,
+        (
+            "BHTForYouMaximumMentionCandidates = 32",
+            "BHTForYouMaximumMentionScanLength = 32768",
+            "BHTTwitterHandleMaximumLength = 15",
+            "IsTwitterHandleCharacter",
+            "AddMentionUsernameCandidates",
+            "previous == '@'",
+            "handleLength > BHTTwitterHandleMaximumLength",
+            "[candidates addObject:handle]",
+            "BHTForYouFilterDiagnosticMentionHandleCandidateExtracted",
+        ),
+        "bounded username-filter @mention extraction",
+    )
+
     keyword_decision_cache = source_section(
         timeline_source,
         "static BOOL ShouldHideForYouKeywordItem",
@@ -3734,9 +4961,22 @@ def main() -> None:
             "isEqualToArray:postTextCandidates",
             "return cached.hidden",
             "updated.hidden = hidden",
+            "hasUsernameFilters || hasPostTextFilters",
+            "BHTForYouFilterDiagnosticTrustedTextCandidateSetNonEmpty",
+            "UsernameCandidatesForStatuses(",
         ),
-        "content-aware For You keyword decision caching",
+        "content-aware For You keyword and @mention decision caching",
     )
+    if not re.search(
+        r"UsernameCandidatesForStatuses\s*\(\s*"
+        r"outerStatus\s*,\s*representedStatus\s*,\s*"
+        r"postTextCandidates\s*\)",
+        keyword_decision_cache,
+    ):
+        raise AssertionError(
+            "Username filters must derive @handle candidates from the same "
+            "trusted post-text representations used by post-text filters"
+        )
     if "(hidden ?" in keyword_decision_cache:
         raise AssertionError(
             "For You filtering must not use the stale packed decision cache"
@@ -3766,43 +5006,58 @@ def main() -> None:
     require_source_tokens(
         for_you_controller_gate,
         (
-            "BHTDirectURTOwnerForDataController(",
             "NearestURTTimelineController(",
-            "ItemObjectValue(",
+            "BHTForYouFilterDiagnosticDirectOwnerMissing",
+            "BHTForYouFilterDiagnosticControllerOwnerMissing",
+            "return NO",
+            "return BHTIsPrimaryForYouURTController(urtController)",
+        ),
+        "fail-open section-controller ownership resolution",
+    )
+    direct_urt_gate = source_section(
+        timeline_source,
+        "static BOOL BHTIsPrimaryForYouURTController",
+        "static BOOL IsPrimaryForYouTimelineController",
+        "exact T1URT For You role gate",
+    )
+    require_source_tokens(
+        direct_urt_gate,
+        (
+            'NSClassFromString(@"T1URTViewController")',
+            '@"TIMELINE_HOME"',
             'NSSelectorFromString(@"urtTimeline")',
             'BHTUntypedIvarPointer(urtController, "urtTimeline")',
             "BHTHomeTimelineRoleForTrustedPointer(rawTimeline)",
             "BHTHomeTimelineRoleForTimeline(urtTimeline)",
             "BHTHomeTimelineRolePrimaryForYou",
         ),
-        "inner-controller For You ownership resolution",
+        "exact T1URT timeline-object role resolution",
+    )
+    render_fallback = source_section(
+        timeline_source,
+        "%hook T1URTViewController",
+        "%hook TFNItemsDataViewController",
+        "exact T1URT render fallback",
     )
     require_source_tokens(
-        timeline_source,
+        render_fallback,
         (
-            "BHTWeakURTControllerBox",
-            "@property(nonatomic, weak) id controller",
-            "BHTRegisterURTController(self)",
-            'NSSelectorFromString(@"dataViewController")',
-            'BHTUntypedIvarPointer(\n        owner, "_dataViewController")',
-            "raw == (__bridge void*)dataViewController",
-            "BHTForYouFilterDiagnosticDirectOwnerResolved",
-            "BHTForYouFilterDiagnosticDirectOwnerMissing",
-            "BHTBindDataControllerToURTOwner(",
-            "resolvedOwner && resolvedOwner != owner",
+            "viewWillAppear:",
+            "renderedGeneration.unsignedIntegerValue != generation",
+            "BHTIsPrimaryForYouURTController(self)",
+            "reloadData",
+            "BHTForYouFilterDiagnosticRenderReloaded",
+            "tableViewHeightForItem:",
+            "estimatedTableViewHeightForItem:",
+            "BHTForYouFilterDiagnosticRenderRowCollapsed",
+            "return 0.0",
         ),
-        "exact weak URT data-controller ownership",
+        "role-gated T1URT item-height fallback",
     )
-    lifecycle_owner_binding = source_section(
-        timeline_source,
-        "static void BHTBindURTDataController",
-        "%hook TFNItemsDataViewController",
-        "URT lifecycle owner binding",
-    )
-    if "setSections:" in lifecycle_owner_binding:
+    if "heightForRowAtIndexPath:" in render_fallback:
         raise AssertionError(
-            "URT lifecycle hooks must bind ownership without replaying a "
-            "possibly stale section snapshot"
+            "The keyword fallback must use X's item-height callbacks so "
+            "Ads.x remains the sole outer row-height hook"
         )
     require_source_tokens(
         timeline_source,

@@ -212,7 +212,7 @@ static void BHTPulseForYouFilterTarget(UIView* target) {
     }
     return BHTForYouFiltersLocalized(
         @"FOR_YOU_FILTERS_USERNAMES_SECTION_TITLE",
-        @"Usernames & display names");
+        @"Accounts & @mentions");
 }
 
 - (NSString*)tableView:(UITableView*)tableView
@@ -222,15 +222,16 @@ static void BHTPulseForYouFilterTarget(UIView* target) {
             @"FOR_YOU_FILTERS_POST_TEXT_SECTION_FOOTER",
             @"Hides a For You post when any version of its primary text, "
              @"including leading @mentions, contains one of these words or "
-             @"phrases. Changes apply the next time For You refreshes. "
+             @"phrases. Changes apply when you return to For You or it "
+              @"refreshes. "
              @"Following is never filtered.");
     }
     return BHTForYouFiltersLocalized(
         @"FOR_YOU_FILTERS_USERNAMES_SECTION_FOOTER",
         @"Hides a For You post when the visible author or reposting "
-         @"account's username or display name contains a match. Changes "
-         @"apply the next time For You refreshes. Following is never "
-         @"filtered.");
+         @"account's username or display name contains a match, or when "
+         @"the post mentions a matching @handle. Changes apply when you "
+         @"return to For You or it refreshes. Following is never filtered.");
 }
 
 - (UIView*)sectionTextViewWithText:(NSString*)text
@@ -422,7 +423,8 @@ static void BHTPulseForYouFilterTarget(UIView* target) {
         kind == BHTForYouKeywordFilterKindUsername
             ? BHTForYouFiltersLocalized(
                   @"FOR_YOU_FILTERS_USERNAME_EDITOR_DETAIL",
-                  @"Matches literal text in usernames and display names. "
+                  @"Matches literal text in author and reposter usernames "
+                   @"or display names, plus @handles mentioned in the post. "
                    @"An optional leading @ is ignored.")
             : BHTForYouFiltersLocalized(
                   @"FOR_YOU_FILTERS_POST_TEXT_EDITOR_DETAIL",

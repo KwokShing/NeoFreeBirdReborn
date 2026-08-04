@@ -1,3 +1,5 @@
+#pragma once
+
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
@@ -17,6 +19,15 @@ typedef NS_ENUM(NSUInteger, BHTWebReplyRouteResult) {
 // or added to diagnostics. The reply URL exists only while the visible
 // composer or its account-boundary prompt is open.
 BHTWebReplyRouteResult BHTTryPresentWebReplyFallback(
+    id _Nullable sourceObject,
+    id _Nullable nativeAccount,
+    UIViewController* _Nullable presenter);
+
+// Primary inline-reply variant. It first tries X 12.9's own visible web
+// controller bound to the exact account object supplied by X, then falls back
+// to the custom visible shared-session screen if any runtime guard fails.
+BHTWebReplyRouteResult
+BHTTryPresentAccountBoundWebReplyFallback(
     id _Nullable sourceObject,
     id _Nullable nativeAccount,
     UIViewController* _Nullable presenter);
