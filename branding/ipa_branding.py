@@ -503,7 +503,8 @@ def _write_recolored_rgba_png(source, destination, rgb):
 def _apply_builtin_launch_bird(appdir, workdir):
     """Replace X's pre-injection launch glyph with NeoFreeBird's bird.
 
-    iOS renders LaunchScreen.nib before injected tweak code can execute. The audited launch nib shape requests `xLogo`; redirect that same-length archive string to a
+    iOS renders LaunchScreen.nib before injected tweak code can execute. X
+    12.9's nib requests `xLogo`; redirect that same-length archive string to a
     loose blue bird so the fix does not rebuild or disturb the app's Assets.car.
     """
     nib = appdir / "LaunchScreen.nib"

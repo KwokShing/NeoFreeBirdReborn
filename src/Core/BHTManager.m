@@ -80,7 +80,7 @@ static BOOL BHTIsOwnedTemporaryURL(NSURL* url) {
     }
 }
 + (id)sharedFontGroup {
-    // The compatible host runtime uses TFNUIDefaultFontGroup. Keep the older name as a harmless
+    // X 12.9 uses TFNUIDefaultFontGroup. Keep the older name as a harmless
     // fallback so the settings UI can still render on nearby app versions.
     Class fontGroupClass = objc_getClass("TFNUIDefaultFontGroup");
     if (!fontGroupClass) {

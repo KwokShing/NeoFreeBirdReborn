@@ -2,9 +2,8 @@
 //  ReplyDiagnostics.x
 //  NeoFreeBird
 //
-//  Privacy-preserving checkpoints for runtime-compatible reply workflows.
-//  Hook arguments are deliberately forwarded without being inspected or
-//  retained.
+//  Privacy-preserving checkpoints for the X 12.9 reply workflow. Hook
+//  arguments are deliberately forwarded without being inspected or retained.
 //
 
 #import "Compatibility/BHTCompatibilityReporter.h"
@@ -219,6 +218,13 @@ static id BHTCurrentNativeAccountForWebReply(void) {
 %end
 
 %ctor {
+    NSString* version = [NSBundle.mainBundle
+        objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    if (![version isKindOfClass:NSString.class] ||
+        ![version isEqualToString:@"12.9"]) {
+        return;
+    }
+
     BHTInstallReplyWorkflowDiagnosticObservers();
 
     Class replyButton =

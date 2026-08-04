@@ -2,28 +2,27 @@
 
 [![Build NeoFreeBird](https://github.com/Vicitiniman/NeoFreeBirdReborn/actions/workflows/build.yml/badge.svg)](https://github.com/Vicitiniman/NeoFreeBirdReborn/actions/workflows/build.yml)
 
-NeoFreeBird is a modular enhancement tweak for X. It restores familiar
+NeoFreeBird is a modular enhancement tweak for X 12.9. It restores familiar
 Twitter branding and adds themes, navigation controls, media tools, timeline
 filters, and guarded compatibility options for modified installations.
 
-> **Beta software:** Compatibility is host-version-neutral. Support is determined
-> by audited runtime-shape checks for classes, selectors, symbols, and ABIs;
-> features whose required interfaces are unavailable safely remain disabled.
+> **Beta software:** NeoFreeBird is developed and tested for X 12.9. Other X
+> versions may not be compatible.
 
 NeoFreeBird does not include or distribute the X app. Sideloaded and TrollStore
-builds require a decrypted X IPA that you are legally authorized to use.
+builds require a decrypted X 12.9 IPA that you are legally authorized to use.
 
 ## Compatibility
 
 | Component | Supported target |
 | --- | --- |
-| Host app | Runtime-compatible X versions |
-| Compatibility model | Audited runtime shape; host-version-neutral |
+| Host app | X 12.9 |
+| Audited build | X 12.9 build 10 |
 | Minimum iOS | iOS 15.0 |
 | Architecture | arm64 |
 | Packages | Sideloaded IPA, TrollStore TIPA, rootless DEB, rootful DEB |
 
-NeoFreeBird checks runtime-discovered app interfaces before using them. Missing
+NeoFreeBird checks version-specific app interfaces before using them. Missing
 capabilities are recorded in the compatibility report, and native behavior is
 preserved where possible.
 
@@ -72,15 +71,15 @@ compatibility-reply session data.
 
 Native X sign-in and native replies remain the defaults.
 
-**Compatibility Sign-in** is an explicit runtime-guarded fallback for
-installations where the normal account flow does not finish. It opens a
-separate NeoFreeBird screen and submits one guarded password request through
-X's legacy account service. The password field is cleared before that request starts and is never
+**Compatibility Sign-in** is an explicit X 12.9 fallback for installations
+where the normal account flow does not finish. It opens a separate NeoFreeBird
+screen and submits one guarded password request through X's legacy account
+service. The password field is cleared before that request starts and is never
 saved or included in reports. Verification, account registration, credential
 storage, and account switching continue through X's own services. The same
-option is available when adding another account. The password request uses
-X's native client metadata and preserves the minimum preflight window observed
-in successful device reports. Captured
+option is available when adding another account. Beta 43 returns the password
+request to X 12.9's native client metadata and preserves the minimum preflight
+window observed in the successful beta 29 and beta 36 device reports. Captured
 WebKit instrumentation remains diagnostic-only and is never supplied to the
 password command. Timeline, posting, media, and all other API traffic remain
 untouched.
@@ -125,7 +124,7 @@ can cause startup crashes and inconsistent behavior.
 
 Open **Actions > Build NeoFreeBird > Run workflow**, select the deployment
 format, and optionally choose a commit. Sideloaded and TrollStore builds also
-need a direct URL to a decrypted X IPA.
+need a direct URL to a decrypted X 12.9 IPA.
 Download the package from the completed run's **Artifacts** section.
 
 ### Local build
@@ -135,7 +134,7 @@ Requirements:
 - [Theos](https://github.com/theos/theos) with an iOS 16.5 SDK
 - GNU Make, `dpkg`, `ldid`, and Python 3
 - [cyan](https://github.com/asdfzxcvbn/pyzule-rw) for IPA/TrollStore output
-- A legally obtained decrypted X IPA for IPA/TrollStore builds
+- A legally obtained decrypted X 12.9 IPA for IPA/TrollStore builds
 
 ```bash
 git clone --recursive https://github.com/Vicitiniman/NeoFreeBirdReborn.git
@@ -164,8 +163,8 @@ ImageMagick's `magick` or `convert` command.
 
 ## Troubleshooting
 
-First remove any other injected X/Twitter tweak and confirm the affected
-feature's runtime requirements in the compatibility report.
+First confirm that the host app is X 12.9 and remove any other injected
+X/Twitter tweak.
 
 To export a report while signed out:
 
@@ -180,7 +179,7 @@ After signing in, use **Settings > NeoFreeBird > Debug > Export compatibility
 report**. A copy is also stored inside the app container at:
 
 ```text
-Library/Caches/BHTTwitter-Compatibility.json
+Library/Caches/BHTwitter-X12.9-Compatibility.json
 ```
 
 For startup crashes, also attach the newest `.ips` report and include the
@@ -214,7 +213,7 @@ Check formatting before opening a pull request:
 ```
 
 Detailed implementation notes and release history are in
-[`docs/RUNTIME_COMPATIBILITY_AUDIT.md`](docs/RUNTIME_COMPATIBILITY_AUDIT.md).
+[`docs/X12_9_FEATURE_AUDIT.md`](docs/X12_9_FEATURE_AUDIT.md).
 
 ## Credits
 

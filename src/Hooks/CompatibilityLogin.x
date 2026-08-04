@@ -1,58 +1,6 @@
 #import "Login/BHTCompatibilityLogin.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 
-#import <objc/runtime.h>
-#import <string.h>
-
-static const char* BHTCompatibilityHookUnqualifiedType(
-    const char* type) {
-    while (type && strchr("rnNoORV", type[0]) != NULL) {
-        type++;
-    }
-    return type;
-}
-
-static BOOL BHTCompatibilityHookMethodReturnsVoid(
-    Method method) {
-    if (!method) return NO;
-    char returnType[16] = {0};
-    method_getReturnType(method, returnType, sizeof(returnType));
-    const char* type =
-        BHTCompatibilityHookUnqualifiedType(returnType);
-    return type && type[0] == 'v';
-}
-
-static BOOL BHTCompatibilityHookMethodHasBlockArgument(
-    Class cls, SEL selector) {
-    Method method = class_getInstanceMethod(cls, selector);
-    if (!BHTCompatibilityHookMethodReturnsVoid(method) ||
-        method_getNumberOfArguments(method) != 3) {
-        return NO;
-    }
-    char argumentType[16] = {0};
-    method_getArgumentType(
-        method, 2, argumentType, sizeof(argumentType));
-    const char* type =
-        BHTCompatibilityHookUnqualifiedType(argumentType);
-    return type && strcmp(type, "@?") == 0;
-}
-
-static BOOL BHTCompatibilityHookMethodHasBooleanArgument(
-    Class cls, SEL selector) {
-    Method method = class_getInstanceMethod(cls, selector);
-    if (!BHTCompatibilityHookMethodReturnsVoid(method) ||
-        method_getNumberOfArguments(method) != 3) {
-        return NO;
-    }
-    char argumentType[16] = {0};
-    method_getArgumentType(
-        method, 2, argumentType, sizeof(argumentType));
-    const char* type =
-        BHTCompatibilityHookUnqualifiedType(argumentType);
-    return type &&
-           (type[0] == 'B' || type[0] == 'c' || type[0] == 'C');
-}
-
 // X creates its signed-out onboarding controller asynchronously. Attach the
 // opt-in compatibility entry without replacing X's normal sign-in controls.
 %group BHTCompatibilityLoginHooks
@@ -107,21 +55,19 @@ static BOOL BHTCompatibilityHookMethodHasBooleanArgument(
 %end
 
 %ctor {
-    Class hostController =
-        NSClassFromString(@"T1HostViewController");
-    SEL onboardingSelector = NSSelectorFromString(
-        @"makeOnboardingViewControllerWithCompletion:");
-    if (BHTCompatibilityHookMethodHasBlockArgument(
-            hostController, onboardingSelector)) {
+    NSString* version = [NSBundle.mainBundle
+        objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    if ([version isEqualToString:@"12.9"]) {
         %init(BHTCompatibilityLoginHooks);
-    }
 
-    Class accountsController =
-        NSClassFromString(@"T1AccountsViewController");
-    if (BHTCompatibilityHookMethodHasBooleanArgument(
-            accountsController, @selector(viewWillAppear:)) &&
-        BHTCompatibilityHookMethodHasBooleanArgument(
-            accountsController, @selector(viewDidAppear:))) {
-        %init(BHTCompatibilityAddAccountHooks);
+        Class accountsController =
+            NSClassFromString(@"T1AccountsViewController");
+        if (accountsController &&
+            [accountsController instancesRespondToSelector:
+                @selector(viewWillAppear:)] &&
+            [accountsController instancesRespondToSelector:
+                @selector(viewDidAppear:)]) {
+            %init(BHTCompatibilityAddAccountHooks);
+        }
     }
 }

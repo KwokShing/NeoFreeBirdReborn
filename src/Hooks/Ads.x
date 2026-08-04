@@ -100,7 +100,7 @@ static id BHTSafeValueForKey(id object, NSString* key) {
     }
 }
 
-// The compatible host runtime's status item is Swift-backed and its status storage has changed
+// X 12.9's status item is Swift-backed and its status storage has changed
 // names across releases. Follow only promotion/status-shaped properties and
 // object ivars so the detector remains bounded and does not inspect post text.
 static BOOL BHTNestedObjectMarksPromotion(id object, NSUInteger depth) {
@@ -448,7 +448,7 @@ static id BHTItemAtIndexPath(TFNItemsDataViewController* controller,
           animation, completion);
 }
 
-// Some compatible host timelines keep their section model opaque and only expose the
+// Some X 12.9 timelines keep their section model opaque and only expose the
 // resolved item while constructing a table cell. This is the proven fallback
 // used by NeoFreeBird's prior blocker: hide the cell and collapse its row even
 // when the structural section path above cannot rewrite the data source.
@@ -490,7 +490,7 @@ static id BHTItemAtIndexPath(TFNItemsDataViewController* controller,
 
 %end
 
-// The compatible host runtime asks the adapter registry for an adapter before a number of timeline
+// X 12.9 asks the adapter registry for an adapter before a number of timeline
 // items reach the section setters above.  Refusing a promoted item here closes
 // that earlier path; the section filter remains as the structural fallback.
 %hook TFNItemsDataViewAdapterRegistry
@@ -513,7 +513,7 @@ static id BHTItemAtIndexPath(TFNItemsDataViewController* controller,
 
 %end
 
-// The audited runtime's video session initializer accepts ad metadata separately from the
+// X 12.9's video session initializer accepts ad metadata separately from the
 // playable media entity. Keep the real media untouched and strip only that
 // promoted payload, preventing preroll/session ad construction.
 %hook T1PlayerMediaEntitySessionProducible

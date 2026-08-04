@@ -367,7 +367,7 @@ static UIImageView* launchImageViewFromCandidate(id candidate) {
 }
 
 static UIImageView* launchLogoImageView(UIView* launchView) {
-    // The audited runtime's Swift implementation stores a lazy `logoView`. Prefer that
+    // X 12.9's Swift implementation stores a lazy `logoView`. Prefer that
     // stable semantic path when it is Objective-C visible, then fall back to
     // the centered square image in the launch-only hierarchy.
     for (NSString* selectorName in
@@ -385,7 +385,7 @@ static UIImageView* launchLogoImageView(UIView* launchView) {
         if (candidateImage) return candidateImage;
     }
 
-    // The Swift field is named `$__lazy_storage_$_logoView` in the audited runtime and may
+    // The Swift field is named `$__lazy_storage_$_logoView` in X 12.9 and may
     // not have an Objective-C getter. Resolve object ivars by their semantic
     // name before using geometry as the final compatibility fallback.
     for (Class currentClass = launchView.class;

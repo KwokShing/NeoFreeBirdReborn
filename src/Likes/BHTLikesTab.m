@@ -30,10 +30,10 @@ static char kBHTNativeLikesControllerKey;
 static char kBHTNativeLikesNavigationKey;
 static char kBHTNativeLikesTabViewKey;
 static char kBHTInitialResetPanMarkerKey;
-static const long long kBHTLikesPanelID = 6; // Audited Bookmarks panel
-static const uintptr_t kBHTAuditedEntryFactoryOffset = 0x6CAFE8;
-static const uintptr_t kBHTAuditedEntryFactoryJumpTableOffset = 0x1329880;
-static const uintptr_t kBHTAuditedBookmarksFactoryCaseOffset = 0x6CB26C;
+static const long long kBHTLikesPanelID = 6; // X 12.9 Bookmarks panel
+static const uintptr_t kBHTX129EntryFactoryOffset = 0x6CAFE8;
+static const uintptr_t kBHTX129EntryFactoryJumpTableOffset = 0x1329880;
+static const uintptr_t kBHTX129BookmarksFactoryCaseOffset = 0x6CB26C;
 
 static NSObject* BHTLikesDiagnosticsLock(void) {
     static NSObject* lock;
@@ -234,7 +234,7 @@ static UIViewController* BHTMakeNativeLikesController(id account) {
         if ([result isKindOfClass:UIViewController.class]) return result;
     }
 
-    // The compatible host runtime also exposes Likes through Activity History. Keep this as the
+    // X 12.9 also exposes Likes through Activity History. Keep this as the
     // compatibility fallback and report the selector so device logs can
     // confirm whether it remains available.
     Class bridge = NSClassFromString(@"T1ActivityHistoryBridge");
@@ -247,7 +247,7 @@ static UIViewController* BHTMakeNativeLikesController(id account) {
             invocation.target = bridge;
             invocation.selector = bridgeSelector;
             id accountArgument = account;
-            // The audited runtime's bridge enum is one-based even though its segmented
+            // X 12.9's bridge enum is one-based even though its segmented
             // control is zero-based: 3 opens Articles and 4 opens Likes. The
             // device report confirms this bridge is the available factory.
             NSInteger likesTab = 4;
@@ -2980,7 +2980,7 @@ static UIScrollView* BHTFindScrollableView(UIView* view) {
     }
     BHTIncrementLikesDiagnostic(@"topResets");
 
-    // The compatible host runtime restores Activity History's private content offset after several
+    // X 12.9 restores Activity History's private content offset after several
     // asynchronous layout/data passes. Clamp it to the newest item during the
     // first presentation only, without hiding the timeline or showing a
     // loading cover. The first real user pan or leaving this controller ends
@@ -3609,19 +3609,19 @@ static id BHTMakeNativeBookmarksEntry(void) {
         return nil;
     }
 
-    // The audited runtime's own panel-entry switch has case 6 allocate and
-    // initialize BookmarksAppNavigationTabEntry with the current account.
+    // X 12.9 build 10's own panel-entry switch. Its case 6 allocates and
+    // initializes BookmarksAppNavigationTabEntry with the current account.
     // Validate the switch prologue, panel-6 jump-table target, and invariant
     // case instructions before calling so another X build is skipped safely
     // instead of jumping into a changed private function.
-    uintptr_t factoryAddress = imageBase + kBHTAuditedEntryFactoryOffset;
+    uintptr_t factoryAddress = imageBase + kBHTX129EntryFactoryOffset;
     const uint32_t* instructions = (const uint32_t*)factoryAddress;
     const uint8_t* jumpTable =
         (const uint8_t*)(imageBase +
-                         kBHTAuditedEntryFactoryJumpTableOffset);
+                         kBHTX129EntryFactoryJumpTableOffset);
     const uint32_t* bookmarksCase =
         (const uint32_t*)(imageBase +
-                          kBHTAuditedBookmarksFactoryCaseOffset);
+                          kBHTX129BookmarksFactoryCaseOffset);
     if (instructions[0] != 0xD10203FF ||
         instructions[6] != 0xF1005C1F ||
         jumpTable[kBHTLikesPanelID] != 0x91 ||
@@ -3630,7 +3630,7 @@ static id BHTMakeNativeBookmarksEntry(void) {
         bookmarksCase[4] != 0xAA1303E0 ||
         bookmarksCase[6] != 0xAA0003F3) {
         BHTSetLikesDiagnostic(@"nativeEntryFactoryFailure",
-                              @"AuditedFactorySignatureMismatch");
+                              @"X129FactorySignatureMismatch");
         return nil;
     }
 

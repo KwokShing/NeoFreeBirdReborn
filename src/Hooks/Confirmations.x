@@ -66,7 +66,7 @@ static void ShowConfirmation(void (^confirmed)(void)) {
 
 // MARK: - Like confirm
 
-// The compatible host runtime handles the inline action at the button itself. Hooking the former
+// X 12.9 handles the inline action at the button itself. Hooking the former
 // actions-view delegate would either miss this path or prompt twice.
 %hook TTAStatusInlineActionButton
 

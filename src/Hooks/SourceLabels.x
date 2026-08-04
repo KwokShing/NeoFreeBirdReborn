@@ -2,7 +2,7 @@
 //  SourceLabels.x
 //  NeoFreeBird
 //
-//  The compatible host runtime exposes the source on TFNTwitterStatus again.  Keep this entirely
+//  X 12.9 exposes the source on TFNTwitterStatus again.  Keep this entirely
 //  on-device: no web session, cookies, bearer token, or private GraphQL query.
 //
 

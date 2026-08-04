@@ -1,18 +1,18 @@
-# Runtime compatibility audit
+# X 12.9 feature audit
 
-Compatibility is host-version-neutral and evaluated against an audited runtime
-shape for bundle `com.atebits.Tweetie2` on iOS 15.0 or later. The inspected
-fixture contained 62 Mach-O images and no encrypted executable images.
+Target inspected during the compatibility pass: X 12.9 (build 10), bundle
+`com.atebits.Tweetie2`, minimum iOS 15.0. The supplied IPA contained 62 Mach-O
+images and no encrypted executable images.
 
-This branch uses NeoFreeBird v6's modular source layout while retaining
-runtime-shape-informed hook decisions from the earlier BHTwitter audit. All
-user-visible new behavior has a setting. Compatibility shims and runtime
-reporting are the only unconditional code paths.
+This branch uses NeoFreeBird v6's modular source layout while keeping the X
+12.9-specific hook decisions from the earlier BHTwitter audit. All user-visible
+new behavior has a setting. Compatibility shims and runtime reporting are the
+only unconditional code paths.
 
 ## Safety boundary
 
 - No attestation bypass is implemented.
-- Native X sign-in remains the default. A user-invoked, runtime-guarded
+- Native X sign-in remains the default. A user-invoked X 12.9-only
   Compatibility Sign-in fallback calls X's own password command, native
   challenge UI, account registration, and credential storage. Every required
   class and method is checked before use.
@@ -21,7 +21,7 @@ reporting are the only unconditional code paths.
   compiled.
 - Subscription state is not spoofed. Native/server-backed eligibility remains
   authoritative.
-- Tweet source labels use the audited runtime shape's on-device `TFNTwitterStatus-composerSource`
+- Tweet source labels use X 12.9's on-device `TFNTwitterStatus-composerSource`
   path.
 
 ## Ad blocking
@@ -31,7 +31,7 @@ several points:
 
 1. `TFNTwitterAPICommandContext-allowPromotedContent` prevents promoted results
    from being requested where the API honors the flag.
-2. the audited runtime shape feature switches disable SSP, dynamic-video, unified-card, article
+2. X 12.9 feature switches disable SSP, dynamic-video, unified-card, article
    webview, and promoted-profile paths.
 3. `TFNItemsDataViewAdapterRegistry-dataViewAdapterForItem:` rejects promoted
    statuses plus the exact Google-native, `PromotableTrend`, immersive-card,
@@ -54,16 +54,16 @@ Status meanings:
 
 - **Updated**: retargeted or behavior corrected for the newer app.
 - **Ported**: adopted from the newer NeoFreeBird/Theacrat architecture.
-- **Combined**: uses both the audited-runtime-shape and newer modular approaches.
+- **Combined**: uses both the X 12.9-specific and newer modular approaches.
 - **Runtime check**: compiled defensively and included in the exported report;
   it needs an on-device pass because the private Swift surface can move.
 
-| Area | Setting | Status | Runtime-compatible implementation |
+| Area | Setting | Status | X 12.9 implementation |
 |---|---|---|---|
 | General | `hide_promoted` | Combined | Layered request, model, section, player, metadata, status, and feature-switch blocker described above |
 | General | `hide_premium_offer` | Updated | Upsells only; genuine subscription state is preserved |
 | General | `padlock` | Ported | In-memory relock and app-switcher cover |
-| General | `no_tab_bar_hiding` | Updated | the audited runtime shape pin/collapse capabilities plus ratio clamp on iPhone; iPad keeps its native adaptive rail width and fullscreen hides remain intact |
+| General | `no_tab_bar_hiding` | Updated | X 12.9 pin/collapse capabilities plus ratio clamp on iPhone; iPad keeps its native adaptive rail width and fullscreen hides remain intact |
 | General | `disable_rtl` | Ported | Rebuilds paragraph styles with LTR direction |
 | General | `strip_share_tracking` | Updated | Removes `s`/`t` parameters only when enabled |
 | General | `expand_tco_links` | Updated | No longer unconditional |
@@ -71,12 +71,12 @@ Status meanings:
 | Appearance | theme and app icon controls | Updated | Modern settings pages and guarded live theme reapply; nine built-in choices include Native Blue plus Apollo-inspired, classic Twitter, Midnight OLED, Evergreen, Rose Quartz, Solarized Coast, Amethyst, and Cinder. A native visual builder creates, previews, saves, applies, edits, duplicates, and deletes strictly validated personal light/dark themes with mode-specific accents, readability warnings, and profile portability. Themes attach to the validated active, Twitter, and TFNUI palette providers. A narrow public named-color bridge covers only matching neutral assets from `XColorEngine_XColorEngine.bundle`, which keeps both Objective-C XDS and Swift Following/detail surfaces themed while preserving destructive, media-overlay, and other context-sensitive native colors. NeoFreeBird uses X's guarded native palette apply and observes—never synthesizes—its private dynamic-colors-did-reload event. A coalesced, bounded loaded-view-tree refresh runs only when that native event is absent or a replacement provider is attached after its synchronous observers, so changes apply without a force quit and never add scrolling-path work. Immutable per-provider generation/dark snapshots prevent mixed or stale colors while keeping hot palette reads cheap, and weak tracking clears every still-live provider when Native Blue is restored. Sideloaded/TrollStore packages preserve X's stock icon choices and add the supplied loose Twitter-bird alternate |
 | Settings | search and preference profiles | New | Localized global search covers every page, title, detail, subsection, and category; result routing waits for X's search dismissal and destination layout, then visibly spotlights the exact row or opens the requested theme, navigation item, Likes waterfall selector, sidebar item, media action, or For You filter list without changing a toggle. Versioned JSON export/import lives in a separate Backup & restore page, uses a strict NeoFreeBird-only preference allow-list, and never includes Twitter account state |
 | Appearance | custom navigation | Combined | Captures/reorders native tab entries; Grok remains native while opt-in Likes is an independent movable entry; selected editor tiles and the preview row both support drag reordering |
-| Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through the audited runtime shape's observable `TwitterDash` array setters while preserving unknown/native rows. A coalesced post-factory reapply also covers the late drawer rebuild triggered by Add Account |
+| Appearance | sidebar navigation | New/runtime check | Reorders or hides Profile, Blue, History, Communities, News, Lists, Chat, Notifications, Spaces, and Follower Requests through X 12.9's observable `TwitterDash` array setters while preserving unknown/native rows. A coalesced post-factory reapply also covers the late drawer rebuild triggered by Add Account |
 | Appearance | `tab_bar_theming` | Ported | Native selected/unselected colors |
 | Appearance | `restore_tab_labels` | Updated | Current `T1TabView` title path; the Likes carrier is relabeled before its first selection |
 | Appearance | `restore_launch_animation` | Updated | No longer forced on; replaces the animated X with the bundled Twitter bird and removes only the X-shaped reveal mask |
 | Appearance | `restore_refresh_sounds` | Updated | No longer always on |
-| Appearance | `custom_fonts` | Updated | Persists concrete PostScript faces, migrates former family-name selections, and covers both legacy `TFNUIDefaultFontGroup` and the audited runtime shape's SwiftUI `XFontCatalog` |
+| Appearance | `custom_fonts` | Updated | Persists concrete PostScript faces, migrates former family-name selections, and covers both legacy `TFNUIDefaultFontGroup` and X 12.9's SwiftUI `XFontCatalog` |
 | Timeline | `hide_who_to_follow` | Combined | Section model filter plus targeted iPad controller |
 | Timeline | `hide_timeline_prompts` | Combined | Prompt/module filter plus targeted update pill |
 | Timeline | `hide_discover_more` | Updated | Exact related-post entry IDs; no broad footer/header deletion |
@@ -86,17 +86,17 @@ Status meanings:
 | Timeline | `hide_custom_timelines` | Updated | Hides without persisting an empty pinned list |
 | Timeline | `remember_timeline_tab` | Updated | Disabled preference now leaves X's native value alone |
 | Timeline | For You keyword filters | New/runtime check | Two independent, bounded literal-substring lists match usernames/display names or primary visible post text. Cached normalized terms and per-item generation decisions keep section updates light. The gate carries an explicit primary-Home model marker through `TFNTwitterHomeTimeline-deserializeStream`, binds X's inner data controller to its exact live `T1URTViewController`, and requires that owner's timeline to be positively marked; Following and every unknown runtime state fail open |
-| Timeline | `enable_likes_tab` | New/runtime check | Independent bottom destination backed by native Likes history; opens raw Activity History tab 4 against the audited runtime shape, guards against delayed native offset restoration on its first presentation without a loading cover, preserves position on later tab switches, and retains Profile, History, Lists, and other native destinations pushed from X's side drawer |
+| Timeline | `enable_likes_tab` | New/runtime check | Independent bottom destination backed by native Likes history; opens raw Activity History tab 4 on X 12.9, guards against delayed native offset restoration on its first presentation without a loading cover, preserves position on later tab switches, and retains Profile, History, Lists, and other native destinations pushed from X's side drawer |
 | Timeline | `likes_media_waterfall` | New/runtime check | Newest-first extraction from the same ad-filtered native section snapshot, continuous pagination, medium-size grid previews plus original-quality close-up/download URLs, highest-bitrate MP4 selection, 2–5 columns, a window-level edge-to-edge viewer on iPhone and iPad, a Posts/Media selector with native segmented-control artwork and a guarded 32-point minimum navigation-title height, Apple-style contextual Photo/Video/GIF previews and action menus in both surfaces (with the guarded TFN sheet retained only as a legacy fallback), and percent-driven modal swipe-down dismissal |
 | Grok | `enable_grok_translations` | Updated | Manual translation gates are no longer forced globally |
 | Grok | `hide_grok_analyze` | Updated | Backend switch plus current button paths |
 | Grok | `hide_grok_sidebar` | Ported | Current navigation model filtering |
 | Grok | `hide_grok_create` | Updated | Composer, photo, timeline and immersive gates |
 | Grok | `disable_auto_translate` | Ported | Leaves manual translation available |
-| Media | `download_videos` | Updated | Modern MP4/HLS/GIF quality sheet across the audited runtime shape's `MultiMediaView`, separate carousel, legacy inline-video, overflow, and exact native media-action path; replaces X's Blue-gated duplicate with working Download Video/GIF and temporary-file Share actions |
+| Media | `download_videos` | Updated | Modern MP4/HLS/GIF quality sheet across X 12.9's `MultiMediaView`, separate carousel, legacy inline-video, overflow, and exact native media-action path; replaces X's Blue-gated duplicate with working Download Video/GIF and temporary-file Share actions |
 | Media | media action editors | New/runtime check | Independent Photo, Video, and GIF tap-to-hide/drag-to-reorder editors; recognized native actions are reordered safely, explicitly tagged Neo actions win duplicate IDs, and unknown/future X actions plus Cancel are preserved |
 | Media | `dm_media_downloads` | Updated/runtime check | Default-off opt-in; Swift attachment view and save-plugin availability are reported |
-| Media | `voice_creation_enabled` | Updated/runtime check | the audited runtime shape keyed voice-post and voice-reply gates |
+| Media | `voice_creation_enabled` | Updated/runtime check | X 12.9 keyed voice-post and voice-reply gates |
 | Media | `no_voice_messages` | Corrected/runtime check | Turns legacy DM and XChat voice creation/rendering off when enabled |
 | Media | `old_compose_bar` | Corrected/runtime check | Disables the XChat v2 composer when enabled |
 | Media | `dm_reply_later_enabled` | Updated/runtime check | Native keyed gate; server/account support remains authoritative |
@@ -104,7 +104,7 @@ Status meanings:
 | Media | `custom_voice_upload` | Updated | Previously always on; now opt-in |
 | Media | `direct_save` | Ported | Share sheet or direct Photos save |
 | Media | `disable_video_captions` | Ported | Current switch family |
-| Media | `auto_highest_load` | Updated | the audited runtime shape `isLoadingHighestQualityImageVariantPermitted` plus timeline image and slideshow paths; default on |
+| Media | `auto_highest_load` | Updated | X 12.9 `isLoadingHighestQualityImageVariantPermitted` plus timeline image and slideshow paths; default on |
 | Media | `force_highest_video_quality` | New/runtime check | Sorts variants and prefers the highest MP4 primary URL |
 | Media | `force_tweet_full_frame` | Updated | Photo attachment adapter display type |
 | Media | `restore_video_timestamp` | Ported | Current immersive progress plugin |
@@ -118,16 +118,16 @@ Status meanings:
 | Profile | `restore_follow_button` | Updated | Keeps genuine active subscriptions intact |
 | Profile | `square_avatars` | Ported | Live avatar/image/shadow restyling |
 | Profile | `full_profile_counts` | Updated | Previously always on; now opt-in |
-| Account access | Compatibility Sign-in | New/runtime check | Explicit runtime-guarded fallback available from signed-out onboarding, Profiles settings, and Add Account; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
-| Account/replies | `web_reply_fallback` | New/runtime check | Default-off runtime-guarded route for supported reply taps that opens X's visible Web Intent in a native-themed in-app WebKit shell. Setup and replies use the same app-wide persistent x.com WebKit session, warn when its active account may differ from the native account, never capture native draft text or auto-post, and fall through to native behavior when the route cannot be presented |
-| Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; the available canonical-user selector is hooked when present |
+| Account access | Compatibility Sign-in | New/runtime check | Explicit X 12.9-only fallback available from signed-out onboarding, Profiles settings, and Add Account; uses X's password command, native challenge/account services, and native credential storage while leaving normal sign-in untouched |
+| Account/replies | `web_reply_fallback` | New/runtime check | Default-off X 12.9 route for supported reply taps that opens X's visible Web Intent in a native-themed in-app WebKit shell. Setup and replies use the same app-wide persistent x.com WebKit session, warn when its active account may differ from the native account, never capture native draft text or auto-post, and fall through to native behavior when the route cannot be presented |
+| Profile/Grok | bio translation | Combined | Old `bio_translate` preference migrates to native Grok translations; only X 12.9's available canonical-user selector is hooked |
 | Tweets | `enable_edit_tweet` | Updated | Exposes native UI only; server eligibility still applies |
 | Tweets | undo timeout | Ported | Unified timeout picker and old-key migration |
-| Tweets | `tweet_confirm` / `like_confirm` | Updated | Current composer plus the audited runtime shape `TTAStatusInlineActionButton-didTap`, slideshow, and immersive actions |
+| Tweets | `tweet_confirm` / `like_confirm` | Updated | Current composer plus X 12.9 `TTAStatusInlineActionButton-didTap`, slideshow, and immersive actions |
 | Tweets | `tweet_to_image` | Ported | Long-press share with table/collection fallback |
 | Tweets | inline-button hides | Updated | `TTAStatusInlineAnalyticsButton` and current class list |
 | Tweets | sensitive/age controls | Ported | Explicit toggles; age bypass defaults off |
-| Tweets | `reply_sorting` | Corrected | Covers `reply_sorting_enabled` and the audited runtime shape's minimal-detail v2 switch; off preserves native behavior |
+| Tweets | `reply_sorting` | Corrected | Covers `reply_sorting_enabled` and X 12.9's minimal-detail v2 switch; off preserves native behavior |
 | Tweets | `restore_reply_context` | Corrected | Off leaves X's native switch untouched |
 | Tweets | `restore_tweet_labels` | Updated | Native `composerSource`; no account/session web request |
 | Search | `no_history` | Updated | Read and write paths on recent-search datastore |
@@ -161,7 +161,7 @@ change the FFmpeg TLS backend without a demonstrated build need.
   X's Swift DM rewrite. A global view/background hook would be fragile and could
   obscure message content, so it is not ported.
 - The dormant `always_following_page` preference was never exposed in the last
-  BHTwitter settings screen. The audited runtime-shape review found the current
+  BHTwitter settings screen. The X 12.9 audit found the current
   `selectTimelineVariant:shouldRefresh:` path but not a stable enum value; the
   branch does not guess one.
 - Hidden web posting, cookie extraction, credential/token backups,
@@ -190,7 +190,7 @@ After launching a test build, open:
 
 The JSON is also written to:
 
-`Library/Caches/BHTTwitter-Compatibility.json`
+`Library/Caches/BHTwitter-X12.9-Compatibility.json`
 
 The first device pass should focus on Photo/Video/GIF action ordering, Download
 and temporary-file Share, first-open Likes position, waterfall and close-up
@@ -206,7 +206,7 @@ records root creation, selection/reset counts, media count, and URL acceptance.
 Missing private selectors degrade to native behavior and are listed in the
 report rather than being guessed silently.
 
-Beta 29 adds the opt-in runtime-compatible Compatibility Sign-in fallback. It preserves
+Beta 29 adds the opt-in X 12.9 Compatibility Sign-in fallback. It preserves
 normal X sign-in, validates the full private method shape before invocation,
 uses nonpersistent UI-metrics loading, clears the password field immediately,
 routes two-factor challenges through X's native challenge controller, and
@@ -230,7 +230,7 @@ alternate successful routes, adds a shared-web-session account review when a
 native account-context change is detected, and reapplies saved sidebar
 visibility after Add Account finishes rebuilding the drawer.
 
-Beta 37 routes account review through the sign-in path that succeeds against the audited runtime shape,
+Beta 37 routes account review through the sign-in path that succeeds on X 12.9,
 falls back once to X's official intent shell when a pre-commit WebKit policy
 interruption occurs, and always replaces an unrecoverable opening spinner with
 a retry state. It also adds an optional local **Last confirmed** web-account
@@ -254,7 +254,7 @@ aggregate completion counters. Credentials, identifiers, response contents,
 error descriptions, and error user-info dictionaries remain excluded.
 
 Beta 42 restores Compatibility Sign-in as a dedicated, opt-in screen instead
-of sending the user through the host's JetX/Jetfuel onboarding route. It retains
+of sending the user through X 12.9's JetX/Jetfuel onboarding route. It retains
 the exact guarded password-command ABI, native verification challenge,
 account-registration, and account-switching checks from betas 39 and 40. The
 normal X sign-in remains visible and untouched. Password text is cleared before
@@ -265,7 +265,7 @@ attempt can be investigated without first reaching the app's settings.
 Beta 43 removes beta 42's experimental password-request client-version
 override after the device report showed that X returned the same payload-less
 401 even though the scoped override installed and applied correctly. The
-compatibility password request again uses the host's native metadata. It also
+compatibility password request again uses X 12.9's native metadata. It also
 holds the diagnostic preflight for at least 12 seconds before starting the
 password command, reproducing the timing and `uiMetrics:nil` request profile
 recorded by the successful beta 29 and beta 36 reports. Reports identify this
@@ -290,7 +290,8 @@ downsampling, and deferred pager refreshes during horizontal transitions. Beta
 16 added Apple-style contextual previews and menus for consistent iPhone/iPad
 media actions plus coalesced image requests. Beta 17 targets the guarded iPad
 rail-header image path, adds complete light/dark theme palettes, and presents
-waterfall close-ups at full app-window size. Beta 18 expands coverage to the audited runtime shape's dark timeline, tweet, card, modal, and capsule-tab palette tokens,
+waterfall close-ups at full app-window size. Beta 18 expands coverage to X
+12.9's dark timeline, tweet, card, modal, and capsule-tab palette tokens,
 reapplies presets through its guarded dynamic-color refresh paths, and changes
 waterfall thumbnails to complete-image aspect fit. Beta 19 also attaches those
 roles to X's separate Twitter/TFNUI providers, themes repost and top/bottom tab

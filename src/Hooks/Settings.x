@@ -298,7 +298,7 @@ static NSArray* sectionsWithNeoFreeBirdEntry(TFNItemsDataViewController* setting
 }
 %end
 
-// The compatible host runtime's newer SwiftUI and timeline surfaces resolve fonts through
+// X 12.9's newer SwiftUI and timeline surfaces resolve fonts through
 // XFontCatalog instead of TFNUIDefaultFontGroup. Remap every public catalog
 // output while leaving the original font in place when no valid custom face is
 // selected.

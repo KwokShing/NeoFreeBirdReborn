@@ -92,7 +92,7 @@
 /* Compatibility sign-in */
 "COMPATIBILITY_SIGN_IN_TITLE" = "Compatibility Sign-in";
 "COMPATIBILITY_SIGN_IN_HEADING" = "Compatibility Sign-in";
-"COMPATIBILITY_SIGN_IN_DETAIL" = "Uses X's guarded legacy account service when the normal sign-in screen does not finish.";
+"COMPATIBILITY_SIGN_IN_DETAIL" = "Uses X 12.9's guarded legacy account service when the normal sign-in screen does not finish.";
 "COMPATIBILITY_SIGN_IN_USERNAME_PLACEHOLDER" = "Username, email, or phone";
 "COMPATIBILITY_SIGN_IN_PASSWORD_PLACEHOLDER" = "Password";
 "COMPATIBILITY_SIGN_IN_ACTION" = "Sign in";
@@ -100,7 +100,7 @@
 "COMPATIBILITY_SIGN_IN_PREPARING" = "Preparing X's sign-in request…";
 "COMPATIBILITY_SIGN_IN_CONTACTING_X" = "Contacting X…";
 "COMPATIBILITY_SIGN_IN_REQUIRED_ERROR" = "Enter both your account identifier and password.";
-"COMPATIBILITY_SIGN_IN_VERSION_ERROR" = "The guarded compatibility account service is unavailable in this X build. Your normal X sign-in has not been changed.";
+"COMPATIBILITY_SIGN_IN_VERSION_ERROR" = "Compatibility Sign-in is available only for X 12.9. Your normal X sign-in has not been changed.";
 "COMPATIBILITY_SIGN_IN_RUNTIME_ERROR" = "The guarded compatibility account service is unavailable in this X build. Export a pre-login compatibility report so its selector checks can be reviewed.";
 "COMPATIBILITY_SIGN_IN_REJECTED_ERROR" = "X did not accept this sign-in. Check your details or use X's normal sign-in.";
 "COMPATIBILITY_SIGN_IN_NETWORK_ERROR" = "X could not be reached. Check your connection and try again.";
@@ -534,7 +534,7 @@
 "INSTALL_IFONT_BUTTON_TITLE" = "iFont application";
 "FONT_SYSTEM_DEFAULT_SUBTITLE" = "System Default";
 
-/* Runtime-compatible additions */
+/* X 12.9 hybrid additions */
 "STRIP_SHARE_TRACKING_TITLE" = "Remove share tracking";
 "STRIP_SHARE_TRACKING_DETAIL" = "Remove X's s and t tracking parameters from copied and shared links.";
 "EXPAND_TCO_LINKS_TITLE" = "Expand t.co links";
@@ -590,7 +590,7 @@
 "HIDE_SCREENSHOT_BRANDING_TITLE" = "Hide screenshot branding";
 "HIDE_SCREENSHOT_BRANDING_DETAIL" = "Hide X's custom overlay on timeline screenshots.";
 "EXPORT_COMPATIBILITY_REPORT_TITLE" = "Export compatibility report";
-"EXPORT_COMPATIBILITY_REPORT_DETAIL" = "Share the runtime hook report for troubleshooting.";
+"EXPORT_COMPATIBILITY_REPORT_DETAIL" = "Share the X 12.9 runtime hook report for troubleshooting.";
 "MY_LIKES_TITLE" = "My Likes";
 "LIKES_POSTS_SEGMENT" = "Posts";
 "LIKES_MEDIA_SEGMENT" = "Media";

@@ -546,7 +546,7 @@ static BOOL shouldPinCollapsibleTabBar(
     BHTRefreshCurrentThemeTabItems(self);
 }
 
-// The compatible host runtime consults these capabilities before sending collapse-ratio updates.
+// X 12.9 consults these capabilities before sending collapse-ratio updates.
 - (BOOL)tfn_supportsTabBarCollapsing {
     return shouldPinCollapsibleTabBar(self) ? NO : %orig;
 }
@@ -739,7 +739,7 @@ static BOOL BHTIsSafeRailHeaderCandidate(UIImageView* candidate,
     CGFloat aspectRatio = width / MAX(height, 1.0);
     if (aspectRatio < 0.65 || aspectRatio > 1.35) return NO;
 
-    // FLEX identified the audited runtime rail header as a 28x28 UIImageView at
+    // FLEX identified the X 12.9 rail header as a 28x28 UIImageView at
     // {34,35}. Keep the fallback inside the safe-area header band so the
     // first Home tab can never qualify even if its internal class changes.
     UIEdgeInsets safeAreaInsets = hostView.safeAreaInsets;
@@ -814,7 +814,7 @@ static UIImageView* BHTRailHeaderLogoImageView(UIView* hostView,
             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 
-    // The compatible host runtime owns the actual iPad header mark in T1TabBarHostView. Resolve its
+    // X 12.9 owns the actual iPad header mark in T1TabBarHostView. Resolve its
     // semantic logo property/ivar first.
     SEL selector = NSSelectorFromString(@"logoImageView");
     if ([hostView respondsToSelector:selector]) {

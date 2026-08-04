@@ -33,7 +33,7 @@ static BOOL BHTNativeMediaActionBuilderAvailable(void) {
     return class_getInstanceMethod(UIViewController.class, selector) != NULL;
 }
 
-// Do not key video detection off mediaType alone. The compatible host runtime has multiple media
+// Do not key video detection off mediaType alone. X 12.9 has multiple media
 // model bridges and the numeric enum value is not stable across all of them;
 // videoInfo.variants is the reliable indication that the entity is downloadable.
 static BOOL BHTIsDownloadableVideoEntity(id media) {
@@ -274,7 +274,7 @@ static NSURL* BHTPreferredDownloadURL(TFSTwitterEntityMedia* media) {
 
 // MARK: - Tweet video/GIF long press
 
-// The compatible host runtime gives its own inline download action priority and routes non-Blue
+// X 12.9 gives its own inline download action priority and routes non-Blue
 // accounts to an upsell. Install a media-specific long press that wins that
 // recognizer race and opens NeoFreeBird's quality/GIF picker directly.
 %hook _TtC21TweetMediaAttachments14MultiMediaView
@@ -905,7 +905,7 @@ static NSArray* BHTConfiguredNativeMediaActionItems(
     return configured;
 }
 
-// The audited runtime's timeline photo/video preview handlers call this media-specific
+// X 12.9's timeline photo/video preview handlers call this media-specific
 // builder. The older _t1_actionItemsForStatus: path below is for a different,
 // general Tweet action sheet and never sees the long-press menu in the
 // recording.
@@ -1031,7 +1031,7 @@ static NSArray* BHTConfiguredNativeMediaActionItems(
                 [untaggedItems addObject:item];
             }
         }
-        // The compatible host runtime appends exactly one Share Via item after the media builder.
+        // X 12.9 appends exactly one Share Via item after the media builder.
         // Giving that localized/title-only row a stable identifier makes it
         // obey the editor in every language.
         if (untaggedItems.count == 1) {
