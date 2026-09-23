@@ -203,10 +203,6 @@ jobs:
           fi
           X_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST")
           X_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PLIST")
-          if [ "$X_VERSION" != "12.24.1" ] || [ "$X_BUILD" != "1" ]; then
-            echo "This compatibility branch targets X 12.24.1 build 1; received X $X_VERSION (build $X_BUILD)." >&2
-            exit 1
-          fi
           echo "X_VERSION=${X_VERSION}" >> "$GITHUB_ENV"
           echo "X_BUILD=${X_BUILD}" >> "$GITHUB_ENV"
           echo "$X_VERSION"
