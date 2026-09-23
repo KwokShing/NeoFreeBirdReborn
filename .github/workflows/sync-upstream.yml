@@ -1,0 +1,127 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # 18:30 UTC daily, which is 02:30 the next day in UTC+8.
+    # Off-the-hour on purpose: scheduled runs queue up on exact hours.
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_branch:
+        description: "Upstream branch to pull from"
+        default: "master"
+        required: false
+        type: string
+      target_branch:
+        description: "Branch in this fork that receives the merge"
+        default: "master"
+        required: false
+        type: string
+      dry_run:
+        description: "Merge locally and report, but never push"
+        default: false
+        required: false
+        type: boolean
+
+# Never let two syncs race for the same branch.
+concurrency:
+  group: sync-upstream-${{ inputs.target_branch || 'master' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: https://github.com/Vicitiniman/NeoFreeBirdReborn.git
+  UPSTREAM_BRANCH: ${{ inputs.upstream_branch || 'master' }}
+  TARGET_BRANCH: ${{ inputs.target_branch || 'master' }}
+
+jobs:
+  sync:
+    name: Merge upstream into ${{ inputs.target_branch || 'master' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Fork
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_branch || 'master' }}
+          # A merge needs the real history, not a shallow clone.
+          fetch-depth: 0
+          # Only the gitlinks take part in the merge, so skip the submodule trees.
+          submodules: false
+
+      - name: Fetch Upstream
+        run: |
+          git remote add upstream "$UPSTREAM_REPO" 2>/dev/null \
+            || git remote set-url upstream "$UPSTREAM_REPO"
+          # Spell out the refspec so upstream/<branch> exists regardless of
+          # whatever fetch config the remote was left with.
+          git fetch --no-tags upstream \
+            "+refs/heads/${UPSTREAM_BRANCH}:refs/remotes/upstream/${UPSTREAM_BRANCH}"
+
+      - name: Compare With Upstream
+        id: compare
+        run: |
+          BEHIND=$(git rev-list --count "HEAD..upstream/${UPSTREAM_BRANCH}")
+          AHEAD=$(git rev-list --count "upstream/${UPSTREAM_BRANCH}..HEAD")
+          echo "behind=${BEHIND}" >> "$GITHUB_OUTPUT"
+          echo "Fork carries ${AHEAD} local commit(s); upstream has ${BEHIND} new commit(s)."
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "Already up to date with upstream/${UPSTREAM_BRANCH}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Incoming from upstream/${UPSTREAM_BRANCH}"
+              echo
+              git log --no-merges --format='- `%h` %s' "HEAD..upstream/${UPSTREAM_BRANCH}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Merge Upstream
+        if: steps.compare.outputs.behind != '0'
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Record the conflicts before unwinding, then leave the branch untouched.
+          CONFLICTS=$(git diff --name-only --diff-filter=U || true)
+          git merge --abort || true
+          {
+            echo
+            echo "### Merge conflict, nothing was pushed"
+            echo
+            echo "Conflicting paths:"
+            echo '```'
+            echo "$CONFLICTS"
+            echo '```'
+            echo "Resolve locally:"
+            echo '```sh'
+            echo "git fetch upstream ${UPSTREAM_BRANCH}"
+            echo "git switch ${TARGET_BRANCH}"
+            echo "git merge upstream/${UPSTREAM_BRANCH}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Merge of upstream/${UPSTREAM_BRANCH} conflicts with this fork:" >&2
+          echo "$CONFLICTS" >&2
+          exit 1
+
+      - name: Push
+        if: steps.merge.outputs.merged == 'true' && !inputs.dry_run
+        run: |
+          git push origin "HEAD:${TARGET_BRANCH}"
+          {
+            echo
+            echo "Pushed to \`${TARGET_BRANCH}\` at \`$(git rev-parse --short HEAD)\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report Dry Run
+        if: steps.merge.outputs.merged == 'true' && inputs.dry_run
+        run: |
+          {
+            echo
+            echo "Dry run: merge succeeded at \`$(git rev-parse --short HEAD)\` but was not pushed."
+          } >> "$GITHUB_STEP_SUMMARY"
