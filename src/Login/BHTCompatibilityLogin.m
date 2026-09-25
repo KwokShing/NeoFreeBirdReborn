@@ -4,6 +4,7 @@
 
 #import "Compatibility/BHTCompatibilityReporter.h"
 #import "Core/BHTBundle.h"
+#import "Login/BHTSecureWebSession.h"
 
 #import <WebKit/WebKit.h>
 #import <dlfcn.h>
@@ -716,7 +717,21 @@ static BOOL BHTCompatibilityRuntimeIsAvailable(void) {
 }
 
 BOOL BHTCompatibilitySignInIsAvailable(void) {
-    return BHTCompatibilityRuntimeIsAvailable();
+    return BHTSecureWebSessionSignInIsAvailable();
+}
+
+BOOL BHTCompatibilityWebSessionAccountRuntimeIsAvailable(void) {
+    if (!BHTCompatibilityVersionIsSupported() ||
+        !BHTNativeAccountSignaturesAreSupported() ||
+        !BHTHostAccountSwitchSignatureIsSupported()) {
+        return NO;
+    }
+    Class twitterClass = NSClassFromString(@"TFNTwitter");
+    return twitterClass &&
+           [twitterClass respondsToSelector:
+               NSSelectorFromString(@"sharedTwitter")] &&
+           [twitterClass respondsToSelector:
+               NSSelectorFromString(@"saveSharedTwitter")];
 }
 
 static id BHTSendObject(id target, SEL selector) {
@@ -2677,14 +2692,112 @@ static void BHTPresentNativeAddAccountCompatibilitySignIn(
 
 void BHTPresentCompatibilitySignIn(
     UIViewController* presenter) {
-    BHTPresentCompatibilitySignInForContext(
-        presenter, nil);
+    BHTPresentSecureWebSessionSignIn(presenter, nil);
 }
 
 void BHTPresentCompatibilitySignInForAddingAccount(
     UIViewController* accountsController) {
-    BHTPresentCompatibilitySignInForContext(
+    BHTPresentSecureWebSessionSignIn(
         accountsController, accountsController);
+}
+
+BOOL BHTCompatibilityInstallWebSessionAccount(
+    NSString* screenName,
+    uint64_t userID,
+    UIViewController* flowController,
+    UIViewController* addAccountController,
+    BHTCompatibilityWebSessionAccountCompletion completion) {
+    if (!BHTCompatibilityWebSessionAccountRuntimeIsAvailable() ||
+        screenName.length == 0 || screenName.length > 15 ||
+        userID == 0 || !flowController) {
+        return NO;
+    }
+
+    // These values are deliberately useless outside NeoFreeBird. The actual
+    // web session remains in the device-only Keychain and is added at the
+    // guarded request boundary.
+    id account = BHTBuildNativeAccount(
+        @"neofreebird_web_session",
+        @"neofreebird_web_session",
+        screenName,
+        userID);
+    if (!account || !BHTRegisterNativeAccount(account)) {
+        return NO;
+    }
+    BHTDetailedReplyDiagnosticsNoteCompatibilityAccount(account);
+    BHTCompatibilityRecord(
+        BHTCompatibilityLoginEventAuthenticated,
+        @"web_session_account_registered", nil);
+
+    BHTCompatibilityResult result = ^(
+        BOOL success, NSString* failureCategory) {
+        if (completion) completion(success, failureCategory);
+    };
+    if (addAccountController) {
+        BHTCompleteAddAccountFlow(
+            account, flowController, addAccountController,
+            flowController, result);
+    } else {
+        BHTCompleteSignedOutFlowAndSwitchAccount(
+            account, flowController, result);
+    }
+    return YES;
+}
+
+BOOL BHTCompatibilityRemoveWebSessionAccount(NSString* screenName) {
+    if (screenName.length == 0 || screenName.length > 15) return NO;
+    Class twitterClass = NSClassFromString(@"TFNTwitter");
+    id twitter = BHTSendObject(
+        twitterClass, NSSelectorFromString(@"sharedTwitter"));
+    id service = BHTSendObject(
+        twitter, NSSelectorFromString(@"accountService"));
+    NSArray* accounts = BHTSendObject(
+        twitter, NSSelectorFromString(@"accounts"));
+    SEL removeSelector = NSSelectorFromString(@"removeAccount:");
+    NSMethodSignature* removeSignature =
+        BHTInstanceMethodSignature([service class], removeSelector);
+    if (!twitter || !service ||
+        ![accounts isKindOfClass:NSArray.class] ||
+        !removeSignature || removeSignature.numberOfArguments != 3 ||
+        !BHTSignatureReturnsVoid(removeSignature) ||
+        !BHTSignatureArgumentIsObject(removeSignature, 2)) {
+        return NO;
+    }
+
+    BOOL removed = NO;
+    for (id account in [accounts copy]) {
+        NSString* username = BHTSendObject(
+            account, NSSelectorFromString(@"username"));
+        if (![username isKindOfClass:NSString.class] ||
+            [username caseInsensitiveCompare:screenName] !=
+                NSOrderedSame) {
+            continue;
+        }
+        @try {
+            ((void (*)(id, SEL, id))objc_msgSend)(
+                service, removeSelector, account);
+            removed = YES;
+        } @catch (__unused NSException* exception) {
+            return NO;
+        }
+        break;
+    }
+    if (!removed) return NO;
+
+    ((void (*)(id, SEL))objc_msgSend)(
+        twitterClass, NSSelectorFromString(@"saveSharedTwitter"));
+    Class notificationClass =
+        NSClassFromString(@"TFSAccountNotification");
+    NSString* notificationName = BHTSendObject(
+        notificationClass,
+        NSSelectorFromString(@"TFSAccountsDidChange"));
+    if ([notificationName isKindOfClass:NSString.class] &&
+        notificationName.length > 0) {
+        [NSNotificationCenter.defaultCenter
+            postNotificationName:notificationName
+                          object:twitter userInfo:nil];
+    }
+    return YES;
 }
 
 @interface BHTCompatibilityEntryTarget : NSObject
@@ -2973,8 +3086,10 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         NSClassFromString(@"T1AccountsViewController");
     BOOL nativeAddAccountCompletionSelectorAvailable =
         BHTNativeAddAccountCompletionGetterIsSupported();
+    BOOL secureWebSessionAvailable =
+        BHTSecureWebSessionSignInIsAvailable();
     BOOL addAccountEntryAvailable =
-        missingRequirements.count == 0 &&
+        secureWebSessionAvailable &&
         accountsClass &&
         [accountsClass instancesRespondToSelector:
                            @selector(viewWillAppear:)] &&
@@ -2985,8 +3100,7 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"targetAppVersion": BHTCompatibilityTargetVersion,
         @"appVersionSupported":
             @(BHTCompatibilityVersionIsSupported()),
-        @"runtimeAvailable":
-            @(missingRequirements.count == 0),
+        @"runtimeAvailable": @(secureWebSessionAvailable),
         @"missingRuntimeRequirements":
             missingRequirements,
         @"legacyPasswordRuntimeAvailable":
@@ -3012,12 +3126,16 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"lastCommandAPIErrorCode": @(lastCommandAPIErrorCode),
         @"lastCommandUsedMetrics": @(lastCommandUsedMetrics),
         @"counters": [counters copy],
-        @"compatibilitySignInMode": @"dedicated_xauth_password",
+        @"secureWebSession":
+            BHTSecureWebSessionDiagnosticSnapshot(),
+        @"compatibilitySignInMode":
+            @"user_confirmed_web_session_bridge",
         @"nativeSignInRemainsDefault": @YES,
         @"legacyPasswordCommandIsDefault": @NO,
-        @"legacyPasswordCommandReachable": @YES,
-        @"credentialEntryOwner": @"compatibility_screen_ephemeral",
-        @"credentialPersistence": @"x_native_account_storage",
+        @"legacyPasswordCommandReachable": @NO,
+        @"credentialEntryOwner": @"x_webview",
+        @"credentialPersistence":
+            @"device_only_keychain_and_webkit_store",
         @"xAuthClientMetadataPolicy":
             @"native_x_12_24_1",
         @"xAuthClientMetadataTargetVersion":
@@ -3027,17 +3145,16 @@ BHTCompatibilitySignInDiagnosticSnapshot(void) {
         @"xAuthClientMetadataOverrideApplied": @0,
         @"xAuthClientMetadataScopeTimedOut": @0,
         @"compatibilityRequestProfile":
-            @"beta55_native_12_24_1_validated_metrics",
-        @"preflightPolicy":
-            @"minimum_12_second_then_validated_metrics",
-        @"preflightMinimumDelaySeconds":
-            @(BHTCompatibilityMinimumPreflightDuration),
+            @"secure_web_session_v1",
+        @"preflightPolicy": @"user_confirmed_x_web_sign_in",
+        @"preflightMinimumDelaySeconds": @0,
         @"attestationOverridesIncluded": @NO,
         @"credentialBackupIncluded": @NO,
         @"uiMetricsPolicy": @"validated_json_else_nil",
-        @"capturedMetricsUsedForAuthentication": @YES,
-        @"capturesCredentials": @NO,
-        @"capturesIdentifiers": @NO,
+        @"capturedMetricsUsedForAuthentication": @NO,
+        @"capturesPassword": @NO,
+        @"capturesSessionCredentialAfterConfirmation": @YES,
+        @"capturesIdentifiers": @YES,
         @"capturesPayloadContents": @NO,
         @"capturesFailureDescriptions": @NO,
         @"capturesFailureUserInfo": @NO,

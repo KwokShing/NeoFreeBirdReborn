@@ -1116,7 +1116,9 @@ static NSDictionary* BHTTimelineRuntimeShape(id item) {
              @"isPromoted", @"isAd", @"isAdvertisement", @"isSponsored",
              @"status", @"tweet", @"twitterStatus", @"displayedStatus",
              @"scribeItem", @"scribeParameters", @"promotedContent",
-             @"promotedMetadata", @"adMetadata"
+             @"promotedMetadata", @"adMetadata", @"item",
+             @"objectIdentifier", @"sectionController",
+             @"dataViewAdapter", @"scribeComponent", @"entryID"
          ]) {
         if ([item respondsToSelector:NSSelectorFromString(name)]) {
             [selectors addObject:name];
@@ -1138,7 +1140,13 @@ static NSDictionary* BHTTimelineRuntimeShape(id item) {
                   [lower containsString:@"advert"] ||
                   [lower containsString:@"scribe"] ||
                   [lower containsString:@"model"] ||
-                  [lower containsString:@"content"])) {
+                  [lower containsString:@"content"] ||
+                  [lower containsString:@"objectidentifier"] ||
+                  [lower containsString:@"sectioncontroller"] ||
+                  [lower containsString:@"dataviewadapter"] ||
+                  [lower isEqualToString:@"item"] ||
+                  [lower isEqualToString:@"_item"] ||
+                  [lower containsString:@"entryid"])) {
                 continue;
             }
             const char* type = ivar_getTypeEncoding(list[index]);
@@ -1818,6 +1826,9 @@ static NSURL* BHTWriteCompatibilityReportNow(
             @"unsafeLoginOverridesIncluded": @NO,
             @"webSessionHarvestingIncluded": @NO,
             @"compatibilityPasswordSignInIncluded": @YES,
+            @"compatibilityPasswordSignInReachable": @NO,
+            @"secureUserConfirmedWebSessionBridgeIncluded": @YES,
+            @"sessionSecretsStoredInDeviceOnlyKeychain": @YES,
             @"nativeOnboardingSignInIncluded": @NO,
             @"compatibilityXAuthClientMetadataIncluded": @NO,
             @"attestationOverridesIncluded": @NO,

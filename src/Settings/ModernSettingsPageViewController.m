@@ -583,6 +583,7 @@ NSString* BHTFontTypeForPicker(UIFontPickerViewController* picker) {
     NSString* key = BHTSettingsKeyForSwitch(sender);
     if (key) {
         [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:key];
+        [BHTSettings notePreferencesChanged];
         [self updateAndAnimateChangesForKey:key];
     }
 }

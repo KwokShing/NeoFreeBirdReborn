@@ -401,6 +401,18 @@ def main() -> None:
     compatibility_login_hook = (
         ROOT / "src" / "Hooks" / "CompatibilityLogin.x"
     ).read_text(encoding="utf-8")
+    secure_web_session_header = (
+        ROOT / "src" / "Login" / "BHTSecureWebSession.h"
+    ).read_text(encoding="utf-8")
+    secure_web_session_source = (
+        ROOT / "src" / "Login" / "BHTSecureWebSession.m"
+    ).read_text(encoding="utf-8")
+    web_session_security_source = (
+        ROOT / "src" / "Login" / "BHTWebSessionSecurity.m"
+    ).read_text(encoding="utf-8")
+    web_session_hook = (
+        ROOT / "src" / "Hooks" / "WebSessionAuthentication.x"
+    ).read_text(encoding="utf-8")
     require_source_tokens(
         compatibility_login_header,
         (
@@ -410,8 +422,10 @@ def main() -> None:
             "BHTInstallCompatibilitySignInEntry",
             "BHTInstallCompatibilityAddAccountSignInEntry",
             "BHTCompatibilitySignInDiagnosticSnapshot",
-            "guarded X 12.24.1 compatibility password flow",
+            "user-confirmed X 12.24.1 web-session bridge",
             "Successful accounts are registered and switched through X's account APIs",
+            "BHTCompatibilityInstallWebSessionAccount",
+            "BHTCompatibilityRemoveWebSessionAccount",
         ),
         "compatibility sign-in public contract",
     )
@@ -438,7 +452,7 @@ def main() -> None:
             "BHTLoadCompatibilityFrameworkIfNeeded();",
             "return "
             "BHTMissingCompatibilityRequirements().count == 0;",
-            "return BHTCompatibilityRuntimeIsAvailable();",
+            "return BHTSecureWebSessionSignInIsAvailable();",
         ),
         "hard X 12.9 compatibility gate",
     )
@@ -895,7 +909,7 @@ def main() -> None:
             'signature, 3, "@?"',
             "signature, 2, @encode(BOOL)",
             'signature, 3, "@"',
-            '@"legacyPasswordCommandReachable": @YES',
+            '@"legacyPasswordCommandReachable": @NO',
             "BHTSharePreLoginCompatibilityReport(",
             '@"NeoFreeBird.ShareLoginReport"',
             "shareCompatibilityReport:",
@@ -908,10 +922,10 @@ def main() -> None:
         "@interface BHTCompatibilityEntryTarget",
         "public compatibility login routes",
     )
-    if "BHTPresentCompatibilitySignInForContext(" not in public_login_routes:
+    if "BHTPresentSecureWebSessionSignIn(" not in public_login_routes:
         raise AssertionError(
-            "Public compatibility actions must dispatch the dedicated "
-            "compatibility controller"
+            "Public compatibility actions must dispatch the secure X web "
+            "session controller"
         )
     if (
         "BHTPresentNativeInitialCompatibilitySignIn(" in public_login_routes
@@ -1385,10 +1399,12 @@ def main() -> None:
             '@"missingRuntimeRequirements":',
             '@"preLoginDiagnosticsEligible":',
             '@"nativeSignInRemainsDefault": @YES',
-            '@"compatibilitySignInMode": @"dedicated_xauth_password"',
-            '@"legacyPasswordCommandReachable": @YES',
-            '@"credentialEntryOwner": @"compatibility_screen_ephemeral"',
-            '@"credentialPersistence": @"x_native_account_storage"',
+            '@"secureWebSession":',
+            "BHTSecureWebSessionDiagnosticSnapshot()",
+            '@"user_confirmed_web_session_bridge"',
+            '@"legacyPasswordCommandReachable": @NO',
+            '@"credentialEntryOwner": @"x_webview"',
+            '@"device_only_keychain_and_webkit_store"',
             '@"xAuthClientMetadataPolicy":',
             '@"native_x_12_24_1"',
             '@"xAuthClientMetadataTargetVersion":',
@@ -1397,14 +1413,14 @@ def main() -> None:
             '@"xAuthClientMetadataOverrideApplied": @0',
             '@"xAuthClientMetadataScopeTimedOut": @0',
             '@"compatibilityRequestProfile":',
-            '@"beta55_native_12_24_1_validated_metrics"',
+            '@"secure_web_session_v1"',
             '@"preflightPolicy":',
-            '@"minimum_12_second_then_validated_metrics"',
+            '@"user_confirmed_x_web_sign_in"',
             '@"preflightMinimumDelaySeconds":',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
             '@"uiMetricsPolicy": @"validated_json_else_nil"',
-            '@"capturedMetricsUsedForAuthentication": @YES',
+            '@"capturedMetricsUsedForAuthentication": @NO',
             '@"lastCommandUsedMetrics"',
             '@"lastCommandAPIErrorCode"',
             '@"addAccountEntryAvailable":',
@@ -1421,8 +1437,9 @@ def main() -> None:
             '@"lastCommandFailureClass"',
             '@"lastCommandFailureDomain"',
             '@"lastCommandFailureCode"',
-            '@"capturesCredentials": @NO',
-            '@"capturesIdentifiers": @NO',
+            '@"capturesPassword": @NO',
+            '@"capturesSessionCredentialAfterConfirmation": @YES',
+            '@"capturesIdentifiers": @YES',
             '@"capturesPayloadContents": @NO',
             '@"capturesFailureDescriptions": @NO',
             '@"capturesFailureUserInfo": @NO',
@@ -1468,12 +1485,163 @@ def main() -> None:
             '@"unsafeLoginOverridesIncluded": @NO',
             '@"webSessionHarvestingIncluded": @NO',
             '@"compatibilityPasswordSignInIncluded": @YES',
+            '@"compatibilityPasswordSignInReachable": @NO',
+            '@"secureUserConfirmedWebSessionBridgeIncluded": @YES',
+            '@"sessionSecretsStoredInDeviceOnlyKeychain": @YES',
             '@"nativeOnboardingSignInIncluded": @NO',
             '@"compatibilityXAuthClientMetadataIncluded": @NO',
             '@"attestationOverridesIncluded": @NO',
             '@"credentialBackupIncluded": @NO',
         ),
         "redacted compatibility sign-in report integration",
+    )
+
+    require_source_tokens(
+        secure_web_session_header,
+        (
+            "BHTPresentSecureWebSessionSignIn",
+            "BHTSecureWebSessionAuthenticatedRequest",
+            "BHTSecureWebSessionOwnsNativeAccount",
+            "BHTRevokeSecureWebSession",
+            "BHTSecureWebSessionDiagnosticSnapshot",
+            "read only after the user taps",
+        ),
+        "secure web-session public contract",
+    )
+    require_source_tokens(
+        secure_web_session_source,
+        (
+            "kSecClassGenericPassword",
+            "kSecAttrAccessibleWhenUnlockedThisDeviceOnly",
+            "SecItemCopyMatching",
+            "SecItemUpdate",
+            "SecItemAdd",
+            "SecItemDelete",
+            "WKWebsiteDataStore.defaultDataStore",
+            "BHTWebSessionEventConfirmationTapped",
+            "getAllCookies:",
+            'document.querySelector(\'a[data-testid=\\"AppTabBar_Profile_Link\\"]\')',
+            "BHTCompatibilityInstallWebSessionAccount(",
+            "BHTCompatibilityRemoveWebSessionAccount(screenName)",
+            '@"passwordReadByTweak": @NO',
+            '@"cookieReadRequiresUserConfirmation": @YES',
+            '@"sessionStoredInDeviceOnlyKeychain": @YES',
+            '@"sessionStoredInUserDefaults": @NO',
+            '@"sessionStoredInPlaintextFile": @NO',
+            '@"credentialLoggingIncluded": @NO',
+            '@"hiddenGestureEntryIncluded": @NO',
+            '@"nativeAccountUsesSessionSecrets": @NO',
+        ),
+        "user-confirmed Keychain web-session bridge",
+    )
+    for unsafe_persistence_api in (
+        "NSUserDefaults",
+        "writeToFile:",
+        "writeToURL:",
+        "NSLog",
+        "os_log",
+        "localizedDescription",
+        "debugDescription",
+    ):
+        if unsafe_persistence_api in secure_web_session_source:
+            raise AssertionError(
+                "Secure web sign-in must not persist outside Keychain or "
+                f"log credential-adjacent data: {unsafe_persistence_api}"
+            )
+    for unsafe_page_read in (
+        "document.cookie",
+        "document.body",
+        "innerHTML",
+        "localStorage",
+        "sessionStorage",
+    ):
+        if unsafe_page_read in secure_web_session_source:
+            raise AssertionError(
+                "Secure web sign-in may query only X's profile link: "
+                f"{unsafe_page_read}"
+            )
+    if re.search(r"(?<!UI)textContent\b", secure_web_session_source):
+        raise AssertionError(
+            "Secure web sign-in may not read page textContent"
+        )
+    confirmation_action = source_section(
+        secure_web_session_source,
+        "- (void)useAccountTapped {",
+        "- (void)webView:(WKWebView*)webView\n"
+        "    didStartProvisionalNavigation:",
+        "explicit web-session confirmation",
+    )
+    if confirmation_action.index(
+        "BHTWebSessionEventConfirmationTapped"
+    ) > confirmation_action.index("getAllCookies:"):
+        raise AssertionError(
+            "The explicit confirmation event must precede cookie access"
+        )
+    request_bridge = source_section(
+        secure_web_session_source,
+        "NSURLRequest* BHTSecureWebSessionAuthenticatedRequest(",
+        "BOOL BHTSecureWebSessionOwnsNativeAccount(",
+        "first-party request bridge",
+    )
+    if request_bridge.index(
+        "BHTWebSessionURLIsAllowed(request.URL)"
+    ) > request_bridge.index("BHTWebSessionCopySession()"):
+        raise AssertionError(
+            "Reject non-first-party URLs before loading the Keychain session"
+        )
+    require_source_tokens(
+        web_session_security_source,
+        (
+            'isEqualToString:@"https"',
+            'BHTWebSessionHostMatchesDomain(host, @"x.com")',
+            'BHTWebSessionHostMatchesDomain(host, @"twitter.com")',
+            'hasSuffix:[@"." stringByAppendingString:domain]',
+            "components.user.length > 0",
+            "components.password.length > 0",
+            "port.unsignedIntegerValue != 443",
+            '@"auth_token", @"ct0", @"twid"',
+        ),
+        "strict web-session request and cookie validation",
+    )
+    if "containsString" in web_session_security_source:
+        raise AssertionError(
+            "Web-session domains must use parsed exact/suffix matching"
+        )
+    require_source_tokens(
+        web_session_hook,
+        (
+            "%hook NSURLSession",
+            "BHTSecureWebSessionAuthenticatedRequest(request)",
+            "BHTWebSessionTaskMethodHasObjectShape(",
+            '@"12.24.1"',
+        ),
+        "guarded final-boundary request hooks",
+    )
+    if web_session_hook.count("%hook NSURLSession") != 8:
+        raise AssertionError(
+            "The web session must cover exactly the eight audited request "
+            "constructors"
+        )
+    for broad_hook in (
+        "%hook NSMutableURLRequest",
+        "- (void)setValue:forHTTPHeaderField:",
+        "- (void)setURL:",
+        "%hook NSURLSessionTask",
+    ):
+        if broad_hook in web_session_hook:
+            raise AssertionError(
+                "The web session must not install a broad mutable-request "
+                f"or task hook: {broad_hook}"
+            )
+    require_source_tokens(
+        compatibility_login_source,
+        (
+            '@"neofreebird_web_session"',
+            "BHTCompatibilityInstallWebSessionAccount(",
+            "BHTCompatibilityRemoveWebSessionAccount(",
+            "BHTPresentSecureWebSessionSignIn(presenter, nil);",
+        ),
+        "non-secret native web-session account shell",
     )
 
     reply_header_source = (
@@ -4107,12 +4275,22 @@ def main() -> None:
             "navigation delegate"
         )
 
-    if "Version: 6.1.0-beta.55" not in (
+    if "Version: 6.1.0-beta.62" not in (
         ROOT / "control"
     ).read_text(encoding="utf-8"):
         raise AssertionError(
-            "Compatibility verification changes must ship as beta.55"
+            "Current promoted-status filtering must ship as beta.62"
         )
+
+    require_source_tokens(
+        settings_source,
+        (
+            "BHTPreferenceGeneration",
+            "+ (NSUInteger)preferenceGeneration",
+            "+ (void)notePreferencesChanged",
+        ),
+        "preference-generation cache invalidation",
+    )
 
     branding_source = (
         ROOT / "src" / "Branding" / "BHTBranding.m"
@@ -4620,6 +4798,27 @@ def main() -> None:
     feature_switches_source = (
         ROOT / "src" / "Hooks" / "FeatureSwitches.x"
     ).read_text(encoding="utf-8")
+    require_source_tokens(
+        feature_switches_source,
+        (
+            "BHTInstallSecureWebSessionAccountStateAccessors",
+            "method_setImplementation(method, replacement)",
+            "class_addMethod(accountClass, selector, replacement, fallbackTypes)",
+            "BHTSecureWebSessionOwnsNativeAccount(account)",
+            "BHTTwitterAccountUsesWebSessionPlaceholder(account)",
+            '@"hasOAuthTokens"',
+        ),
+        "version-safe web-session account-state accessors",
+    )
+    for unsafe_hook in (
+        "- (NSInteger)loginState {",
+        "- (BOOL)isAuthorized {",
+    ):
+        if unsafe_hook in feature_switches_source:
+            raise AssertionError(
+                "Web-session account state must be installed dynamically "
+                "because X 12.24.1 does not declare these selectors"
+            )
     sidebar_utility_header = (
         ROOT
         / "src"
@@ -5108,6 +5307,9 @@ def main() -> None:
             "Likes navigation must not discard native drawer destinations"
         )
 
+    timeline_source = (
+        ROOT / "src" / "Hooks" / "Timeline.x"
+    ).read_text(encoding="utf-8")
     ads_source = (
         ROOT / "src" / "Hooks" / "Ads.x"
     ).read_text(encoding="utf-8")
@@ -5118,18 +5320,36 @@ def main() -> None:
         ads_source,
         (
             "NSArray* BHTFilteredTimelineSections(",
-            "ShouldHideAndRecord(items[i], location)",
+            "ShouldHideAndRecordWithSignature(",
+            "items[i], location, settingsSignature",
         ),
         "shared filtered timeline snapshot",
     )
     if (
-        likes_hook_source.count(
+        timeline_source.count(
             "BHTFilteredTimelineSections(self, sections)"
         )
         < 2
     ):
         raise AssertionError(
-            "Likes waterfall capture must filter both section update paths"
+            "The single timeline owner must filter both section update paths"
+        )
+    if timeline_source.count("BHTCaptureLikesSections(") < 2:
+        raise AssertionError(
+            "The single timeline owner must capture both filtered Likes updates"
+        )
+    if "BHTFilteredTimelineSections(self, sections)" in likes_hook_source:
+        raise AssertionError(
+            "Likes must not repeat the shared structural filter pass"
+        )
+    if "BHTFilteredTimelineSections(self, sections)" in source_section(
+        ads_source,
+        "%hook TFNItemsDataViewController",
+        "%hook TFNItemsDataViewAdapterRegistry",
+        "opaque ad-render fallback",
+    ):
+        raise AssertionError(
+            "The ad render fallback must not repeat the structural filter pass"
         )
 
     for_you_filter_source = (
@@ -5294,7 +5514,7 @@ def main() -> None:
     keyword_decision_cache = source_section(
         timeline_source,
         "static BOOL ShouldHideForYouKeywordItem",
-        "static BOOL ItemHasTopicBanner",
+        "static BOOL ShouldHideTimelineItem",
         "For You keyword decision cache",
     )
     require_source_tokens(
@@ -5303,6 +5523,7 @@ def main() -> None:
             "BHTForYouKeywordDecisionCache",
             "objc_getAssociatedObject(outerStatus",
             "cached.generation == generation",
+            "X can hydrate a delivered status",
             "isEqualToArray:usernameCandidates",
             "isEqualToArray:postTextCandidates",
             "return cached.hidden",
@@ -5311,8 +5532,17 @@ def main() -> None:
             "BHTForYouFilterDiagnosticTrustedTextCandidateSetNonEmpty",
             "UsernameCandidatesForStatuses(",
         ),
-        "content-aware For You keyword and @mention decision caching",
+        "current-content-aware For You keyword decision caching",
     )
+    for stale_fast_path in (
+        "cached.timelineOwner == timelineOwner",
+        "cached.contentGeneration == contentGeneration",
+    ):
+        if stale_fast_path in keyword_decision_cache:
+            raise AssertionError(
+                "For You keyword filtering must compare the current trusted "
+                "content before reusing a cached decision"
+            )
     if not re.search(
         r"UsernameCandidatesForStatuses\s*\(\s*"
         r"outerStatus\s*,\s*representedStatus\s*,\s*"
@@ -5326,6 +5556,128 @@ def main() -> None:
     if "(hidden ?" in keyword_decision_cache:
         raise AssertionError(
             "For You filtering must not use the stale packed decision cache"
+        )
+
+    timeline_cleanup_source = (
+        ROOT / "src" / "Timeline" / "BHTTimelineCleanup.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        timeline_cleanup_source,
+        (
+            '@"suggest_who_to_follow"',
+            '@"who_to_follow"',
+            '@"recommended_users"',
+            '@"user_recommendations"',
+            '@"discover_more"',
+            '@"tweetdetailrelatedtweets"',
+            '@"suggest_topics_module"',
+            '@"utt_topic_carousel"',
+            '@"relevance_prompt_module"',
+            '@"birdwatch_suggestion"',
+            '@"tweetContext"',
+            '@"topicFeedbackContext"',
+            "TFNTwitterTweetTopicFeedbackContext",
+            "list_creation_recommended_users_timeline",
+            "list_edit_recommended_users_timeline",
+            '@"objectIdentifier"',
+            '@"sectionController"',
+            "BHTCleanupIdentifierKindsForObject(sectionController)",
+            "BHTCleanupKindsForCurrentItemState",
+            "includeTopicContext",
+            "BHTTimelineCleanupSettingsGeneration",
+            "[BHTSettings preferenceGeneration]",
+        ),
+        "current X 12.24.1 wrapper identifiers and gated Topic metadata",
+    )
+    require_source_tokens(
+        timeline_source,
+        (
+            "BHTEnabledTimelineCleanupKinds()",
+            "BHTShouldHideTimelineCleanupItemForKinds",
+            "BHTShouldHideTimelineCleanupItemForKinds(item,",
+            "BHTShouldHideTimelineCleanupItem(item)",
+            "cleanupFiltersChanged",
+            "%hook T1URTTimelineModuleViewModelSectionController",
+            "BHTShouldCollapseTimelineModule",
+            "heightForHeaderInSection",
+            "heightForFooterInSection",
+            "collectionViewSizeForItem",
+            "sizeForHeaderInSection",
+            "sizeForFooterInSection",
+        ),
+        "structural, module-level, and render-time timeline cleanup",
+    )
+    hook_helpers_source = (
+        ROOT / "src" / "Hooks" / "HookHelpers.m"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        hook_helpers_source,
+        (
+            '@"URTModuleHeaderViewModel"',
+            '@"URTModuleFeedbackListHeaderViewModel"',
+            '@"URTModuleFooterViewModel"',
+            '@"URTModuleSeparatorFooterViewModel"',
+            "while (j < count && IsModuleFooterItem(items[j]))",
+        ),
+        "current Swift module header, Show more, and separator cleanup",
+    )
+    cleanup_filter_call = source_section(
+        timeline_source,
+        "static BOOL ShouldHideTimelineItem",
+        "static NSArray* FilteredTimelineSections",
+        "timeline cleanup call site",
+    )
+    for obsolete_context_gate in ("inConversation", "inProfile"):
+        if obsolete_context_gate in cleanup_filter_call:
+            raise AssertionError(
+                "Stable module identifiers must not depend on fragile UIKit "
+                f"containment: {obsolete_context_gate}"
+            )
+
+    if "kBHTTimelineCleanupClassificationKey" in timeline_cleanup_source:
+        raise AssertionError(
+            "Hydrated or reused timeline items must not keep cleanup decisions"
+        )
+
+    ads_source = (
+        ROOT / "src" / "Hooks" / "Ads.x"
+    ).read_text(encoding="utf-8")
+    require_source_tokens(
+        ads_source,
+        (
+            "BHTTimelineFilterSettingsSignature",
+            "kBHTTimelineFilterSettingsGeneration",
+            "ShouldHideAndRecordWithSignature",
+            "StatusItemPromotionDecision",
+            "!statusResolved",
+            "[BHTSettings preferenceGeneration]",
+        ),
+        "cached ad-filter settings and bounded status inspection",
+    )
+    if "kBHTTimelineFilterDecisionKey" in ads_source:
+        raise AssertionError(
+            "Hydrated or reused timeline items must not keep ad decisions"
+        )
+    status_promotion_decision = source_section(
+        ads_source,
+        "static id BHTStatusFromTimelineItem",
+        "static BOOL ItemHasPromotedTrendID",
+        "current promoted-status decision",
+    )
+    require_source_tokens(
+        status_promotion_decision,
+        (
+            "BHTObjectForSelector(item, @selector(tweet))",
+            "[status isKindOfClass:statusClass]",
+            "ItemHasPromotedContent(status)",
+            "BHTBoolForSelector(status, @selector(isPromoted))",
+        ),
+        "X 12.24.1 promoted-status resolution with masked getter fallback",
+    )
+    if ads_source.count("BHTShouldHideTimelineCleanupItem") < 2:
+        raise AssertionError(
+            "Opaque timeline rows must apply cleanup during cell creation "
+            "and row sizing"
         )
 
     keyword_filter_call = source_section(

@@ -22,6 +22,11 @@ FOUNDATION_EXPORT NSString* const BHTSettingsProfileDidApplyNotification;
 + (BOOL)boolForKey:(NSString*)key;
 + (NSInteger)integerForKey:(NSString*)key;
 
+// Cheap invalidation token for hot-path setting snapshots. Callers can cache
+// several related values and refresh only after a preference write.
++ (NSUInteger)preferenceGeneration;
++ (void)notePreferencesChanged;
+
 // Preference profiles are deliberately allow-listed. They contain tweak
 // settings and layout choices, never Twitter account state, credentials,
 // cookies, cached media, or migration markers.

@@ -43,13 +43,19 @@ id unwrapDataViewItem(id item) {
 }
 
 BOOL IsModuleHeaderItem(id item) {
-    return [NSStringFromClass([unwrapDataViewItem(item) classForCoder])
-        isEqualToString:@"TwitterURT.URTModuleHeaderViewModel"];
+    NSString* className =
+        NSStringFromClass([unwrapDataViewItem(item) classForCoder]);
+    return [className hasSuffix:@"URTModuleHeaderViewModel"] ||
+           [className hasSuffix:
+                          @"URTModuleFeedbackListHeaderViewModel"];
 }
 
 BOOL IsModuleFooterItem(id item) {
-    return [NSStringFromClass([unwrapDataViewItem(item) classForCoder])
-        isEqualToString:@"TwitterURT.URTModuleFooterViewModel"];
+    NSString* className =
+        NSStringFromClass([unwrapDataViewItem(item) classForCoder]);
+    return [className hasSuffix:@"URTModuleFooterViewModel"] ||
+           [className hasSuffix:
+                          @"URTModuleSeparatorFooterViewModel"];
 }
 
 // A module renders as a consecutive run of header, content, footer. When a
@@ -76,8 +82,11 @@ void MarkEmptiedModuleChrome(NSArray* items, NSMutableIndexSet* removed) {
 
         if (contentCount > 0 && contentRemoved) {
             [removed addIndex:i];
-            if (j < count && IsModuleFooterItem(items[j])) {
+            // Current X builds can append both a visible "Show more" footer
+            // and a separator footer to the same module.
+            while (j < count && IsModuleFooterItem(items[j])) {
                 [removed addIndex:j];
+                j++;
             }
         }
     }

@@ -4,6 +4,7 @@
 //
 
 #import "HookHelpers.h"
+#import "Login/BHTSecureWebSession.h"
 #import "Sidebar/BHTSidebarNavigationUtility.h"
 
 #import <objc/runtime.h>
@@ -678,6 +679,96 @@ static long long BHTVideoVariantScore(id variant) {
 %end
 
 // MARK: - Account feature gates
+
+// X 12.24.1 does not declare loginState/isAuthorized on TFNTwitterAccount,
+// while newer builds may provide either selector.  Install the accessors
+// explicitly so the web-session account works on 12.24.1 without making every
+// account look authorized.  When X supplies an implementation, preserve it for
+// ordinary accounts; otherwise use the account's real OAuth-token state.
+static NSInteger (*BHTOriginalTwitterAccountLoginState)(id, SEL) = NULL;
+static BOOL (*BHTOriginalTwitterAccountIsAuthorized)(id, SEL) = NULL;
+
+static BOOL BHTTwitterAccountUsesWebSessionPlaceholder(id account) {
+    static NSString* const marker = @"neofreebird_web_session";
+    for (NSString* selectorName in @[@"oAuthToken", @"oAuthTokenSecret"]) {
+        SEL selector = NSSelectorFromString(selectorName);
+        if (![account respondsToSelector:selector]) {
+            continue;
+        }
+        id value = ((id (*)(id, SEL))objc_msgSend)(account, selector);
+        if ([value isKindOfClass:[NSString class]] &&
+            [value isEqualToString:marker]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+static BOOL BHTTwitterAccountHasNativeOAuthTokens(id account) {
+    if (!account || BHTTwitterAccountUsesWebSessionPlaceholder(account)) {
+        return NO;
+    }
+    SEL selector = NSSelectorFromString(@"hasOAuthTokens");
+    return [account respondsToSelector:selector] &&
+           ((BOOL (*)(id, SEL))objc_msgSend)(account, selector);
+}
+
+static NSInteger BHTTwitterAccountLoginState(id account, SEL selector) {
+    if (BHTSecureWebSessionOwnsNativeAccount(account)) {
+        return 1;
+    }
+    if (BHTOriginalTwitterAccountLoginState) {
+        return BHTOriginalTwitterAccountLoginState(account, selector);
+    }
+    return BHTTwitterAccountHasNativeOAuthTokens(account) ? 1 : 0;
+}
+
+static BOOL BHTTwitterAccountIsAuthorized(id account, SEL selector) {
+    if (BHTSecureWebSessionOwnsNativeAccount(account)) {
+        return YES;
+    }
+    if (BHTOriginalTwitterAccountIsAuthorized) {
+        return BHTOriginalTwitterAccountIsAuthorized(account, selector);
+    }
+    return BHTTwitterAccountHasNativeOAuthTokens(account);
+}
+
+static IMP BHTInstallTwitterAccountStateAccessor(Class accountClass,
+                                                 SEL selector,
+                                                 IMP replacement,
+                                                 const char* fallbackTypes) {
+    Method method = class_getInstanceMethod(accountClass, selector);
+    if (method) {
+        // class_getInstanceMethod also returns inherited methods. Add a
+        // subclass override first so a future X superclass implementation is
+        // never changed for unrelated objects. If the method is declared
+        // directly, class_addMethod fails and replacing that method is safe.
+        IMP inheritedOrOriginal = method_getImplementation(method);
+        if (class_addMethod(accountClass, selector, replacement,
+                            method_getTypeEncoding(method))) {
+            return inheritedOrOriginal;
+        }
+        return method_setImplementation(method, replacement);
+    }
+    class_addMethod(accountClass, selector, replacement, fallbackTypes);
+    return NULL;
+}
+
+__attribute__((constructor)) static void
+BHTInstallSecureWebSessionAccountStateAccessors(void) {
+    Class accountClass = objc_getClass("TFNTwitterAccount");
+    if (!accountClass) {
+        return;
+    }
+    BHTOriginalTwitterAccountLoginState =
+        (NSInteger (*)(id, SEL))BHTInstallTwitterAccountStateAccessor(
+            accountClass, NSSelectorFromString(@"loginState"),
+            (IMP)BHTTwitterAccountLoginState, "q@:");
+    BHTOriginalTwitterAccountIsAuthorized =
+        (BOOL (*)(id, SEL))BHTInstallTwitterAccountStateAccessor(
+            accountClass, NSSelectorFromString(@"isAuthorized"),
+            (IMP)BHTTwitterAccountIsAuthorized, "B@:");
+}
 
 %hook TFNTwitterAccount
 

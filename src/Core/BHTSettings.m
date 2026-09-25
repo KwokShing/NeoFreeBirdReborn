@@ -9,12 +9,16 @@
 #import "Core/BHTBundle.h"
 #import "Core/BHTManager.h"
 #import "ThemeColor/BHTThemePresets.h"
+#include <stdatomic.h>
 
 NSString* const BHTSettingsProfileDidApplyNotification =
     @"BHTSettingsProfileDidApplyNotification";
 
 static NSString* const BHTSettingsProfileErrorDomain =
     @"com.neofreebird.preference-profile";
+
+static atomic_uint_fast64_t BHTPreferenceGeneration =
+    ATOMIC_VAR_INIT(1);
 
 static NSArray<NSString*>* BHTSettingsPageOrder(void) {
     return @[
@@ -842,6 +846,16 @@ static BOOL BHTIsValidKeywordArray(id value, BOOL usernameKeywords) {
 
 #pragma mark - Accessors
 
++ (NSUInteger)preferenceGeneration {
+    return (NSUInteger)atomic_load_explicit(
+        &BHTPreferenceGeneration, memory_order_acquire);
+}
+
++ (void)notePreferencesChanged {
+    atomic_fetch_add_explicit(
+        &BHTPreferenceGeneration, 1, memory_order_acq_rel);
+}
+
 + (NSArray<NSDictionary*>*)settingsForPage:(NSString*)pageKey {
     return pageKey ? BHTSettingsPages()[pageKey][@"settings"] : nil;
 }
@@ -1121,6 +1135,7 @@ static BOOL BHTIsValidKeywordArray(id value, BOOL usernameKeywords) {
         postNotificationName:BHTSettingsProfileDidApplyNotification
                       object:nil
                     userInfo:@{@"keys": accepted.allKeys}];
+    [self notePreferencesChanged];
     return YES;
 }
 
