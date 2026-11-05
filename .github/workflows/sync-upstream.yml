@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   UPSTREAM_REPO: https://github.com/Vicitiniman/NeoFreeBirdReborn.git
@@ -42,9 +42,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Generate Sync App Token
+        id: sync-app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+
       - name: Checkout Fork
         uses: actions/checkout@v6
         with:
+          token: ${{ steps.sync-app-token.outputs.token }}
           ref: ${{ inputs.target_branch || 'master' }}
           # A merge needs the real history, not a shallow clone.
           fetch-depth: 0
